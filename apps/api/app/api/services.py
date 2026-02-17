@@ -1,15 +1,32 @@
 import csv
 import io
+import json
 from datetime import datetime, timezone
 
+from redis import Redis
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.entities import CustomerAddress, EventLog
+
+SMS_QUEUE_KEY = "jobs:sms"
 
 
 def log_event(db: Session, tenant_id, event_type: str, source: str, payload: dict) -> None:
     db.add(EventLog(tenant_id=tenant_id, event_type=event_type, source=source, payload_json=payload))
+
+
+def redis_client() -> Redis:
+    return Redis.from_url(settings.redis_url, decode_responses=True)
+
+
+def enqueue_sms_job(job: dict, dedupe_key: str) -> bool:
+    r = redis_client()
+    if not r.set(f"dedupe:{dedupe_key}", "1", nx=True, ex=3600):
+        return False
+    r.rpush(SMS_QUEUE_KEY, json.dumps(job))
+    return True
 
 
 def normalize_us_phone(raw: str) -> str:

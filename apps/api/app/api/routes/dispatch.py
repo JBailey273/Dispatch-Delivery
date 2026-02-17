@@ -1,20 +1,20 @@
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
-from app.api.services import log_event
-from app.models.entities import Drop, Load, LoadStatus, User, UserRole, WindowCapacity, WindowCode
+from app.api.services import enqueue_sms_job, log_event, now_utc
+from app.models.entities import Customer, Drop, Load, LoadStatus, User, UserRole, WindowCapacity, WindowCode
 
 router = APIRouter(prefix="/dispatch", tags=["dispatch"])
 
 
 @router.get("/schedule")
-def dispatch_schedule(day: date = Query(...), user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+def dispatch_schedule(day: date, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
     caps = db.execute(select(WindowCapacity).where(WindowCapacity.tenant_id == user.tenant_id, WindowCapacity.service_date == day)).scalars().all()
     cap_map = {c.window_code.value: {"used": c.capacity_used, "total": c.capacity_total} for c in caps}
     loads = db.execute(
@@ -47,6 +47,58 @@ def dispatch_schedule(day: date = Query(...), user: AuthUser = Depends(require_r
     }
 
 
+@router.get("/drops/{drop_id}")
+def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+    row = db.execute(
+        select(Drop, Customer).join(Customer, Customer.id == Drop.customer_id).where(Drop.tenant_id == user.tenant_id, Drop.id == drop_id)
+    ).one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
+    drop, customer = row
+    return {
+        "id": str(drop.id),
+        "scheduled_date": str(drop.scheduled_date),
+        "scheduled_window": drop.scheduled_window.value,
+        "notify_sent_at": drop.notify_sent_at.isoformat() if drop.notify_sent_at else None,
+        "last_reschedule_sms_at": drop.last_reschedule_sms_at.isoformat() if drop.last_reschedule_sms_at else None,
+        "customer_phone": customer.phone_e164,
+    }
+
+
+class RescheduleSmsIn(BaseModel):
+    message: str
+    admin_override: bool = False
+
+
+@router.post("/drops/{drop_id}/send-reschedule-sms")
+def send_reschedule_sms(drop_id: str, payload: RescheduleSmsIn, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)), db: Session = Depends(db_dep)):
+    row = db.execute(
+        select(Drop, Customer).join(Customer, Customer.id == Drop.customer_id).where(Drop.tenant_id == user.tenant_id, Drop.id == drop_id).with_for_update()
+    ).one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
+    drop, customer = row
+    if drop.last_reschedule_sms_at and now_utc() - drop.last_reschedule_sms_at < timedelta(minutes=5) and not payload.admin_override:
+        raise HTTPException(status_code=409, detail={"code": "sms_rate_limited", "message": "Reschedule SMS already sent recently"})
+
+    job = {
+        "type": "SEND_SMS",
+        "tenant_id": str(user.tenant_id),
+        "drop_id": str(drop.id),
+        "to": customer.phone_e164,
+        "template": "custom",
+        "message": payload.message,
+    }
+    dedupe_key = f"reschedule-{drop.id}-{int(now_utc().timestamp() // 300)}"
+    if not enqueue_sms_job(job, dedupe_key=dedupe_key):
+        raise HTTPException(status_code=409, detail={"code": "duplicate_sms", "message": "Duplicate SMS request"})
+
+    drop.last_reschedule_sms_at = now_utc()
+    log_event(db, user.tenant_id, "SMS_SENT", "dispatch", {"drop_id": drop_id, "kind": "reschedule", "preview": payload.message})
+    db.commit()
+    return {"status": "queued", "sent_at": drop.last_reschedule_sms_at.isoformat()}
+
+
 class AssignIn(BaseModel):
     load_ids: list[str]
     driver_user_id: str
@@ -59,6 +111,9 @@ def assign_loads(payload: AssignIn, user: AuthUser = Depends(require_roles(UserR
     for l in rows:
         l.driver_user_id = payload.driver_user_id
         l.truck_label = payload.truck_label
+        if l.status == LoadStatus.CANCELLED:
+            continue
+        l.status = LoadStatus.ASSIGNED
     log_event(db, user.tenant_id, "loads.assigned", "api", payload.model_dump())
     db.commit()
     return {"updated": len(rows)}
@@ -93,6 +148,8 @@ def assign_entire_drop(drop_id: str, payload: AssignIn, user: AuthUser = Depends
     for l in rows:
         l.driver_user_id = payload.driver_user_id
         l.truck_label = payload.truck_label
+        if l.status != LoadStatus.CANCELLED:
+            l.status = LoadStatus.ASSIGNED
     log_event(db, user.tenant_id, "drop.assigned", "api", {"drop_id": drop_id, "driver_user_id": payload.driver_user_id})
     db.commit()
     return {"updated": len(rows)}

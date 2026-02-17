@@ -40,11 +40,19 @@ class WindowCode(str, enum.Enum):
 
 
 class LoadStatus(str, enum.Enum):
-    PENDING = "pending"
+    ASSIGNED = "assigned"
     LOADED_LEAVING = "loaded_leaving"
     EXCEPTION = "exception"
     DELIVERED = "delivered"
     CANCELLED = "cancelled"
+
+
+class ExceptionReasonCode(str, enum.Enum):
+    CUSTOMER_UNAVAILABLE = "customer_unavailable"
+    ACCESS_BLOCKED = "access_blocked"
+    SAFETY_RISK = "safety_risk"
+    DAMAGED_GOODS = "damaged_goods"
+    OTHER = "other"
 
 
 class Tenant(Base, TimestampMixin):
@@ -136,6 +144,9 @@ class Drop(Base, TenantScopedMixin, TimestampMixin):
     scheduled_date: Mapped[date] = mapped_column(Date, nullable=False)
     scheduled_window: Mapped[WindowCode] = mapped_column(Enum(WindowCode, name="drop_window_code"), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    drop_photos: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    notify_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_reschedule_sms_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Load(Base, TenantScopedMixin, TimestampMixin):
@@ -145,7 +156,7 @@ class Load(Base, TenantScopedMixin, TimestampMixin):
     drop_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("drops.id"), nullable=False)
     driver_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     truck_label: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    status: Mapped[LoadStatus] = mapped_column(Enum(LoadStatus, name="load_status"), nullable=False, default=LoadStatus.PENDING)
+    status: Mapped[LoadStatus] = mapped_column(Enum(LoadStatus, name="load_status"), nullable=False, default=LoadStatus.ASSIGNED)
     route_date: Mapped[date] = mapped_column(Date, nullable=False)
     route_window: Mapped[WindowCode] = mapped_column(Enum(WindowCode, name="load_window_code"), nullable=False)
     bulk_group_snapshot: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -153,7 +164,23 @@ class Load(Base, TenantScopedMixin, TimestampMixin):
     qty: Mapped[int] = mapped_column(Integer, nullable=False)
     unit: Mapped[str] = mapped_column(String(32), nullable=False)
     idempotency_key_last: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    pod_photo_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    exception_photo_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    exception_reason_code: Mapped[ExceptionReasonCode | None] = mapped_column(Enum(ExceptionReasonCode, name="exception_reason_code"), nullable=True)
+    exception_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+
+
+
+class CapacityHold(Base, TenantScopedMixin, TimestampMixin):
+    __tablename__ = "capacity_holds"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    service_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    window_code: Mapped[WindowCode] = mapped_column(Enum(WindowCode, name="window_code"), nullable=False)
+    units_held: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 class EventLog(Base, TenantScopedMixin):
     __tablename__ = "event_logs"
