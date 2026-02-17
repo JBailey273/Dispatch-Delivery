@@ -4,7 +4,7 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
@@ -18,7 +18,7 @@ from app.api.optimization import apply_proposal, generate_proposals, undo_propos
 from app.api.guardrails import guard_load_editable
 from app.api.services import enqueue_sms_job, log_event, now_utc
 from app.billing.service import ensure_billing_account, get_plan, scheduling_gate
-from app.models.entities import Customer, CustomerAddress, Drop, Load, LoadStatus, OptimizationProposal, User, UserRole, WindowCapacity, WindowCode
+from app.models.entities import Customer, CustomerAddress, Drop, Load, LoadStatus, OperationalBlackout, OptimizationProposal, User, UserRole, WindowCapacity, WindowCode
 
 router = APIRouter(prefix="/dispatch", tags=["dispatch"])
 logger = logging.getLogger("dispatch.ops")
@@ -31,6 +31,18 @@ def dispatch_schedule(day: date, user: AuthUser = Depends(require_roles(UserRole
         logger.error("orphaned_loads_detected", extra={"tenant_id": str(user.tenant_id), "count": len(orphaned)})
     caps = db.execute(select(WindowCapacity).where(WindowCapacity.tenant_id == user.tenant_id, WindowCapacity.service_date == day)).scalars().all()
     cap_map = {c.window_code.value: {"used": c.capacity_used, "total": c.capacity_total, "remaining_capacity": c.capacity_total - c.capacity_used} for c in caps}
+    disabled_windows = set(
+        code.value
+        for code in db.execute(
+            select(OperationalBlackout.window_code).where(
+                OperationalBlackout.tenant_id == user.tenant_id,
+                OperationalBlackout.service_date == day,
+                OperationalBlackout.active.is_(True),
+                or_(OperationalBlackout.window_code == WindowCode.A, OperationalBlackout.window_code == WindowCode.B),
+            )
+        ).scalars().all()
+        if code
+    )
     loads = db.execute(
         select(Load, Drop, User)
         .join(Drop, Drop.id == Load.drop_id)
@@ -61,8 +73,8 @@ def dispatch_schedule(day: date, user: AuthUser = Depends(require_roles(UserRole
     return {
         "date": str(day),
         "windows": {
-            "A": {"capacity": cap_map.get("A", {"used": 0, "total": 0, "remaining_capacity": 0}), "groups": by_window["A"]},
-            "B": {"capacity": cap_map.get("B", {"used": 0, "total": 0, "remaining_capacity": 0}), "groups": by_window["B"]},
+            "A": {"capacity": cap_map.get("A", {"used": 0, "total": 0, "remaining_capacity": 0}), "groups": by_window["A"], "disabled": "A" in disabled_windows},
+            "B": {"capacity": cap_map.get("B", {"used": 0, "total": 0, "remaining_capacity": 0}), "groups": by_window["B"], "disabled": "B" in disabled_windows},
         },
     }
 
