@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { api, requireRole } from '../../../lib/auth';
+import { ApiError, api, requireRole } from '../../../lib/auth';
 
 export default function DriverLoadDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [load, setLoad] = useState<any>(null);
   const [msg, setMsg] = useState('');
+  const [banner, setBanner] = useState('');
   const [reason, setReason] = useState('customer_unavailable');
   const [notes, setNotes] = useState('');
   const router = useRouter();
@@ -24,21 +25,43 @@ export default function DriverLoadDetailPage() {
     try {
       setLoad(await api(`/driver/loads/${id}`));
       setMsg('');
-    } catch {
-      setMsg('This delivery was reassigned by dispatch.');
-      router.push('/driver/loads?reassigned=1');
+    } catch (err) {
+      const apiErr = err as ApiError;
+      if (apiErr.status === 403 || apiErr.status === 404) {
+        setMsg('This delivery was reassigned by dispatch.');
+        router.push('/driver/loads?reassigned=1');
+      } else {
+        setMsg(apiErr.message || 'Unable to load delivery.');
+      }
     }
   };
+
+  const runDriverAction = async (fn: () => Promise<void>) => {
+    try {
+      setBanner('');
+      await fn();
+      await refresh();
+    } catch (err) {
+      const apiErr = err as ApiError;
+      if (apiErr.status === 403 || apiErr.status === 404) {
+        setMsg('This delivery was reassigned by dispatch.');
+        router.push('/driver/loads?reassigned=1');
+        return;
+      }
+      setBanner(apiErr.message || 'Action failed. Please refresh.');
+    }
+  };
+
   useEffect(() => {
     refresh();
     const t = setInterval(() => refresh().catch(() => null), 30000);
     return () => clearInterval(t);
   }, [id]);
   if (!requireRole(['driver'])) return <p>Unauthorized</p>;
-  return <main><h1>Load Detail</h1>{msg && <p>{msg}</p>}{load && <div><p>{load.address.line1}, {load.address.city}</p><p>{load.material} {load.qty} {load.unit}</p><p>{load.notes}</p>
+  return <main><h1>Load Detail</h1>{msg && <p>{msg}</p>}{banner && <p>{banner}</p>}{load && <div><p>{load.address.line1}, {load.address.city}</p><p>{load.material} {load.qty} {load.unit}</p><p>{load.notes}</p>
   <label>POD photo (jpeg): <input type='file' accept='image/jpeg' onChange={(e)=>uploadPhoto('POD_PHOTO', e.target.files?.[0])} /></label>
-  <button onClick={async()=>{await api(`/driver/loads/${id}/status`,{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':`k-${Date.now()}`},body:JSON.stringify({status:'loaded_leaving'})}); refresh();}}>Loaded/Leaving</button>
-  <button disabled={!load.pod_photo_url} onClick={async()=>{await api(`/driver/loads/${id}/status`,{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':`d-${Date.now()}`},body:JSON.stringify({status:'delivered'})}); refresh();}}>Delivered</button>
+  <button onClick={()=>runDriverAction(async()=>{await api(`/driver/loads/${id}/status`,{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':`k-${Date.now()}`},body:JSON.stringify({status:'loaded_leaving'})});})}>Loaded/Leaving</button>
+  <button disabled={!load.pod_photo_url} onClick={()=>runDriverAction(async()=>{await api(`/driver/loads/${id}/status`,{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':`d-${Date.now()}`},body:JSON.stringify({status:'delivered'})});})}>Delivered</button>
   <h3>Exception</h3>
   <select value={reason} onChange={(e)=>setReason(e.target.value)}>
     <option value='customer_unavailable'>Customer unavailable</option>
@@ -49,6 +72,6 @@ export default function DriverLoadDetailPage() {
   </select>
   <input value={notes} onChange={(e)=>setNotes(e.target.value)} placeholder='Notes (optional)' />
   <label>Exception photo (optional): <input type='file' accept='image/jpeg' onChange={(e)=>uploadPhoto('EXCEPTION_PHOTO', e.target.files?.[0])} /></label>
-  <button onClick={async()=>{await api(`/driver/loads/${id}/status`,{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':`e-${Date.now()}`},body:JSON.stringify({status:'exception',reason_code:reason,notes})}); refresh();}}>Submit Exception</button>
+  <button onClick={()=>runDriverAction(async()=>{await api(`/driver/loads/${id}/status`,{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':`e-${Date.now()}`},body:JSON.stringify({status:'exception',reason_code:reason,notes})});})}>Submit Exception</button>
   </div>}</main>;
 }

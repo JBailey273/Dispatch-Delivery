@@ -8,6 +8,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
+from app.api.guardrails import CapacityMutationContext, assert_drop_load_invariants, guard_load_editable, mutate_capacity_or_409
 from app.api.services import find_matching_address, log_event, now_utc
 from app.billing.service import evaluate_limit, scheduling_gate
 from app.models.entities import CapacityHold, Customer, CustomerAddress, DeliveryMode, Drop, Load, OperationalBlackout, ProductCatalogItem, UserRole, WindowCapacity, WindowCode
@@ -90,9 +91,14 @@ def reserve_capacity(db: Session, tenant_id, day: date, window: WindowCode, requ
     if remaining < required_loads:
         logger.warning("capacity_conflict", extra={"tenant_id": str(tenant_id), "service_date": str(day), "window": window.value, "required_loads": required_loads, "remaining": remaining})
         raise HTTPException(status_code=409, detail={"code": "capacity_conflict", "message": "Insufficient window capacity"})
-    cap.capacity_used += required_loads
-    if cap.capacity_used > cap.capacity_total:
-        raise HTTPException(status_code=409, detail={"code": "capacity_conflict", "message": "Capacity exceeded"})
+    mutate_capacity_or_409(
+        db,
+        tenant_id,
+        day,
+        window,
+        required_loads,
+        CapacityMutationContext(source="api", reason="reserve_capacity"),
+    )
     return cap
 
 
@@ -211,19 +217,22 @@ def reschedule_drop(drop_id: str, payload: RescheduleIn, user: AuthUser = Depend
     if not drop:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
 
-    load_count = db.execute(select(func.count(Load.id)).where(Load.drop_id == drop.id, Load.tenant_id == user.tenant_id)).scalar_one()
-    if load_count == 0:
-        raise HTTPException(status_code=409, detail={"code": "invalid_drop", "message": "Drops without loads are not allowed"})
-    old_cap = db.execute(
-        select(WindowCapacity)
-        .where(WindowCapacity.tenant_id == user.tenant_id, WindowCapacity.service_date == drop.scheduled_date, WindowCapacity.window_code == drop.scheduled_window)
-        .with_for_update()
-    ).scalar_one()
+    loads = assert_drop_load_invariants(db, user.tenant_id, drop.id)
+    for load in loads:
+        guard_load_editable(load, "rescheduled")
+
+    load_count = len(loads)
+    old_cap = mutate_capacity_or_409(
+        db,
+        user.tenant_id,
+        drop.scheduled_date,
+        drop.scheduled_window,
+        -int(load_count),
+        CapacityMutationContext(source="api", reason="drop_reschedule_release", reference_id=drop_id),
+    )
     new_cap = reserve_capacity(db, user.tenant_id, payload.scheduled_date, payload.scheduled_window, int(load_count))
-    old_cap.capacity_used = max(0, old_cap.capacity_used - int(load_count))
     drop.scheduled_date = payload.scheduled_date
     drop.scheduled_window = payload.scheduled_window
-    loads = db.execute(select(Load).where(Load.drop_id == drop.id, Load.tenant_id == user.tenant_id)).scalars().all()
     for load in loads:
         load.route_date = payload.scheduled_date
         load.route_window = payload.scheduled_window

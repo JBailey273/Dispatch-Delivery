@@ -7,6 +7,7 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
+from app.api.guardrails import CapacityMutationContext, assert_drop_load_invariants, mutate_capacity_or_409
 from app.api.services import enqueue_sms_job, log_event, now_utc
 from app.billing.service import ensure_billing_account, get_plan
 from app.models.entities import (
@@ -243,6 +244,33 @@ def anomalies(user: AuthUser = Depends(require_roles(UserRole.ADMIN, UserRole.DI
     return {"anomalies": [{"event_type": e, "payload": p, "created_at": c.isoformat()} for e, p, c in rows]}
 
 
+
+
+@admin_router.get("/diagnostics/invariants")
+def invariants(user: AuthUser = Depends(require_roles(UserRole.ADMIN, UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+    drops_count = db.execute(select(func.count(Drop.id)).where(Drop.tenant_id == user.tenant_id)).scalar_one()
+    loads_count = db.execute(select(func.count(Load.id)).where(Load.tenant_id == user.tenant_id)).scalar_one()
+    capacity_totals = db.execute(
+        select(func.coalesce(func.sum(WindowCapacity.capacity_total), 0), func.coalesce(func.sum(WindowCapacity.capacity_used), 0)).where(WindowCapacity.tenant_id == user.tenant_id)
+    ).one()
+    orphaned_loads = db.execute(
+        select(func.count(Load.id)).where(Load.tenant_id == user.tenant_id, ~Load.drop_id.in_(select(Drop.id).where(Drop.tenant_id == user.tenant_id)))
+    ).scalar_one()
+    drops_without_loads = db.execute(
+        select(func.count(Drop.id)).where(
+            Drop.tenant_id == user.tenant_id,
+            ~Drop.id.in_(select(Load.drop_id).where(Load.tenant_id == user.tenant_id)),
+        )
+    ).scalar_one()
+    return {
+        "drops_count": int(drops_count or 0),
+        "loads_count": int(loads_count or 0),
+        "capacity_total": int(capacity_totals[0] or 0),
+        "capacity_used": int(capacity_totals[1] or 0),
+        "orphaned_loads": int(orphaned_loads or 0),
+        "drops_without_loads": int(drops_without_loads or 0),
+    }
+
 class BulkRescheduleIn(BaseModel):
     drop_ids: list[str]
     scheduled_date: date
@@ -258,20 +286,24 @@ def bulk_reschedule(payload: BulkRescheduleIn, user: AuthUser = Depends(require_
             if not drop:
                 results.append({"drop_id": drop_id, "status": "failed", "reason": "not_found"})
                 continue
-            loads = db.execute(select(Load).where(Load.drop_id == drop.id, Load.tenant_id == user.tenant_id)).scalars().all()
-            if not loads:
-                results.append({"drop_id": drop_id, "status": "failed", "reason": "no_loads"})
-                continue
+            loads = assert_drop_load_invariants(db, user.tenant_id, drop.id)
             load_count = len(loads)
-            cap = db.execute(select(WindowCapacity).where(WindowCapacity.tenant_id == user.tenant_id, WindowCapacity.service_date == payload.scheduled_date, WindowCapacity.window_code == payload.scheduled_window).with_for_update()).scalar_one_or_none()
-            if cap and cap.capacity_total - cap.capacity_used < load_count:
-                results.append({"drop_id": drop_id, "status": "failed", "reason": "capacity"})
-                continue
-            old_cap = db.execute(select(WindowCapacity).where(WindowCapacity.tenant_id == user.tenant_id, WindowCapacity.service_date == drop.scheduled_date, WindowCapacity.window_code == drop.scheduled_window).with_for_update()).scalar_one_or_none()
-            if cap:
-                cap.capacity_used += load_count
-            if old_cap:
-                old_cap.capacity_used = max(0, old_cap.capacity_used - load_count)
+            mutate_capacity_or_409(
+                db,
+                user.tenant_id,
+                payload.scheduled_date,
+                payload.scheduled_window,
+                load_count,
+                CapacityMutationContext(source="api", reason="bulk_reschedule_consume", reference_id=drop_id),
+            )
+            mutate_capacity_or_409(
+                db,
+                user.tenant_id,
+                drop.scheduled_date,
+                drop.scheduled_window,
+                -load_count,
+                CapacityMutationContext(source="api", reason="bulk_reschedule_release", reference_id=drop_id),
+            )
             drop.scheduled_date = payload.scheduled_date
             drop.scheduled_window = payload.scheduled_window
             for l in loads:
