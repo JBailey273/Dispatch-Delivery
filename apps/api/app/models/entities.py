@@ -1,9 +1,21 @@
 import enum
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, time
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    Time,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -16,12 +28,38 @@ class UserRole(str, enum.Enum):
     DRIVER = "driver"
 
 
+class DeliveryMode(str, enum.Enum):
+    BULK_LOAD = "bulk_load"
+    BAG = "bag"
+    PALLET = "pallet"
+
+
+class WindowCode(str, enum.Enum):
+    A = "A"
+    B = "B"
+
+
+class LoadStatus(str, enum.Enum):
+    PENDING = "pending"
+    LOADED_LEAVING = "loaded_leaving"
+    EXCEPTION = "exception"
+    DELIVERED = "delivered"
+    CANCELLED = "cancelled"
+
+
 class Tenant(Base, TimestampMixin):
     __tablename__ = "tenants"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    timezone: Mapped[str] = mapped_column(String(64), default="America/New_York", nullable=False)
+    service_days: Mapped[list[str]] = mapped_column(JSON, default=lambda: ["mon", "tue", "wed", "thu", "fri"], nullable=False)
+    windowA_start: Mapped[time] = mapped_column(Time, default=time(9, 0), nullable=False)
+    windowA_end: Mapped[time] = mapped_column(Time, default=time(13, 0), nullable=False)
+    windowB_start: Mapped[time] = mapped_column(Time, default=time(13, 0), nullable=False)
+    windowB_end: Mapped[time] = mapped_column(Time, default=time(17, 0), nullable=False)
+    capacity_per_window: Mapped[int] = mapped_column(Integer, default=4, nullable=False)
 
 
 class User(Base, TenantScopedMixin, TimestampMixin):
@@ -34,31 +72,27 @@ class User(Base, TenantScopedMixin, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
-class Channel(Base, TenantScopedMixin, TimestampMixin):
-    __tablename__ = "channels"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
-    api_key_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-
-
 class ProductCatalogItem(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "product_catalog_items"
+    __table_args__ = (UniqueConstraint("tenant_id", "sku", name="uq_product_tenant_sku"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     sku: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    metadata_json: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    delivery_mode: Mapped[DeliveryMode] = mapped_column(Enum(DeliveryMode, name="delivery_mode"), nullable=False)
+    unit: Mapped[str] = mapped_column(String(32), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    category: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    bulk_group: Mapped[str] = mapped_column(String(120), nullable=False)
 
 
 class Customer(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "customers"
+    __table_args__ = (UniqueConstraint("tenant_id", "phone_e164", name="uq_customer_tenant_phone"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    external_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    phone_e164: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
+    phone_e164: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
 
     addresses = relationship("CustomerAddress", back_populates="customer")
 
@@ -75,29 +109,21 @@ class CustomerAddress(Base, TenantScopedMixin, TimestampMixin):
     state: Mapped[str] = mapped_column(String(120), nullable=False)
     postal_code: Mapped[str] = mapped_column(String(20), nullable=False)
     country: Mapped[str] = mapped_column(String(2), nullable=False, default="US")
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     customer = relationship("Customer", back_populates="addresses")
 
 
 class WindowCapacity(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "window_capacities"
+    __table_args__ = (UniqueConstraint("tenant_id", "service_date", "window_code", name="uq_capacity_window"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     service_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
-    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    capacity_units: Mapped[int] = mapped_column(Integer, nullable=False)
-    used_units: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-
-
-class Hold(Base, TenantScopedMixin, TimestampMixin):
-    __tablename__ = "holds"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    customer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True)
-    status: Mapped[str] = mapped_column(String(50), nullable=False, default="active")
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
-    payload_json: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    window_code: Mapped[WindowCode] = mapped_column(Enum(WindowCode, name="window_code"), nullable=False)
+    capacity_total: Mapped[int] = mapped_column(Integer, nullable=False)
+    capacity_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class Drop(Base, TenantScopedMixin, TimestampMixin):
@@ -107,7 +133,8 @@ class Drop(Base, TenantScopedMixin, TimestampMixin):
     customer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=False)
     address_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("customer_addresses.id"), nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="new")
-    scheduled_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    scheduled_date: Mapped[date] = mapped_column(Date, nullable=False)
+    scheduled_window: Mapped[WindowCode] = mapped_column(Enum(WindowCode, name="drop_window_code"), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
@@ -115,10 +142,17 @@ class Load(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "loads"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    drop_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("drops.id"), nullable=False)
     driver_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")
-    route_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    total_stops: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    truck_label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    status: Mapped[LoadStatus] = mapped_column(Enum(LoadStatus, name="load_status"), nullable=False, default=LoadStatus.PENDING)
+    route_date: Mapped[date] = mapped_column(Date, nullable=False)
+    route_window: Mapped[WindowCode] = mapped_column(Enum(WindowCode, name="load_window_code"), nullable=False)
+    bulk_group_snapshot: Mapped[str] = mapped_column(String(120), nullable=False)
+    material_name_snapshot: Mapped[str] = mapped_column(String(255), nullable=False)
+    qty: Mapped[int] = mapped_column(Integer, nullable=False)
+    unit: Mapped[str] = mapped_column(String(32), nullable=False)
+    idempotency_key_last: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
 
 class EventLog(Base, TenantScopedMixin):
@@ -127,5 +161,5 @@ class EventLog(Base, TenantScopedMixin):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     event_type: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     source: Mapped[str] = mapped_column(String(120), nullable=False)
-    payload_json: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    payload_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)

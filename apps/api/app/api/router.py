@@ -9,6 +9,7 @@ from app.api.routes import (
     drops,
     product_catalog,
     sms,
+    tenant,
     uploads,
 )
 
@@ -20,5 +21,6 @@ api_router.include_router(drops.router)
 api_router.include_router(availability.router)
 api_router.include_router(dispatch.router)
 api_router.include_router(driver.router)
+api_router.include_router(tenant.router)
 api_router.include_router(uploads.router)
 api_router.include_router(sms.router)
