@@ -4,12 +4,18 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
+from app.api.dispatch_suggestions import (
+    build_dispatch_suggestions,
+    get_address_history,
+    get_driver_performance_signals,
+    invalidate_suggestion_cache,
+)
 from app.api.services import enqueue_sms_job, log_event, now_utc
-from app.models.entities import Customer, Drop, Load, LoadStatus, User, UserRole, WindowCapacity, WindowCode
+from app.models.entities import Customer, CustomerAddress, Drop, Load, LoadStatus, User, UserRole, WindowCapacity
 
 router = APIRouter(prefix="/dispatch", tags=["dispatch"])
 logger = logging.getLogger("dispatch.ops")
@@ -32,6 +38,7 @@ def dispatch_schedule(day: date, user: AuthUser = Depends(require_roles(UserRole
     by_window = {"A": defaultdict(list), "B": defaultdict(list)}
     for load, drop, driver in loads:
         key = driver.email if driver else "Unassigned"
+        history = get_address_history(db, str(user.tenant_id), str(drop.address_id))
         by_window[load.route_window.value][key].append(
             {
                 "id": str(load.id),
@@ -40,6 +47,11 @@ def dispatch_schedule(day: date, user: AuthUser = Depends(require_roles(UserRole
                 "material": load.material_name_snapshot,
                 "qty": load.qty,
                 "unit": load.unit,
+                "historical_flags": {
+                    "exception_count": history.exception_count,
+                    "has_exception_history": history.exception_count > 0,
+                    "recent_notes": history.recent_notes,
+                },
             }
         )
 
@@ -101,6 +113,7 @@ def send_reschedule_sms(drop_id: str, payload: RescheduleSmsIn, user: AuthUser =
     drop.last_reschedule_sms_at = now_utc()
     log_event(db, user.tenant_id, "SMS_SENT", "dispatch", {"drop_id": drop_id, "kind": "reschedule", "preview": payload.message})
     db.commit()
+    invalidate_suggestion_cache(str(user.tenant_id))
     return {"status": "queued", "sent_at": drop.last_reschedule_sms_at.isoformat()}
 
 
@@ -121,6 +134,7 @@ def assign_loads(payload: AssignIn, user: AuthUser = Depends(require_roles(UserR
         l.status = LoadStatus.ASSIGNED
     log_event(db, user.tenant_id, "loads.assigned", "api", payload.model_dump())
     db.commit()
+    invalidate_suggestion_cache(str(user.tenant_id))
     return {"updated": len(rows)}
 
 
@@ -144,6 +158,7 @@ def reassign_all(payload: ReassignAllIn, user: AuthUser = Depends(require_roles(
         l.driver_user_id = payload.to_driver_user_id
     log_event(db, user.tenant_id, "loads.reassigned_all", "api", payload.model_dump(mode="json"))
     db.commit()
+    invalidate_suggestion_cache(str(user.tenant_id))
     return {"updated": len(rows)}
 
 
@@ -157,4 +172,59 @@ def assign_entire_drop(drop_id: str, payload: AssignIn, user: AuthUser = Depends
             l.status = LoadStatus.ASSIGNED
     log_event(db, user.tenant_id, "drop.assigned", "api", {"drop_id": drop_id, "driver_user_id": payload.driver_user_id})
     db.commit()
+    invalidate_suggestion_cache(str(user.tenant_id))
     return {"updated": len(rows)}
+
+
+@router.get("/suggestions")
+def get_dispatch_suggestions(day: date, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+    return {"date": str(day), "suggestions": build_dispatch_suggestions(db, str(user.tenant_id), day)}
+
+
+@router.get("/history/address/{address_id}")
+def address_history(address_id: str, day: date, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+    address = db.execute(
+        select(CustomerAddress).where(CustomerAddress.id == address_id, CustomerAddress.tenant_id == user.tenant_id)
+    ).scalar_one_or_none()
+    if not address:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Address not found"})
+    history = get_address_history(db, str(user.tenant_id), address_id)
+    return {
+        "address_id": address_id,
+        "exception_count": history.exception_count,
+        "delivered_count": history.delivered_count,
+        "typical_delivery_hour_utc": history.typical_delivery_hour_utc,
+        "recent_notes": history.recent_notes,
+        "driver_performance_signals": [signal.__dict__ for signal in get_driver_performance_signals(db, str(user.tenant_id), day)],
+    }
+
+
+class SuggestionEventIn(BaseModel):
+    suggestion_type: str
+    referenced_entities: dict
+
+
+@router.post("/suggestions/applied")
+def log_suggestion_applied(payload: SuggestionEventIn, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+    log_event(
+        db,
+        user.tenant_id,
+        "SUGGESTION_APPLIED",
+        "dispatch",
+        {"suggestion_type": payload.suggestion_type, "referenced_entities": payload.referenced_entities},
+    )
+    db.commit()
+    return {"status": "logged"}
+
+
+@router.post("/suggestions/dismissed")
+def log_suggestion_dismissed(payload: SuggestionEventIn, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+    log_event(
+        db,
+        user.tenant_id,
+        "SUGGESTION_DISMISSED",
+        "dispatch",
+        {"suggestion_type": payload.suggestion_type, "referenced_entities": payload.referenced_entities},
+    )
+    db.commit()
+    return {"status": "logged"}
