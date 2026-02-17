@@ -70,6 +70,10 @@ class Tenant(Base, TimestampMixin):
     windowB_start: Mapped[time] = mapped_column(Time, default=time(13, 0), nullable=False)
     windowB_end: Mapped[time] = mapped_column(Time, default=time(17, 0), nullable=False)
     capacity_per_window: Mapped[int] = mapped_column(Integer, default=4, nullable=False)
+    optimization_reordering_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    optimization_reassignment_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    optimization_drop_split_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    optimization_aggressiveness: Mapped[str] = mapped_column(String(16), default="medium", nullable=False)
 
 
 class User(Base, TenantScopedMixin, TimestampMixin):
@@ -153,6 +157,7 @@ class Drop(Base, TenantScopedMixin, TimestampMixin):
     scheduled_window: Mapped[WindowCode] = mapped_column(Enum(WindowCode, name="drop_window_code"), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     drop_photos: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    split_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     notify_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_reschedule_sms_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -176,6 +181,24 @@ class Load(Base, TenantScopedMixin, TimestampMixin):
     exception_photo_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     exception_reason_code: Mapped[ExceptionReasonCode | None] = mapped_column(Enum(ExceptionReasonCode, name="exception_reason_code"), nullable=True)
     exception_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    route_sequence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class OptimizationProposal(Base, TenantScopedMixin, TimestampMixin):
+    __tablename__ = "optimization_proposals"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    proposal_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    proposal_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    window_code: Mapped[WindowCode] = mapped_column(Enum(WindowCode, name="optimization_window_code"), nullable=False)
+    confidence_level: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="proposed")
+    explanation: Mapped[str] = mapped_column(Text, nullable=False)
+    estimated_benefit: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    affected_load_ids: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    before_state: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    after_state: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    application_record: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
 
 
