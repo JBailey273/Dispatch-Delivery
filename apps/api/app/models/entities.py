@@ -178,9 +178,27 @@ class CapacityHold(Base, TenantScopedMixin, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     service_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     window_code: Mapped[WindowCode] = mapped_column(Enum(WindowCode, name="window_code"), nullable=False)
+    hold_token: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    cart_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     units_held: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    converted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    converted_drop_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("drops.id"), nullable=True)
+
+
+class ChannelType(str, enum.Enum):
+    WOOCOMMERCE = "woocommerce"
+
+
+class Channel(Base, TenantScopedMixin, TimestampMixin):
+    __tablename__ = "channels"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    channel_type: Mapped[ChannelType] = mapped_column(Enum(ChannelType, name="channel_type"), nullable=False)
+    api_key_hash: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 class EventLog(Base, TenantScopedMixin):
     __tablename__ = "event_logs"

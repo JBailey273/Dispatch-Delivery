@@ -82,23 +82,13 @@ def expire_holds_job() -> dict:
                 """
                 SELECT id, tenant_id, service_date, window_code, units_held
                 FROM capacity_holds
-                WHERE expires_at <= :now AND released_at IS NULL
+                WHERE expires_at <= :now AND released_at IS NULL AND converted_at IS NULL
                 FOR UPDATE
                 """
             ),
             {"now": now},
         ).mappings().all()
         for hold in holds:
-            conn.execute(
-                text(
-                    """
-                    UPDATE window_capacities
-                    SET capacity_used = GREATEST(capacity_used - :units, 0)
-                    WHERE tenant_id = :tenant_id AND service_date = :service_date AND window_code = :window_code
-                    """
-                ),
-                {"units": hold["units_held"], "tenant_id": hold["tenant_id"], "service_date": hold["service_date"], "window_code": hold["window_code"]},
-            )
             conn.execute(text("UPDATE capacity_holds SET released_at = :now WHERE id = :id"), {"now": now, "id": hold["id"]})
             _log_event(conn, str(hold["tenant_id"]), "HOLD_EXPIRED", {"hold_id": str(hold["id"]), "units": hold["units_held"]})
             released += 1
