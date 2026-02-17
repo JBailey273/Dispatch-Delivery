@@ -4,7 +4,7 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
@@ -30,7 +30,7 @@ def dispatch_schedule(day: date, user: AuthUser = Depends(require_roles(UserRole
     if orphaned:
         logger.error("orphaned_loads_detected", extra={"tenant_id": str(user.tenant_id), "count": len(orphaned)})
     caps = db.execute(select(WindowCapacity).where(WindowCapacity.tenant_id == user.tenant_id, WindowCapacity.service_date == day)).scalars().all()
-    cap_map = {c.window_code.value: {"used": c.capacity_used, "total": c.capacity_total} for c in caps}
+    cap_map = {c.window_code.value: {"used": c.capacity_used, "total": c.capacity_total, "remaining_capacity": c.capacity_total - c.capacity_used} for c in caps}
     loads = db.execute(
         select(Load, Drop, User)
         .join(Drop, Drop.id == Load.drop_id)
@@ -61,8 +61,8 @@ def dispatch_schedule(day: date, user: AuthUser = Depends(require_roles(UserRole
     return {
         "date": str(day),
         "windows": {
-            "A": {"capacity": cap_map.get("A", {"used": 0, "total": 0}), "groups": by_window["A"]},
-            "B": {"capacity": cap_map.get("B", {"used": 0, "total": 0}), "groups": by_window["B"]},
+            "A": {"capacity": cap_map.get("A", {"used": 0, "total": 0, "remaining_capacity": 0}), "groups": by_window["A"]},
+            "B": {"capacity": cap_map.get("B", {"used": 0, "total": 0, "remaining_capacity": 0}), "groups": by_window["B"]},
         },
     }
 
@@ -75,6 +75,7 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
     if not row:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
     drop, customer = row
+    required_loads = db.execute(select(func.count(Load.id)).where(Load.tenant_id == user.tenant_id, Load.drop_id == drop.id)).scalar_one()
     return {
         "id": str(drop.id),
         "scheduled_date": str(drop.scheduled_date),
@@ -82,6 +83,7 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
         "notify_sent_at": drop.notify_sent_at.isoformat() if drop.notify_sent_at else None,
         "last_reschedule_sms_at": drop.last_reschedule_sms_at.isoformat() if drop.last_reschedule_sms_at else None,
         "customer_phone": customer.phone_e164,
+        "required_loads": int(required_loads or 0),
     }
 
 
@@ -99,7 +101,14 @@ def send_reschedule_sms(drop_id: str, payload: RescheduleSmsIn, user: AuthUser =
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
     drop, customer = row
     if drop.last_reschedule_sms_at and now_utc() - drop.last_reschedule_sms_at < timedelta(minutes=5) and not payload.admin_override:
-        raise HTTPException(status_code=409, detail={"code": "sms_rate_limited", "message": "Reschedule SMS already sent recently"})
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "sms_rate_limited",
+                "message": "Could not send reschedule text because one was already sent in the last 5 minutes.",
+                "next_step": "Wait a few minutes or use admin override if this is urgent.",
+            },
+        )
 
     job = {
         "type": "SEND_SMS",
@@ -111,7 +120,14 @@ def send_reschedule_sms(drop_id: str, payload: RescheduleSmsIn, user: AuthUser =
     }
     dedupe_key = f"reschedule-{drop.id}-{int(now_utc().timestamp() // 300)}"
     if not enqueue_sms_job(job, dedupe_key=dedupe_key):
-        raise HTTPException(status_code=409, detail={"code": "duplicate_sms", "message": "Duplicate SMS request"})
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "duplicate_sms",
+                "message": "Could not queue this reschedule text because the same message is already queued.",
+                "next_step": "Refresh drop details and retry with updated timing or content.",
+            },
+        )
 
     drop.last_reschedule_sms_at = now_utc()
     log_event(db, user.tenant_id, "SMS_SENT", "dispatch", {"drop_id": drop_id, "kind": "reschedule", "preview": payload.message})

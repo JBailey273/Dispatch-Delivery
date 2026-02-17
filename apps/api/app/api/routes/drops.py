@@ -61,7 +61,14 @@ def _is_blacked_out(db: Session, tenant_id, day: date, window: WindowCode) -> bo
 
 def reserve_capacity(db: Session, tenant_id, day: date, window: WindowCode, required_loads: int):
     if _is_blacked_out(db, tenant_id, day, window):
-        raise HTTPException(status_code=409, detail={"code": "window_blacked_out", "message": "Window unavailable"})
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "window_blacked_out",
+                "message": f"Could not schedule this drop: {day} window {window.value} is blocked for operations.",
+                "next_step": "Choose another day/window and retry.",
+            },
+        )
     cap = db.execute(
         select(WindowCapacity)
         .where(WindowCapacity.tenant_id == tenant_id, WindowCapacity.service_date == day, WindowCapacity.window_code == window)
@@ -90,7 +97,14 @@ def reserve_capacity(db: Session, tenant_id, day: date, window: WindowCode, requ
     remaining = cap.capacity_total - cap.capacity_used - active_holds
     if remaining < required_loads:
         logger.warning("capacity_conflict", extra={"tenant_id": str(tenant_id), "service_date": str(day), "window": window.value, "required_loads": required_loads, "remaining": remaining})
-        raise HTTPException(status_code=409, detail={"code": "capacity_conflict", "message": "Insufficient window capacity"})
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "capacity_conflict",
+                "message": f"Could not schedule this drop: {day} window {window.value} needs {required_loads} loads but only {remaining} are open.",
+                "next_step": "Pick a window with enough remaining capacity or reduce the selected bulk groups.",
+            },
+        )
     mutate_capacity_or_409(
         db,
         tenant_id,
@@ -206,6 +220,7 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
 class RescheduleIn(BaseModel):
     scheduled_date: date
     scheduled_window: WindowCode
+    allow_split: bool = False
 
 
 @router.post("/{drop_id}/reschedule")
@@ -216,6 +231,24 @@ def reschedule_drop(drop_id: str, payload: RescheduleIn, user: AuthUser = Depend
     drop = db.execute(select(Drop).where(Drop.id == drop_id, Drop.tenant_id == user.tenant_id).with_for_update()).scalar_one_or_none()
     if not drop:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
+    if payload.allow_split:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "split_not_supported",
+                "message": "Could not reschedule this drop with split loads: dispatcher reschedule defaults to no split.",
+                "next_step": "Retry with allow_split=false (or omit it) so all loads move together.",
+            },
+        )
+    if payload.scheduled_date == drop.scheduled_date and payload.scheduled_window == drop.scheduled_window:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "already_scheduled",
+                "message": "Drop is already on that date/window, so nothing changed.",
+                "next_step": "Choose a different date/window before rescheduling.",
+            },
+        )
 
     loads = assert_drop_load_invariants(db, user.tenant_id, drop.id)
     for load in loads:

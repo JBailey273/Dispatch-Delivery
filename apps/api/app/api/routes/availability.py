@@ -220,7 +220,19 @@ def check_availability(
             total = cap.capacity_total if cap else tenant.capacity_per_window
             used = cap.capacity_used if cap else 0
             active_holds = _active_holds(db, user.tenant_id, d, w)
-            windows.append({"date": str(d), "window": w.value, "used": used, "active_holds": active_holds, "total": total, "available": (total - used - active_holds) >= required_loads})
+            remaining_capacity = total - used - active_holds
+            windows.append(
+                {
+                    "date": str(d),
+                    "window": w.value,
+                    "used": used,
+                    "active_holds": active_holds,
+                    "total": total,
+                    "required_loads": required_loads,
+                    "remaining_capacity": remaining_capacity,
+                    "available": remaining_capacity >= required_loads,
+                }
+            )
     return {"required_loads": required_loads, "windows": windows}
 
 
@@ -253,14 +265,28 @@ def channel_availability(payload: AvailabilityIn, channel: ChannelAuth = Depends
 @router.post("/holds")
 def create_hold(payload: HoldCreateIn, channel: ChannelAuth = Depends(require_channel), db: Session = Depends(db_dep)):
     if _is_blacked_out(db, channel.tenant_id, payload.date, payload.window):
-        raise HTTPException(status_code=409, detail={"code": "window_blacked_out", "message": "Window unavailable"})
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "window_blacked_out",
+                "message": f"Could not hold capacity: {payload.date} window {payload.window.value} is blocked.",
+                "next_step": "Choose another window/date and retry checkout.",
+            },
+        )
     cap = locked_capacity_row(db, channel.tenant_id, payload.date, payload.window)
     active_holds = _active_holds(db, channel.tenant_id, payload.date, payload.window)
     remaining = cap.capacity_total - cap.capacity_used - active_holds
     if remaining < payload.required_loads:
         log_event(db, channel.tenant_id, "hold.failed", "channel", {"reason": "insufficient_capacity", "date": str(payload.date), "window": payload.window.value})
         db.commit()
-        raise HTTPException(status_code=409, detail={"code": "capacity_conflict", "message": "Insufficient window capacity"})
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "capacity_conflict",
+                "message": f"Could not hold capacity: needed {payload.required_loads} loads but only {remaining} are open.",
+                "next_step": "Choose a less full window or reduce cart load requirements.",
+            },
+        )
 
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
     hold = CapacityHold(
@@ -291,23 +317,59 @@ def confirm_hold(hold_token: str, payload: ConfirmOrderIn, channel: ChannelAuth 
         hold.released_at = now_utc()
         log_event(db, channel.tenant_id, "hold.failed", "channel", {"hold_token": hold_token, "reason": "expired"})
         db.commit()
-        raise HTTPException(status_code=409, detail={"code": "hold_expired", "message": "Hold expired"})
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "hold_expired",
+                "message": "Could not confirm order because the hold expired.",
+                "next_step": "Refresh availability and reserve a new window before submitting again.",
+            },
+        )
 
     required_loads, grouped = _required_loads(db, channel.tenant_id, payload.items)
     if _is_blacked_out(db, channel.tenant_id, payload.drop.requested_date, payload.drop.requested_window):
-        raise HTTPException(status_code=409, detail={"code": "window_blacked_out", "message": "Window unavailable"})
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "window_blacked_out",
+                "message": f"Could not confirm order: {payload.drop.requested_date} window {payload.drop.requested_window.value} is blocked.",
+                "next_step": "Pick a different available window and retry.",
+            },
+        )
     if required_loads != hold.units_held:
         log_event(db, channel.tenant_id, "hold.failed", "channel", {"hold_token": hold_token, "reason": "load_mismatch", "expected": hold.units_held, "actual": required_loads})
         db.commit()
-        raise HTTPException(status_code=409, detail={"code": "hold_mismatch", "message": "Hold no longer matches cart"})
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "hold_mismatch",
+                "message": "Could not confirm order because cart load requirements changed since hold creation.",
+                "next_step": "Refresh the cart, request a new hold, then submit again.",
+            },
+        )
 
     if payload.drop.requested_date != hold.service_date or payload.drop.requested_window != hold.window_code:
-        raise HTTPException(status_code=409, detail={"code": "hold_window_mismatch", "message": "Hold window mismatch"})
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "hold_window_mismatch",
+                "message": "Could not confirm order because the selected date/window does not match the held slot.",
+                "next_step": "Use the held date/window or create a new hold for the new choice.",
+            },
+        )
 
     cap = locked_capacity_row(db, channel.tenant_id, hold.service_date, hold.window_code)
     if cap.capacity_total - cap.capacity_used < required_loads:
         logger.warning("failed_hold_confirmation", extra={"tenant_id": str(channel.tenant_id), "hold_token": hold_token, "reason": "capacity_conflict"})
-        raise HTTPException(status_code=409, detail={"code": "capacity_conflict", "message": "Insufficient window capacity"})
+        remaining = cap.capacity_total - cap.capacity_used
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "capacity_conflict",
+                "message": f"Could not confirm order: needed {required_loads} loads but only {remaining} remain in that window.",
+                "next_step": "Choose another available window and retry.",
+            },
+        )
 
     customer, address = _upsert_customer_and_address(db, channel.tenant_id, payload)
     drop, load_ids = _create_drop_and_loads(db, channel.tenant_id, payload, grouped, customer.id, address.id)
