@@ -1,10 +1,10 @@
 import time
 
-from worker.jobs import expire_holds_job
+from worker.jobs import expire_holds_job, process_sms_queue_once
 
 
 if __name__ == "__main__":
-    # V1 Build Scope: Render background worker process scaffold.
     while True:
+        process_sms_queue_once(timeout_s=1)
         expire_holds_job()
-        time.sleep(30)
+        time.sleep(5)

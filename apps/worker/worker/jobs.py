@@ -1,13 +1,105 @@
-# V1 Build Scope: background worker jobs scaffold.
+import json
+import os
+from datetime import datetime, timezone
+from uuid import uuid4
+
+from redis import Redis
+from sqlalchemy import create_engine, text
+from twilio.rest import Client
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg2://postgres:postgres@localhost:5432/dispatch")
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
+TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
+
+engine = create_engine(DATABASE_URL, future=True)
+redis_client = Redis.from_url(REDIS_URL, decode_responses=True)
 
 
-def send_sms_job(payload: dict) -> dict:
-    """Placeholder Twilio SMS sender job."""
-    # TODO: Integrate Twilio client and delivery status handling in later phases.
-    return {"status": "queued-placeholder", "payload": payload}
+def _render_message(job: dict) -> str:
+    if job.get("template") == "on_the_way":
+        return "Your delivery is on the way. Reply to this message if you need help."
+    if job.get("template") == "custom":
+        return job["message"]
+    return "Dispatch update"
+
+
+def _log_event(conn, tenant_id: str, event_type: str, payload: dict):
+    conn.execute(
+        text(
+            """
+            INSERT INTO event_logs (id, tenant_id, event_type, source, payload_json, created_at)
+            VALUES (:id, :tenant_id, :event_type, 'worker', CAST(:payload_json AS JSON), :created_at)
+            """
+        ),
+        {
+            "id": str(uuid4()),
+            "tenant_id": tenant_id,
+            "event_type": event_type,
+            "payload_json": json.dumps(payload),
+            "created_at": datetime.now(timezone.utc),
+        },
+    )
+
+
+def process_sms_job(raw_job: str) -> dict:
+    job = json.loads(raw_job)
+    message = _render_message(job)
+    sid = "twilio-disabled"
+    if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER:
+        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        resp = client.messages.create(to=job["to"], from_=TWILIO_FROM_NUMBER, body=message)
+        sid = resp.sid
+
+    with engine.begin() as conn:
+        _log_event(conn, job["tenant_id"], "SMS_SENT", {"drop_id": job.get("drop_id"), "to": job["to"], "message": message, "twilio_message_sid": sid})
+        if job.get("drop_id") and job.get("template") == "on_the_way":
+            conn.execute(text("UPDATE drops SET notify_sent_at = COALESCE(notify_sent_at, :ts) WHERE id = :drop_id"), {"ts": datetime.now(timezone.utc), "drop_id": job["drop_id"]})
+    return {"status": "sent", "sid": sid}
+
+
+def process_sms_queue_once(timeout_s: int = 1) -> dict:
+    popped = redis_client.blpop("jobs:sms", timeout=timeout_s)
+    if not popped:
+        return {"status": "idle"}
+    _, raw = popped
+    for attempt in range(3):
+        try:
+            return process_sms_job(raw)
+        except Exception as exc:
+            if attempt == 2:
+                return {"status": "failed", "error": str(exc)}
+    return {"status": "failed"}
 
 
 def expire_holds_job() -> dict:
-    """Placeholder cleanup job for expired holds."""
-    # TODO: Query DB and release capacity/holds per V1 business rules.
-    return {"status": "completed-placeholder"}
+    now = datetime.now(timezone.utc)
+    released = 0
+    with engine.begin() as conn:
+        holds = conn.execute(
+            text(
+                """
+                SELECT id, tenant_id, service_date, window_code, units_held
+                FROM capacity_holds
+                WHERE expires_at <= :now AND released_at IS NULL
+                FOR UPDATE
+                """
+            ),
+            {"now": now},
+        ).mappings().all()
+        for hold in holds:
+            conn.execute(
+                text(
+                    """
+                    UPDATE window_capacities
+                    SET capacity_used = GREATEST(capacity_used - :units, 0)
+                    WHERE tenant_id = :tenant_id AND service_date = :service_date AND window_code = :window_code
+                    """
+                ),
+                {"units": hold["units_held"], "tenant_id": hold["tenant_id"], "service_date": hold["service_date"], "window_code": hold["window_code"]},
+            )
+            conn.execute(text("UPDATE capacity_holds SET released_at = :now WHERE id = :id"), {"now": now, "id": hold["id"]})
+            _log_event(conn, str(hold["tenant_id"]), "HOLD_EXPIRED", {"hold_id": str(hold["id"]), "units": hold["units_held"]})
+            released += 1
+    return {"status": "completed", "released": released}
