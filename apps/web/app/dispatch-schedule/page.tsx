@@ -210,6 +210,7 @@ export default function DispatchSchedulePage() {
           <section key={w} style={{ border: '1px solid #ddd', borderRadius: 8, marginBottom: 12, padding: 8 }}>
             <h2>
               Window {w} ({schedule.windows[w].capacity.used}/{schedule.windows[w].capacity.total}) • Remaining {schedule.windows[w].capacity.remaining_capacity}
+              {schedule.windows[w].disabled ? ' • Disabled for new scheduling' : ''}
             </h2>
             {schedule.windows[w].capacity.total > 0 && schedule.windows[w].capacity.used / schedule.windows[w].capacity.total >= 0.8 && (
               <p style={{ color: '#a15c00', marginTop: 0 }}>Near capacity: confirm remaining slots before assigning more loads.</p>

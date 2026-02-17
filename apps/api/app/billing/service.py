@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import HTTPException
@@ -31,9 +31,9 @@ def ensure_billing_account(db: Session, tenant_id, default_plan_id: str = "start
         tenant_id=tenant_id,
         plan_id=plan.plan_id,
         status=BillingAccountStatus.TRIAL,
-        trial_ends_at=datetime.now(UTC) + timedelta(days=14),
-        current_period_start=datetime.now(UTC),
-        current_period_end=datetime.now(UTC) + timedelta(days=30),
+        trial_ends_at=datetime.now(timezone.utc) + timedelta(days=14),
+        current_period_start=datetime.now(timezone.utc),
+        current_period_end=datetime.now(timezone.utc) + timedelta(days=30),
     )
     db.add(account)
     db.flush()
