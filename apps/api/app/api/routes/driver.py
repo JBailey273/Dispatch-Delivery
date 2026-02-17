@@ -1,8 +1,7 @@
 from datetime import date
-
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
@@ -15,15 +14,41 @@ router = APIRouter(prefix="/driver", tags=["driver"])
 @router.get("/loads")
 def poll_driver_loads(
     day: date = Query(...),
-    server_version: int | None = Query(default=None),
+    server_version: str | None = Query(default=None),
+    known_load_ids: list[str] = Query(default=[]),
     user: AuthUser = Depends(require_roles(UserRole.DRIVER)),
     db: Session = Depends(db_dep),
 ):
     rows = db.execute(
         select(Load).where(Load.tenant_id == user.tenant_id, Load.route_date == day, Load.driver_user_id == user.user_id)
     ).scalars().all()
-    data = [{"id": str(l.id), "drop_id": str(l.drop_id), "status": l.status.value, "material": l.material_name_snapshot, "qty": l.qty, "unit": l.unit} for l in rows]
-    return {"server_version": int(day.strftime("%Y%m%d")), "removed_load_ids": [], "loads": data, "server_time": now_utc().isoformat(), "client_server_version": server_version}
+    current_load_ids = {str(l.id) for l in rows}
+    removed_load_ids = [load_id for load_id in known_load_ids if load_id not in current_load_ids]
+    max_revision_ts = db.execute(
+        select(func.max(Load.updated_at)).where(Load.tenant_id == user.tenant_id, Load.route_date == day)
+    ).scalar_one_or_none()
+    revision_millis = int(max_revision_ts.timestamp() * 1000) if max_revision_ts else 0
+    route_load_count = db.execute(select(func.count()).select_from(Load).where(Load.tenant_id == user.tenant_id, Load.route_date == day)).scalar_one()
+    computed_server_version = f"{revision_millis}:{route_load_count}"
+    data = [
+        {
+            "id": str(l.id),
+            "drop_id": str(l.drop_id),
+            "status": l.status.value,
+            "material": l.material_name_snapshot,
+            "qty": l.qty,
+            "unit": l.unit,
+            "server_version": str(int(l.updated_at.timestamp() * 1000)),
+        }
+        for l in rows
+    ]
+    return {
+        "server_timestamp": now_utc().isoformat(),
+        "server_version": computed_server_version,
+        "client_server_version": server_version,
+        "removed_load_ids": removed_load_ids,
+        "loads": data,
+    }
 
 
 @router.get("/loads/{load_id}")
@@ -32,10 +57,12 @@ def driver_load_detail(load_id: str, user: AuthUser = Depends(require_roles(User
     if not load:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Load not found"})
     if load.driver_user_id != user.user_id:
-        raise HTTPException(status_code=403, detail={"code": "forbidden", "message": "Load not assigned to driver"})
+        raise HTTPException(status_code=403, detail={"code": "load_reassigned", "message": "Load not assigned to driver"})
     drop = db.execute(select(Drop).where(Drop.id == load.drop_id, Drop.tenant_id == user.tenant_id)).scalar_one()
     addr = db.execute(select(CustomerAddress).where(CustomerAddress.id == drop.address_id, CustomerAddress.tenant_id == user.tenant_id)).scalar_one()
     return {
+        "server_timestamp": now_utc().isoformat(),
+        "server_version": str(int(load.updated_at.timestamp() * 1000)),
         "id": str(load.id),
         "drop_id": str(drop.id),
         "status": load.status.value,
@@ -57,6 +84,7 @@ def driver_load_detail(load_id: str, user: AuthUser = Depends(require_roles(User
 
 class StatusIn(BaseModel):
     status: str
+    client_server_version: str | None = None
     reason_code: ExceptionReasonCode | None = None
     notes: str | None = None
 
@@ -89,9 +117,25 @@ def update_load_status(
     if not load:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Load not found"})
     if load.driver_user_id != user.user_id:
-        raise HTTPException(status_code=403, detail={"code": "forbidden", "message": "Load not assigned to driver"})
+        raise HTTPException(status_code=403, detail={"code": "load_reassigned", "message": "Load not assigned to driver"})
+    current_server_version = str(int(load.updated_at.timestamp() * 1000))
+    if payload.client_server_version and payload.client_server_version != current_server_version:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "stale_state", "message": "Load state changed. Please refresh before retrying."},
+        )
     if idempotency_key and load.idempotency_key_last == idempotency_key:
-        return {"status": load.status.value, "idempotent": True}
+        if load.status != requested:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "idempotency_conflict", "message": "Idempotency key already used for a different status"},
+            )
+        return {
+            "status": load.status.value,
+            "idempotent": True,
+            "server_timestamp": now_utc().isoformat(),
+            "server_version": current_server_version,
+        }
 
     _ensure_transition(load, requested)
     if requested == LoadStatus.DELIVERED and not load.pod_photo_url:
@@ -133,4 +177,9 @@ def update_load_status(
                 drop.notify_sent_at = now_utc()
 
     db.commit()
-    return {"status": load.status.value, "idempotent": False}
+    return {
+        "status": load.status.value,
+        "idempotent": False,
+        "server_timestamp": now_utc().isoformat(),
+        "server_version": str(int(load.updated_at.timestamp() * 1000)),
+    }

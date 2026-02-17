@@ -44,7 +44,12 @@ export async function api(path: string, opts: RequestInit = {}) {
   const res = await fetch(`http://localhost:8000/api/v1${path}`, { ...opts, headers, cache: 'no-store' });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new ApiError(body?.detail?.message || body?.detail || 'Request failed', res.status, body?.detail?.code);
+    const errCode = body?.detail?.code;
+    if (res.status === 401) {
+      clearSession();
+      throw new ApiError('Session expired. Please sign in again.', res.status, 'auth_expired');
+    }
+    throw new ApiError(body?.detail?.message || body?.detail || 'Request failed', res.status, errCode);
   }
   return body;
 }
