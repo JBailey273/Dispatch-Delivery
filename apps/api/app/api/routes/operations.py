@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
 from app.api.services import enqueue_sms_job, log_event, now_utc
+from app.billing.service import ensure_billing_account, get_plan
 from app.models.entities import (
     BlackoutReason,
     CapacityHold,
@@ -68,6 +69,10 @@ def analytics_overview(
     user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)),
     db: Session = Depends(db_dep),
 ):
+    account = ensure_billing_account(db, user.tenant_id)
+    plan = get_plan(db, account.plan_id)
+    if not plan.analytics_enabled:
+        raise HTTPException(status_code=402, detail={"code": "feature_not_in_plan", "message": "Analytics is not enabled for current plan", "upgrade_required": True})
     load_filter = [Load.tenant_id == user.tenant_id, Load.route_date >= start_date, Load.route_date <= end_date]
     if material:
         load_filter.append(Load.material_name_snapshot == material)

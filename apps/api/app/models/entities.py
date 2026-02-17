@@ -230,6 +230,51 @@ class ChannelType(str, enum.Enum):
     WOOCOMMERCE = "woocommerce"
 
 
+class BillingAccountStatus(str, enum.Enum):
+    TRIAL = "trial"
+    ACTIVE = "active"
+    PAST_DUE = "past_due"
+    SUSPENDED = "suspended"
+
+
+class BillingPlan(Base, TimestampMixin):
+    __tablename__ = "billing_plans"
+
+    plan_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    max_drivers: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_dispatchers: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_daily_loads: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    optimization_features_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    analytics_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    stripe_price_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class BillingAccount(Base, TimestampMixin):
+    __tablename__ = "billing_accounts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, unique=True, index=True)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("billing_plans.plan_id"), nullable=False)
+    status: Mapped[BillingAccountStatus] = mapped_column(Enum(BillingAccountStatus, name="billing_account_status"), nullable=False, default=BillingAccountStatus.TRIAL)
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    current_period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class BillingWebhookEvent(Base, TimestampMixin):
+    __tablename__ = "billing_webhook_events"
+    __table_args__ = (UniqueConstraint("provider", "provider_event_id", name="uq_billing_webhook_event"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider_event_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    payload_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class OperationalBlackout(Base, TenantScopedMixin, TimestampMixin):

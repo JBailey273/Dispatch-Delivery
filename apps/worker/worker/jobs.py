@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from datetime import timedelta
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -137,3 +138,68 @@ def diagnostics_job() -> dict:
             _log_event(conn, str(row["tenant_id"]), "anomaly.expired_hold_autoreleased", {"hold_id": str(row["id"]), "units": row["units_held"]})
             found += 1
     return {"status": "completed", "anomalies": found}
+
+
+
+def _status_from_event(event_type: str, payload: dict) -> str | None:
+    if event_type in {"invoice.payment_failed"}:
+        return "past_due"
+    if event_type in {"invoice.payment_succeeded", "customer.subscription.created", "subscription.created"}:
+        return "active"
+    if event_type in {"customer.subscription.deleted", "subscription.deleted"}:
+        return "suspended"
+    if event_type in {"customer.subscription.updated", "subscription.updated"}:
+        sub_status = (payload.get("data", {}).get("object", {}).get("status") or "").lower()
+        if sub_status in {"active", "trialing"}:
+            return "active"
+        if sub_status in {"past_due", "unpaid"}:
+            return "past_due"
+        if sub_status in {"canceled", "incomplete_expired"}:
+            return "suspended"
+    return None
+
+
+def process_billing_webhook_job(raw_job: str) -> dict:
+    job = json.loads(raw_job)
+    payload = job.get("payload", {})
+    event_id = job.get("event_id")
+    event_type = job.get("event_type")
+    customer_id = payload.get("data", {}).get("object", {}).get("customer")
+    status = _status_from_event(event_type, payload)
+    updated = 0
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE billing_webhook_events SET processed_at = :now WHERE provider = 'stripe' AND provider_event_id = :event_id"), {"now": datetime.now(timezone.utc), "event_id": event_id})
+        if customer_id and status:
+            res = conn.execute(
+                text(
+                    """
+                    UPDATE billing_accounts
+                    SET status = :status,
+                        current_period_start = COALESCE(current_period_start, :now),
+                        current_period_end = COALESCE(current_period_end, :period_end),
+                        updated_at = :now
+                    WHERE stripe_customer_id = :customer_id
+                    """
+                ),
+                {"status": status, "customer_id": customer_id, "now": datetime.now(timezone.utc), "period_end": datetime.now(timezone.utc) + timedelta(days=30)},
+            )
+            updated = res.rowcount or 0
+            rows = conn.execute(text("SELECT tenant_id FROM billing_accounts WHERE stripe_customer_id = :customer_id"), {"customer_id": customer_id}).mappings().all()
+            for row in rows:
+                _log_event(conn, str(row["tenant_id"]), "billing.status.changed", "worker", {"new_status": status, "event_type": event_type, "event_id": event_id})
+    return {"status": "processed", "updated": updated}
+
+
+def process_billing_webhook_queue_once(timeout_s: int = 1) -> dict:
+    popped = redis_client.blpop("jobs:billing:webhooks", timeout=timeout_s)
+    if not popped:
+        return {"status": "idle"}
+    _, raw = popped
+    for attempt in range(1, 4):
+        try:
+            return process_billing_webhook_job(raw)
+        except Exception as exc:
+            logger.exception("billing_webhook_failed", extra={"attempt": attempt, "error": str(exc)})
+            if attempt == 3:
+                return {"status": "failed", "error": str(exc)}
+    return {"status": "failed"}

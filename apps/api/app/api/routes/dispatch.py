@@ -16,6 +16,7 @@ from app.api.dispatch_suggestions import (
 )
 from app.api.optimization import apply_proposal, generate_proposals, undo_proposal
 from app.api.services import enqueue_sms_job, log_event, now_utc
+from app.billing.service import ensure_billing_account, get_plan, scheduling_gate
 from app.models.entities import Customer, CustomerAddress, Drop, Load, LoadStatus, OptimizationProposal, User, UserRole, WindowCapacity, WindowCode
 
 router = APIRouter(prefix="/dispatch", tags=["dispatch"])
@@ -126,6 +127,10 @@ class AssignIn(BaseModel):
 
 @router.post("/loads/assign")
 def assign_loads(payload: AssignIn, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+
+    schedule_decision = scheduling_gate(db, user.tenant_id)
+    if not schedule_decision.allowed:
+        raise HTTPException(status_code=402, detail={"code": schedule_decision.code, "message": schedule_decision.message})
     rows = db.execute(select(Load).where(Load.tenant_id == user.tenant_id, Load.id.in_(payload.load_ids))).scalars().all()
     for l in rows:
         l.driver_user_id = payload.driver_user_id
@@ -165,6 +170,10 @@ def reassign_all(payload: ReassignAllIn, user: AuthUser = Depends(require_roles(
 
 @router.post("/drops/{drop_id}/assign")
 def assign_entire_drop(drop_id: str, payload: AssignIn, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+
+    schedule_decision = scheduling_gate(db, user.tenant_id)
+    if not schedule_decision.allowed:
+        raise HTTPException(status_code=402, detail={"code": schedule_decision.code, "message": schedule_decision.message})
     rows = db.execute(select(Load).where(Load.tenant_id == user.tenant_id, Load.drop_id == drop_id)).scalars().all()
     for l in rows:
         l.driver_user_id = payload.driver_user_id
@@ -243,6 +252,10 @@ def list_optimization_proposals(
     user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
     db: Session = Depends(db_dep),
 ):
+    account = ensure_billing_account(db, user.tenant_id)
+    plan = get_plan(db, account.plan_id)
+    if not plan.optimization_features_enabled:
+        raise HTTPException(status_code=402, detail={"code": "feature_not_in_plan", "message": "Optimization features are not enabled for your plan", "upgrade_required": True})
     if regenerate:
         db.query(OptimizationProposal).filter(OptimizationProposal.tenant_id == user.tenant_id, OptimizationProposal.proposal_date == day).delete()
         proposals = generate_proposals(db, user.tenant_id, day, window)
@@ -281,6 +294,9 @@ def apply_optimization_proposal(
     user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
     db: Session = Depends(db_dep),
 ):
+    schedule_decision = scheduling_gate(db, user.tenant_id)
+    if not schedule_decision.allowed:
+        raise HTTPException(status_code=402, detail={"code": schedule_decision.code, "message": schedule_decision.message})
     proposal = db.execute(select(OptimizationProposal).where(OptimizationProposal.id == proposal_id, OptimizationProposal.tenant_id == user.tenant_id).with_for_update()).scalar_one_or_none()
     if not proposal:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Proposal not found"})
