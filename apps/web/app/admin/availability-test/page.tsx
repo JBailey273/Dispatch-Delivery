@@ -17,6 +17,7 @@ export default function AvailabilityTestPage() {
   const [selectedWindow, setSelectedWindow] = useState('A');
   const [channelKey, setChannelKey] = useState('');
   const [confirmResult, setConfirmResult] = useState<any>(null);
+  const [ingestResult, setIngestResult] = useState<any>(null);
 
   const channelApi = async (path: string, body: any) => {
     const res = await fetch(`http://localhost:8000/api/v1${path}`, {
@@ -29,7 +30,7 @@ export default function AvailabilityTestPage() {
     return payload;
   };
 
-  if (!requireRole(['dispatcher'])) return <p>Unauthorized</p>;
+  if (!requireRole(['admin'])) return <p>Unauthorized</p>;
 
   return (
     <main>
@@ -60,10 +61,32 @@ export default function AvailabilityTestPage() {
         <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
         <select value={selectedWindow} onChange={(e) => setSelectedWindow(e.target.value)}><option value="A">A</option><option value="B">B</option></select>
         <button onClick={async () => {
-          const requiredLoads = new Set(cartItems.map((i) => i.sku)).size || 1;
-          setHold(await channelApi('/holds', { date: selectedDate, window: selectedWindow, required_loads: requiredLoads, cart_hash: `qa-${Date.now()}` }));
+          const requiredLoads = result?.required_loads ?? 0;
+          setHold(await channelApi('/holds', { date: selectedDate, window: selectedWindow, required_loads: requiredLoads, cart_hash: `qa-${Date.now()}`, cart_items: cartItems }));
         }}>Create hold</button>
         <pre>{JSON.stringify(hold, null, 2)}</pre>
+      </section>
+
+
+      <section>
+        <h3>Ingest order (requires hold token)</h3>
+        <button disabled={!hold?.hold_token} onClick={async () => {
+          const payload = {
+            hold_token: hold.hold_token,
+            external_order: { id: `woo-qa-${Date.now()}`, placed_at: new Date().toISOString(), url: null },
+            customer: { name: 'QA Customer', phone: '+15555551212', email: 'qa@example.com' },
+            drop: {
+              address: { line1: '123 QA St', city: 'Testville', state: 'TX', postal_code: '75001', country: 'US' },
+              notes: 'QA ingest order',
+              photos: [],
+              requested_date: selectedDate,
+              requested_window: selectedWindow,
+            },
+            items: cartItems,
+          };
+          setIngestResult(await channelApi('/orders/ingest', payload));
+        }}>Run ingest</button>
+        <pre>{JSON.stringify(ingestResult, null, 2)}</pre>
       </section>
 
       <section>
