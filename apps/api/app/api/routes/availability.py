@@ -5,7 +5,7 @@ from secrets import token_urlsafe
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, ChannelAuth, db_dep, require_channel, require_roles
@@ -20,6 +20,7 @@ from app.models.entities import (
     ProductCatalogItem,
     Tenant,
     UserRole,
+    OperationalBlackout,
     WindowCapacity,
     WindowCode,
 )
@@ -116,6 +117,18 @@ def _active_holds(db: Session, tenant_id, day: date, window: WindowCode) -> int:
         or 0
     )
 
+
+
+def _is_blacked_out(db: Session, tenant_id, day: date, window: WindowCode) -> bool:
+    blackout = db.execute(
+        select(OperationalBlackout.id).where(
+            OperationalBlackout.tenant_id == tenant_id,
+            OperationalBlackout.service_date == day,
+            OperationalBlackout.active.is_(True),
+            or_(OperationalBlackout.window_code.is_(None), OperationalBlackout.window_code == window),
+        )
+    ).scalar_one_or_none()
+    return blackout is not None
 
 def _capacity_row_locked(db: Session, tenant_id, day: date, window: WindowCode) -> WindowCapacity:
     cap = db.execute(
@@ -214,6 +227,8 @@ def check_availability(
     for i in range(days):
         d = start + timedelta(days=i)
         for w in [WindowCode.A, WindowCode.B]:
+            if _is_blacked_out(db, user.tenant_id, d, w):
+                continue
             cap = db.execute(select(WindowCapacity).where(WindowCapacity.tenant_id == user.tenant_id, WindowCapacity.service_date == d, WindowCapacity.window_code == w)).scalar_one_or_none()
             total = cap.capacity_total if cap else tenant.capacity_per_window
             used = cap.capacity_used if cap else 0
@@ -231,6 +246,8 @@ def channel_availability(payload: AvailabilityIn, channel: ChannelAuth = Depends
     while current <= payload.date_range.end_date:
         window_rows = []
         for window in [WindowCode.A, WindowCode.B]:
+            if _is_blacked_out(db, channel.tenant_id, current, window):
+                continue
             cap = db.execute(
                 select(WindowCapacity).where(WindowCapacity.tenant_id == channel.tenant_id, WindowCapacity.service_date == current, WindowCapacity.window_code == window)
             ).scalar_one_or_none()
@@ -248,6 +265,8 @@ def channel_availability(payload: AvailabilityIn, channel: ChannelAuth = Depends
 
 @router.post("/holds")
 def create_hold(payload: HoldCreateIn, channel: ChannelAuth = Depends(require_channel), db: Session = Depends(db_dep)):
+    if _is_blacked_out(db, channel.tenant_id, payload.date, payload.window):
+        raise HTTPException(status_code=409, detail={"code": "window_blacked_out", "message": "Window unavailable"})
     cap = _capacity_row_locked(db, channel.tenant_id, payload.date, payload.window)
     active_holds = _active_holds(db, channel.tenant_id, payload.date, payload.window)
     remaining = cap.capacity_total - cap.capacity_used - active_holds
@@ -288,6 +307,8 @@ def confirm_hold(hold_token: str, payload: ConfirmOrderIn, channel: ChannelAuth 
         raise HTTPException(status_code=409, detail={"code": "hold_expired", "message": "Hold expired"})
 
     required_loads, grouped = _required_loads(db, channel.tenant_id, payload.items)
+    if _is_blacked_out(db, channel.tenant_id, payload.drop.requested_date, payload.drop.requested_window):
+        raise HTTPException(status_code=409, detail={"code": "window_blacked_out", "message": "Window unavailable"})
     if required_loads != hold.units_held:
         log_event(db, channel.tenant_id, "hold.failed", "channel", {"hold_token": hold_token, "reason": "load_mismatch", "expected": hold.units_held, "actual": required_loads})
         db.commit()
@@ -318,6 +339,8 @@ def confirm_hold(hold_token: str, payload: ConfirmOrderIn, channel: ChannelAuth 
 @router.post("/orders/ingest")
 def ingest_order(payload: ConfirmOrderIn, channel: ChannelAuth = Depends(require_channel), db: Session = Depends(db_dep)):
     required_loads, grouped = _required_loads(db, channel.tenant_id, payload.items)
+    if _is_blacked_out(db, channel.tenant_id, payload.drop.requested_date, payload.drop.requested_window):
+        raise HTTPException(status_code=409, detail={"code": "window_blacked_out", "message": "Window unavailable"})
     cap = _capacity_row_locked(db, channel.tenant_id, payload.drop.requested_date, payload.drop.requested_window)
     active_holds = _active_holds(db, channel.tenant_id, payload.drop.requested_date, payload.drop.requested_window)
     remaining = cap.capacity_total - cap.capacity_used - active_holds
