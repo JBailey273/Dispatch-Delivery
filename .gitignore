@@ -1,0 +1,20 @@
+# Node
+node_modules/
+.next/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Env
+.env
+.env.*
+
+# Build artifacts
+dist/
+coverage/
+
+# IDE
+.vscode/
+.idea/
