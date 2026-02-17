@@ -20,6 +20,7 @@ export default function DispatchDropDetailPage() {
     {error && <p style={{ color: '#b00020' }}>{error}</p>}
     {drop && <>
       <p>Drop {drop.id}</p>
+      <p>Required loads: {drop.required_loads}</p>
       <p>Reschedule text sent at: {drop.last_reschedule_sms_at || 'Not sent'}</p>
       <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={5} cols={60} />
       <div><label><input type='checkbox' checked={adminOverride} onChange={(e)=>setAdminOverride(e.target.checked)} /> Admin override rate limit</label></div>

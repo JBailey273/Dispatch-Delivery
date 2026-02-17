@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
 from app.api.services import find_matching_address, log_event, normalize_us_phone, now_utc
-from app.models.entities import Customer, CustomerAddress, UserRole
+from app.models.entities import Customer, CustomerAddress, Drop, UserRole
 
 router = APIRouter(prefix="/customers", tags=["customers"])
 
@@ -33,11 +33,33 @@ def search_customers(
     db: Session = Depends(db_dep),
 ):
     like = f"%{q}%"
-    stmt = select(Customer).where(
+    normalized_phone = None
+    try:
+        normalized_phone = normalize_us_phone(q)
+    except ValueError:
+        normalized_phone = None
+
+    last_ordered_subquery = (
+        select(Drop.customer_id, func.max(Drop.scheduled_date).label("last_ordered"))
+        .where(Drop.tenant_id == user.tenant_id)
+        .group_by(Drop.customer_id)
+        .subquery()
+    )
+    stmt = (
+        select(Customer, last_ordered_subquery.c.last_ordered)
+        .outerjoin(last_ordered_subquery, last_ordered_subquery.c.customer_id == Customer.id)
+        .where(
         Customer.tenant_id == user.tenant_id,
         or_(Customer.name.ilike(like), Customer.phone_e164.ilike(like)),
-    ).limit(20)
-    customers = db.execute(stmt).scalars().all()
+        )
+        .order_by(
+            case((Customer.phone_e164 == normalized_phone, 0), else_=1),
+            last_ordered_subquery.c.last_ordered.desc().nullslast(),
+            Customer.name.asc(),
+        )
+        .limit(20)
+    )
+    customers = db.execute(stmt).all()
     # address substring support
     addr_stmt = select(CustomerAddress.customer_id).where(
         CustomerAddress.tenant_id == user.tenant_id,
@@ -50,12 +72,27 @@ def search_customers(
     )
     addr_ids = db.execute(addr_stmt).scalars().all()
     if addr_ids:
-        more = db.execute(select(Customer).where(Customer.id.in_(addr_ids), Customer.tenant_id == user.tenant_id)).scalars().all()
-        by_id = {c.id: c for c in customers}
-        for c in more:
-            by_id[c.id] = c
+        more = db.execute(
+            select(Customer, last_ordered_subquery.c.last_ordered)
+            .outerjoin(last_ordered_subquery, last_ordered_subquery.c.customer_id == Customer.id)
+            .where(Customer.id.in_(addr_ids), Customer.tenant_id == user.tenant_id)
+        ).all()
+        by_id = {c.id: (c, last_ordered) for c, last_ordered in customers}
+        for c, last_ordered in more:
+            by_id[c.id] = (c, last_ordered)
         customers = list(by_id.values())
-    return {"results": [{"id": str(c.id), "name": c.name, "phone_e164": c.phone_e164} for c in customers]}
+    return {
+        "results": [
+            {
+                "id": str(c.id),
+                "name": c.name,
+                "phone_e164": c.phone_e164,
+                "exact_phone_match": bool(normalized_phone and c.phone_e164 == normalized_phone),
+                "last_ordered": str(last_ordered) if last_ordered else None,
+            }
+            for c, last_ordered in customers
+        ]
+    }
 
 
 @router.post("")

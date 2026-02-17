@@ -37,6 +37,8 @@ export default function DispatchSchedulePage() {
   const [selectedProposalLoads, setSelectedProposalLoads] = useState<Record<string, Set<string>>>({});
   const [lastAppliedProposal, setLastAppliedProposal] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [assignmentPreview, setAssignmentPreview] = useState<{ count: number; fromDrivers: string[] } | null>(null);
+  const [assignmentSuccess, setAssignmentSuccess] = useState('');
   const driverLoadWarningThreshold = 8;
 
   const load = async () => {
@@ -114,6 +116,17 @@ export default function DispatchSchedulePage() {
     await api(`/dispatch/optimization/proposals/${proposalId}/dismiss`, { method: 'POST' });
     await load();
   };
+
+  const selectedFromDrivers = useMemo(() => {
+    if (!schedule) return [];
+    const index = new Map<string, string>();
+    ['A', 'B'].forEach((windowCode) => {
+      Object.entries(schedule.windows[windowCode]?.groups || {}).forEach(([group, loads]: any) => {
+        (loads as any[]).forEach((l) => index.set(l.id, group));
+      });
+    });
+    return Array.from(new Set(loadIds.map((id) => index.get(id)).filter(Boolean) as string[]));
+  }, [loadIds, schedule]);
 
   return (
     <main>
@@ -194,13 +207,18 @@ export default function DispatchSchedulePage() {
 
       {schedule &&
         ['A', 'B'].map((w) => (
-          <section key={w}>
+          <section key={w} style={{ border: '1px solid #ddd', borderRadius: 8, marginBottom: 12, padding: 8 }}>
             <h2>
-              Window {w} ({schedule.windows[w].capacity.used}/{schedule.windows[w].capacity.total})
+              Window {w} ({schedule.windows[w].capacity.used}/{schedule.windows[w].capacity.total}) • Remaining {schedule.windows[w].capacity.remaining_capacity}
             </h2>
-            {Object.entries(schedule.windows[w].groups).map(([k, v]: any) => (
+            {schedule.windows[w].capacity.total > 0 && schedule.windows[w].capacity.used / schedule.windows[w].capacity.total >= 0.8 && (
+              <p style={{ color: '#a15c00', marginTop: 0 }}>Near capacity: confirm remaining slots before assigning more loads.</p>
+            )}
+            {Object.entries(schedule.windows[w].groups)
+              .sort(([a], [b]) => (a === 'Unassigned' ? -1 : b === 'Unassigned' ? 1 : a.localeCompare(b)))
+              .map(([k, v]: any) => (
               <div key={k}>
-                <h4>{k}</h4>
+                <h4 style={{ borderTop: k === 'Unassigned' ? '2px solid #333' : undefined, paddingTop: 4 }}>{k === 'Unassigned' ? 'Unassigned' : k}</h4>
                 <ul>
                   {v.map((l: any, index: number) => (
                     <li key={l.id} style={{ background: changedLoads.has(l.id) ? '#fff9db' : 'transparent' }}>
@@ -210,15 +228,18 @@ export default function DispatchSchedulePage() {
                           onChange={(e) => setLoadIds(e.target.checked ? [...loadIds, l.id] : loadIds.filter((id) => id !== l.id))}
                         />{' '}
                         <span style={{ color: '#555', marginRight: 6 }}>#{index + 1}</span>
-                        <Link href={`/dispatch/drops/${l.drop_id}`}>Drop</Link> - {l.material} {l.qty}{' '}
-                        {l.historical_flags?.has_exception_history && (
-                          <span
-                            title={`Past exceptions: ${l.historical_flags.exception_count}. Notes: ${(l.historical_flags.recent_notes || []).join(' | ') || 'none'}`}
-                            style={{ color: '#a15c00' }}
-                          >
-                            ⚠️
-                          </span>
-                        )}
+                        <Link href={`/dispatch/drops/${l.drop_id}`}>Drop</Link> - {l.material} {l.qty}
+                        <details style={{ display: 'inline-block', marginLeft: 8 }}>
+                          <summary style={{ cursor: 'pointer', color: '#555' }}>Details</summary>
+                          {l.historical_flags?.has_exception_history && (
+                            <span
+                              title={`Past exceptions: ${l.historical_flags.exception_count}. Notes: ${(l.historical_flags.recent_notes || []).join(' | ') || 'none'}`}
+                              style={{ color: '#a15c00' }}
+                            >
+                              ⚠️ Past exceptions: {l.historical_flags.exception_count}
+                            </span>
+                          )}
+                        </details>
                       </label>
                     </li>
                   ))}
@@ -232,21 +253,36 @@ export default function DispatchSchedulePage() {
       {loadIds.length > driverLoadWarningThreshold && (
         <p style={{ color: 'orange' }}>Warning: assigning more than {driverLoadWarningThreshold} loads at once to one driver can increase risk.</p>
       )}
+      {assignmentSuccess && <p style={{ color: '#0f5132' }}>{assignmentSuccess}</p>}
+      {assignmentPreview && (
+        <div style={{ border: '1px solid #333', padding: 8, margin: '8px 0' }}>
+          <p style={{ margin: 0 }}>Confirm reassignment: {assignmentPreview.count} loads will move to driver {driver || '(none)'}. Affected current groups: {assignmentPreview.fromDrivers.join(', ') || 'Unassigned'}.</p>
+          <button
+            onClick={async () => {
+              try {
+                await api('/dispatch/loads/assign', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ load_ids: loadIds, driver_user_id: driver }),
+                });
+                setAssignmentSuccess(`Reassignment complete for ${assignmentPreview.count} loads to ${driver}.`);
+                setAssignmentPreview(null);
+                await load();
+              } catch (err) {
+                const apiErr = err as ApiError;
+                setError(apiErr.message || 'Assignment failed.');
+              }
+            }}
+            style={{ marginRight: 8 }}
+          >
+            Confirm assignment
+          </button>
+          <button onClick={() => setAssignmentPreview(null)}>Cancel</button>
+        </div>
+      )}
       <button
-        onClick={async () => {
-          try {
-            await api('/dispatch/loads/assign', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ load_ids: loadIds, driver_user_id: driver }),
-            });
-            await load();
-          } catch (err) {
-            const apiErr = err as ApiError;
-            setError(apiErr.message || 'Assignment failed.');
-            await load();
-          }
-        }}
+        onClick={() => setAssignmentPreview({ count: loadIds.length, fromDrivers: selectedFromDrivers })}
+        disabled={!loadIds.length || !driver}
       >
         Assign selected
       </button>

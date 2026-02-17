@@ -49,7 +49,15 @@ def _raise_capacity_violation(db: Session, tenant_id, cap: WindowCapacity, attem
             "reason": reason,
         },
     )
-    raise HTTPException(status_code=409, detail={"code": "capacity_conflict", "message": "Capacity invariant violation"})
+    reason_message = "not enough open slots" if reason == "exceeds_total" else "capacity would become negative"
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "code": "capacity_conflict",
+            "message": f"Could not update schedule for {cap.service_date} window {cap.window_code.value}: {reason_message}.",
+            "next_step": "Pick another window/date or free capacity by rescheduling/unassigning other loads first.",
+        },
+    )
 
 
 def mutate_capacity_or_409(
@@ -92,15 +100,43 @@ def assert_drop_load_invariants(db: Session, tenant_id, drop_id) -> list[Load]:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
     loads = db.execute(select(Load).where(Load.tenant_id == tenant_id, Load.drop_id == drop_id).with_for_update()).scalars().all()
     if not loads:
-        raise HTTPException(status_code=409, detail={"code": "invalid_drop", "message": "Drops without loads are not allowed"})
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "invalid_drop",
+                "message": "Could not modify this drop because it has no loads assigned.",
+                "next_step": "Refresh schedule and recreate the drop if needed before trying again.",
+            },
+        )
     for load in loads:
         if load.drop_id != drop.id:
-            raise HTTPException(status_code=409, detail={"code": "invalid_load", "message": "Load must belong to exactly one Drop"})
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "invalid_load",
+                    "message": "Could not modify this drop because one load is attached to the wrong drop.",
+                    "next_step": "Reload the dispatch board and retry. If it persists, contact support with the drop id.",
+                },
+            )
         if not load.route_date or not load.route_window:
-            raise HTTPException(status_code=409, detail={"code": "invalid_load", "message": "Load scheduling metadata is required"})
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "invalid_load",
+                    "message": "Could not modify this drop because one load is missing schedule details.",
+                    "next_step": "Refresh and retry. If this continues, ask an admin to repair the load record.",
+                },
+            )
     return loads
 
 
 def guard_load_editable(load: Load, operation: str):
     if load.status == LoadStatus.DELIVERED:
-        raise HTTPException(status_code=409, detail={"code": "invalid_load_state", "message": f"Delivered loads cannot be {operation}"})
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "invalid_load_state",
+                "message": f"Could not complete this action because load {getattr(load, 'id', 'unknown')} is already delivered.",
+                "next_step": "Remove delivered loads from selection and retry the action.",
+            },
+        )

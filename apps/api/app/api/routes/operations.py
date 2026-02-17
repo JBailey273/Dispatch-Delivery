@@ -275,10 +275,38 @@ class BulkRescheduleIn(BaseModel):
     drop_ids: list[str]
     scheduled_date: date
     scheduled_window: WindowCode
+    confirm: bool = False
 
 
 @admin_router.post("/bulk/reschedule")
 def bulk_reschedule(payload: BulkRescheduleIn, user: AuthUser = Depends(require_roles(UserRole.ADMIN, UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+    if not payload.confirm:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "confirmation_required",
+                "message": "Bulk reschedule was not started because confirmation is required.",
+                "next_step": "Retry with confirm=true after reviewing the selected drops.",
+            },
+        )
+    if not payload.drop_ids:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "empty_selection",
+                "message": "Bulk reschedule was not started because no drops were selected.",
+                "next_step": "Select at least one drop and retry.",
+            },
+        )
+    if len(set(payload.drop_ids)) != len(payload.drop_ids):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "ambiguous_selection",
+                "message": "Bulk reschedule was not started because the request included duplicate drop ids.",
+                "next_step": "Remove duplicates from selection and retry.",
+            },
+        )
     results = []
     for drop_id in payload.drop_ids:
         try:
@@ -310,6 +338,9 @@ def bulk_reschedule(payload: BulkRescheduleIn, user: AuthUser = Depends(require_
                 l.route_date = payload.scheduled_date
                 l.route_window = payload.scheduled_window
             results.append({"drop_id": drop_id, "status": "ok"})
+        except HTTPException as exc:
+            db.rollback()
+            results.append({"drop_id": drop_id, "status": "failed", "reason": exc.detail.get("code", "error"), "message": exc.detail.get("message")})
         except Exception:
             db.rollback()
             results.append({"drop_id": drop_id, "status": "failed", "reason": "error"})
@@ -344,10 +375,20 @@ def bulk_notify(payload: BulkNotifyIn, user: AuthUser = Depends(require_roles(Us
 
 class BulkUnassignIn(BaseModel):
     day: date
+    confirm: bool = False
 
 
 @admin_router.post("/bulk/unassign")
 def bulk_unassign(payload: BulkUnassignIn, user: AuthUser = Depends(require_roles(UserRole.ADMIN, UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+    if not payload.confirm:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "confirmation_required",
+                "message": "Bulk unassign was not started because confirmation is required.",
+                "next_step": "Retry with confirm=true after reviewing affected drivers and loads.",
+            },
+        )
     loads = db.execute(select(Load).where(Load.tenant_id == user.tenant_id, Load.route_date == payload.day, Load.status != LoadStatus.DELIVERED)).scalars().all()
     for load in loads:
         load.driver_user_id = None
