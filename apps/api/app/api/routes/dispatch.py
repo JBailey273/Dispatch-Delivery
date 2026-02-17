@@ -2,8 +2,8 @@ import logging
 from collections import defaultdict
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,8 +14,9 @@ from app.api.dispatch_suggestions import (
     get_driver_performance_signals,
     invalidate_suggestion_cache,
 )
+from app.api.optimization import apply_proposal, generate_proposals, undo_proposal
 from app.api.services import enqueue_sms_job, log_event, now_utc
-from app.models.entities import Customer, CustomerAddress, Drop, Load, LoadStatus, User, UserRole, WindowCapacity
+from app.models.entities import Customer, CustomerAddress, Drop, Load, LoadStatus, OptimizationProposal, User, UserRole, WindowCapacity, WindowCode
 
 router = APIRouter(prefix="/dispatch", tags=["dispatch"])
 logger = logging.getLogger("dispatch.ops")
@@ -228,3 +229,94 @@ def log_suggestion_dismissed(payload: SuggestionEventIn, user: AuthUser = Depend
     )
     db.commit()
     return {"status": "logged"}
+
+
+class OptimizationApplyIn(BaseModel):
+    selected_load_ids: list[str] | None = Field(default=None)
+
+
+@router.get("/optimization/proposals")
+def list_optimization_proposals(
+    day: date,
+    window: WindowCode | None = Query(default=None),
+    regenerate: bool = Query(default=False),
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
+    db: Session = Depends(db_dep),
+):
+    if regenerate:
+        db.query(OptimizationProposal).filter(OptimizationProposal.tenant_id == user.tenant_id, OptimizationProposal.proposal_date == day).delete()
+        proposals = generate_proposals(db, user.tenant_id, day, window)
+        for p in proposals:
+            db.add(p)
+            log_event(db, user.tenant_id, "OPTIMIZATION_PROPOSED", "dispatch", {"proposal_type": p.proposal_type, "affected_load_ids": p.affected_load_ids})
+        db.commit()
+
+    q = db.query(OptimizationProposal).filter(OptimizationProposal.tenant_id == user.tenant_id, OptimizationProposal.proposal_date == day)
+    if window:
+        q = q.filter(OptimizationProposal.window_code == window)
+    rows = q.order_by(OptimizationProposal.created_at.desc()).all()
+    return {
+        "date": str(day),
+        "proposals": [
+            {
+                "proposal_id": str(r.id),
+                "proposal_type": r.proposal_type,
+                "affected_load_ids": r.affected_load_ids,
+                "before_state": r.before_state,
+                "after_state": r.after_state,
+                "explanation": r.explanation,
+                "estimated_benefit": r.estimated_benefit,
+                "confidence_level": r.confidence_level,
+                "status": r.status,
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.post("/optimization/proposals/{proposal_id}/apply")
+def apply_optimization_proposal(
+    proposal_id: str,
+    payload: OptimizationApplyIn,
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
+    db: Session = Depends(db_dep),
+):
+    proposal = db.execute(select(OptimizationProposal).where(OptimizationProposal.id == proposal_id, OptimizationProposal.tenant_id == user.tenant_id).with_for_update()).scalar_one_or_none()
+    if not proposal:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Proposal not found"})
+    result = apply_proposal(db, proposal, payload.selected_load_ids)
+    log_event(db, user.tenant_id, "OPTIMIZATION_APPLIED", "dispatch", {"proposal_id": proposal_id, "updated": result["updated"], "selected_load_ids": payload.selected_load_ids})
+    db.commit()
+    invalidate_suggestion_cache(str(user.tenant_id))
+    return {"status": proposal.status, **result}
+
+
+@router.post("/optimization/proposals/{proposal_id}/undo")
+def undo_optimization_proposal(
+    proposal_id: str,
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
+    db: Session = Depends(db_dep),
+):
+    proposal = db.execute(select(OptimizationProposal).where(OptimizationProposal.id == proposal_id, OptimizationProposal.tenant_id == user.tenant_id).with_for_update()).scalar_one_or_none()
+    if not proposal:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Proposal not found"})
+    result = undo_proposal(db, proposal)
+    log_event(db, user.tenant_id, "OPTIMIZATION_REVERTED", "dispatch", {"proposal_id": proposal_id, "updated": result["updated"]})
+    db.commit()
+    invalidate_suggestion_cache(str(user.tenant_id))
+    return {"status": proposal.status, **result}
+
+
+@router.post("/optimization/proposals/{proposal_id}/dismiss")
+def dismiss_optimization_proposal(
+    proposal_id: str,
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
+    db: Session = Depends(db_dep),
+):
+    proposal = db.execute(select(OptimizationProposal).where(OptimizationProposal.id == proposal_id, OptimizationProposal.tenant_id == user.tenant_id).with_for_update()).scalar_one_or_none()
+    if not proposal:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Proposal not found"})
+    proposal.status = "dismissed"
+    log_event(db, user.tenant_id, "OPTIMIZATION_DISMISSED", "dispatch", {"proposal_id": proposal_id})
+    db.commit()
+    return {"status": proposal.status}

@@ -23,6 +23,10 @@ class TenantUpsertIn(BaseModel):
     windowB_start: time
     windowB_end: time
     capacity_per_window: int = Field(ge=1)
+    optimization_reordering_enabled: bool = True
+    optimization_reassignment_enabled: bool = True
+    optimization_drop_split_enabled: bool = False
+    optimization_aggressiveness: str = Field(default="medium")
 
     @field_validator("service_days")
     @classmethod
@@ -38,6 +42,13 @@ class TenantUpsertIn(BaseModel):
         if "windowA_end" in info.data and v < info.data["windowA_end"]:
             raise ValueError("Window ranges must not overlap")
         return v
+
+    @field_validator("optimization_aggressiveness")
+    @classmethod
+    def validate_aggressiveness(cls, value: str):
+        if value not in {"low", "medium", "high"}:
+            raise ValueError("optimization_aggressiveness must be low, medium, or high")
+        return value
 
 
 def _platform_guard(x_platform_admin: str = Header(default="")):
@@ -72,6 +83,10 @@ def get_settings(user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), d
         "windowB_start": tenant.windowB_start.isoformat(),
         "windowB_end": tenant.windowB_end.isoformat(),
         "capacity_per_window": tenant.capacity_per_window,
+        "optimization_reordering_enabled": tenant.optimization_reordering_enabled,
+        "optimization_reassignment_enabled": tenant.optimization_reassignment_enabled,
+        "optimization_drop_split_enabled": tenant.optimization_drop_split_enabled,
+        "optimization_aggressiveness": tenant.optimization_aggressiveness,
     }
 
 
