@@ -1,0 +1,3 @@
+# Root redirect for Render Blueprint tooling.
+# See canonical blueprint at infra/render.yaml.
+services: []
