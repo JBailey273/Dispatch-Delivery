@@ -1,4 +1,5 @@
 import './globals.css';
+import AppShell from './lib/app-shell';
 
 export const metadata = {
   title: 'Dispatch & Delivery',
@@ -8,7 +9,7 @@ export const metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body><AppShell>{children}</AppShell></body>
     </html>
   );
 }

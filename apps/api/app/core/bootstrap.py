@@ -6,10 +6,10 @@ from app.models.entities import Tenant, User, UserRole
 
 
 def ensure_dev_seed(db: Session) -> Tenant:
-    tenant = db.execute(select(Tenant).where(Tenant.name == "Default Tenant")).scalar_one_or_none()
+    tenant = db.execute(select(Tenant).where(Tenant.slug == "default-tenant")).scalar_one_or_none()
     if tenant:
         return tenant
-    tenant = Tenant(name="Default Tenant")
+    tenant = Tenant(name="Default Tenant", slug="default-tenant")
     db.add(tenant)
     db.flush()
 

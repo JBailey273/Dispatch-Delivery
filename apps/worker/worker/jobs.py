@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -12,6 +13,9 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("dispatch.worker")
 
 engine = create_engine(DATABASE_URL, future=True)
 redis_client = Redis.from_url(REDIS_URL, decode_responses=True)
@@ -64,11 +68,12 @@ def process_sms_queue_once(timeout_s: int = 1) -> dict:
     if not popped:
         return {"status": "idle"}
     _, raw = popped
-    for attempt in range(3):
+    for attempt in range(1, 4):
         try:
             return process_sms_job(raw)
         except Exception as exc:
-            if attempt == 2:
+            logger.exception("sms_send_failed", extra={"attempt": attempt, "error": str(exc)})
+            if attempt == 3:
                 return {"status": "failed", "error": str(exc)}
     return {"status": "failed"}
 

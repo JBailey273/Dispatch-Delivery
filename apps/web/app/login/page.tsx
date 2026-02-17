@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { setSession } from '../lib/auth';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('dispatcher@example.com');
@@ -19,7 +20,16 @@ export default function LoginPage() {
     });
     const data = await res.json();
     if (!res.ok) return setError(data?.detail?.message || 'Login failed');
-    localStorage.setItem('session', JSON.stringify({ token: data.access_token, role: data.role, tenant_id: data.tenant_id }));
+
+    let tenantSettings: any = null;
+    try {
+      const tRes = await fetch('http://localhost:8000/api/v1/tenant/settings', { headers: { Authorization: `Bearer ${data.access_token}` } });
+      tenantSettings = await tRes.json();
+    } catch {
+      tenantSettings = null;
+    }
+
+    setSession({ token: data.access_token, role: data.role, tenant_id: data.tenant_id, tenant_slug: tenantSettings?.slug, tenant_name: tenantSettings?.name });
     router.push(data.role === 'driver' ? '/driver/loads' : '/dispatch-schedule');
   };
 

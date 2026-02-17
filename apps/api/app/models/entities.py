@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     Text,
     Time,
+    CheckConstraint,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -60,6 +61,7 @@ class Tenant(Base, TimestampMixin):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(120), nullable=False, unique=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     timezone: Mapped[str] = mapped_column(String(64), default="America/New_York", nullable=False)
     service_days: Mapped[list[str]] = mapped_column(JSON, default=lambda: ["mon", "tue", "wed", "thu", "fri"], nullable=False)
@@ -78,6 +80,7 @@ class User(Base, TenantScopedMixin, TimestampMixin):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(Enum(UserRole, name="user_role"), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    default_truck_identifier: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
 
 class ProductCatalogItem(Base, TenantScopedMixin, TimestampMixin):
@@ -125,7 +128,12 @@ class CustomerAddress(Base, TenantScopedMixin, TimestampMixin):
 
 class WindowCapacity(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "window_capacities"
-    __table_args__ = (UniqueConstraint("tenant_id", "service_date", "window_code", name="uq_capacity_window"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "service_date", "window_code", name="uq_capacity_window"),
+        CheckConstraint("capacity_total >= 1", name="ck_capacity_total_min"),
+        CheckConstraint("capacity_used >= 0", name="ck_capacity_used_nonnegative"),
+        CheckConstraint("capacity_used <= capacity_total", name="ck_capacity_used_lte_total"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     service_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
@@ -188,6 +196,7 @@ class CapacityHold(Base, TenantScopedMixin, TimestampMixin):
 
 
 class ChannelType(str, enum.Enum):
+    MANUAL = "manual"
     WOOCOMMERCE = "woocommerce"
 
 
@@ -199,6 +208,7 @@ class Channel(Base, TenantScopedMixin, TimestampMixin):
     channel_type: Mapped[ChannelType] = mapped_column(Enum(ChannelType, name="channel_type"), nullable=False)
     api_key_hash: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    last_called_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 class EventLog(Base, TenantScopedMixin):
     __tablename__ = "event_logs"

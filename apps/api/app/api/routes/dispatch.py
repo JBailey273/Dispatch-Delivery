@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict
 from datetime import date, timedelta
 
@@ -11,10 +12,14 @@ from app.api.services import enqueue_sms_job, log_event, now_utc
 from app.models.entities import Customer, Drop, Load, LoadStatus, User, UserRole, WindowCapacity, WindowCode
 
 router = APIRouter(prefix="/dispatch", tags=["dispatch"])
+logger = logging.getLogger("dispatch.ops")
 
 
 @router.get("/schedule")
 def dispatch_schedule(day: date, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+    orphaned = db.execute(select(Load.id).where(Load.tenant_id == user.tenant_id, Load.route_date == day, ~Load.drop_id.in_(select(Drop.id)))).scalars().all()
+    if orphaned:
+        logger.error("orphaned_loads_detected", extra={"tenant_id": str(user.tenant_id), "count": len(orphaned)})
     caps = db.execute(select(WindowCapacity).where(WindowCapacity.tenant_id == user.tenant_id, WindowCapacity.service_date == day)).scalars().all()
     cap_map = {c.window_code.value: {"used": c.capacity_used, "total": c.capacity_total} for c in caps}
     loads = db.execute(

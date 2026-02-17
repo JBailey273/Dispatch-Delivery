@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from secrets import token_urlsafe
@@ -24,6 +25,7 @@ from app.models.entities import (
 )
 
 router = APIRouter(tags=["availability"])
+logger = logging.getLogger("dispatch.availability")
 
 
 class CartItemIn(BaseModel):
@@ -296,11 +298,14 @@ def confirm_hold(hold_token: str, payload: ConfirmOrderIn, channel: ChannelAuth 
 
     cap = _capacity_row_locked(db, channel.tenant_id, hold.service_date, hold.window_code)
     if cap.capacity_total - cap.capacity_used < required_loads:
+        logger.warning("failed_hold_confirmation", extra={"tenant_id": str(channel.tenant_id), "hold_token": hold_token, "reason": "capacity_conflict"})
         raise HTTPException(status_code=409, detail={"code": "capacity_conflict", "message": "Insufficient window capacity"})
 
     customer, address = _upsert_customer_and_address(db, channel.tenant_id, payload)
     drop, load_ids = _create_drop_and_loads(db, channel.tenant_id, payload, grouped, customer.id, address.id)
     cap.capacity_used += required_loads
+    if cap.capacity_used > cap.capacity_total:
+        raise HTTPException(status_code=409, detail={"code": "capacity_conflict", "message": "Insufficient window capacity"})
     hold.converted_at = now_utc()
     hold.converted_drop_id = drop.id
 
