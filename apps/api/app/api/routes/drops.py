@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
 from app.api.services import find_matching_address, log_event, now_utc
+from app.billing.service import evaluate_limit, scheduling_gate
 from app.models.entities import CapacityHold, Customer, CustomerAddress, DeliveryMode, Drop, Load, OperationalBlackout, ProductCatalogItem, UserRole, WindowCapacity, WindowCode
 
 router = APIRouter(prefix="/drops", tags=["drops"])
@@ -97,6 +98,9 @@ def reserve_capacity(db: Session, tenant_id, day: date, window: WindowCode, requ
 
 @router.post("/manual")
 def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+    schedule_decision = scheduling_gate(db, user.tenant_id)
+    if not schedule_decision.allowed:
+        raise HTTPException(status_code=402, detail={"code": schedule_decision.code, "message": schedule_decision.message})
     customer = None
     if payload.customer.id:
         customer = db.execute(select(Customer).where(Customer.id == payload.customer.id, Customer.tenant_id == user.tenant_id)).scalar_one_or_none()
@@ -148,6 +152,10 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
             grouped[cat.bulk_group]["unit"] = cat.unit
 
     required_loads = len(grouped.keys())
+    current_today = db.execute(select(func.count(Drop.id)).where(Drop.tenant_id == user.tenant_id, Drop.scheduled_date == payload.scheduled_date)).scalar_one()
+    load_limit_decision = evaluate_limit(db, user.tenant_id, "max_daily_loads", int(current_today) + required_loads)
+    if not load_limit_decision.allowed:
+        raise HTTPException(status_code=402, detail={"code": load_limit_decision.code, "message": load_limit_decision.message, "upgrade_required": load_limit_decision.upgrade_required})
 
     try:
         reserve_capacity(db, user.tenant_id, payload.scheduled_date, payload.scheduled_window, required_loads)
@@ -196,6 +204,9 @@ class RescheduleIn(BaseModel):
 
 @router.post("/{drop_id}/reschedule")
 def reschedule_drop(drop_id: str, payload: RescheduleIn, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+    schedule_decision = scheduling_gate(db, user.tenant_id)
+    if not schedule_decision.allowed:
+        raise HTTPException(status_code=402, detail={"code": schedule_decision.code, "message": schedule_decision.message})
     drop = db.execute(select(Drop).where(Drop.id == drop_id, Drop.tenant_id == user.tenant_id).with_for_update()).scalar_one_or_none()
     if not drop:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})

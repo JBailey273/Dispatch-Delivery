@@ -22,6 +22,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <Link href="/admin/catalog">Catalog</Link>
               <Link href="/admin/users">Users</Link>
               <Link href="/admin/channels">Channels</Link>
+              <Link href="/admin/billing">Billing</Link>
             </>
           )}
           <button onClick={() => { clearSession(); router.push('/login'); }}>Logout</button>

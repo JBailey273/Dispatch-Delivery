@@ -1,6 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.billing.service import ensure_billing_account
 from app.core.security import get_password_hash
 from app.models.entities import Tenant, User, UserRole
 
@@ -27,6 +28,7 @@ def ensure_dev_seed(db: Session) -> Tenant:
                 is_active=True,
             )
         )
+    ensure_billing_account(db, tenant.id)
     db.commit()
     db.refresh(tenant)
     return tenant

@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.models.entities import CustomerAddress, EventLog
 
 SMS_QUEUE_KEY = "jobs:sms"
+BILLING_WEBHOOK_QUEUE_KEY = "jobs:billing:webhooks"
 
 
 def log_event(db: Session, tenant_id, event_type: str, source: str, payload: dict) -> None:
@@ -28,6 +29,15 @@ def enqueue_sms_job(job: dict, dedupe_key: str) -> bool:
     r.rpush(SMS_QUEUE_KEY, json.dumps(job))
     return True
 
+
+
+
+def enqueue_billing_webhook_job(job: dict, dedupe_key: str) -> bool:
+    r = redis_client()
+    if not r.set(f"dedupe:{dedupe_key}", "1", nx=True, ex=60 * 60 * 24):
+        return False
+    r.rpush(BILLING_WEBHOOK_QUEUE_KEY, json.dumps(job))
+    return True
 
 def normalize_us_phone(raw: str) -> str:
     digits = "".join(ch for ch in raw if ch.isdigit())

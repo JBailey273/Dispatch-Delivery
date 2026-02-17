@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
 from app.api.services import log_event
+from app.billing.service import ensure_billing_account
 from app.core.config import settings
 from app.models.entities import Tenant, UserRole
 
@@ -63,6 +64,8 @@ def create_tenant(payload: TenantUpsertIn, db: Session = Depends(db_dep)):
         raise HTTPException(status_code=409, detail={"code": "slug_taken", "message": "Tenant slug already exists"})
     tenant = Tenant(**payload.model_dump())
     db.add(tenant)
+    db.flush()
+    ensure_billing_account(db, tenant.id)
     db.commit()
     db.refresh(tenant)
     log_event(db, tenant.id, "tenant.created", "api", {"slug": tenant.slug, "name": tenant.name})

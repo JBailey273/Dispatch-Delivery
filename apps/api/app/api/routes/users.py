@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
 from app.api.services import log_event
+from app.billing.service import evaluate_limit
 from app.core.security import get_password_hash
 from app.models.entities import User, UserRole
 
@@ -36,6 +37,12 @@ def create_user(payload: UserCreateIn, user: AuthUser = Depends(require_roles(Us
     exists = db.execute(select(User.id).where(User.tenant_id == user.tenant_id, User.email == payload.email)).scalar_one_or_none()
     if exists:
         raise HTTPException(status_code=409, detail={"code": "duplicate_user", "message": "User email already exists"})
+    if payload.role in {UserRole.DRIVER, UserRole.DISPATCHER}:
+        active_count = db.execute(select(func.count(User.id)).where(User.tenant_id == user.tenant_id, User.role == payload.role, User.is_active == True)).scalar_one()  # noqa: E712
+        resource = "max_drivers" if payload.role == UserRole.DRIVER else "max_dispatchers"
+        gate = evaluate_limit(db, user.tenant_id, resource, int(active_count) + (1 if payload.is_active else 0))
+        if not gate.allowed:
+            raise HTTPException(status_code=402, detail={"code": gate.code, "message": gate.message, "upgrade_required": gate.upgrade_required})
     new_user = User(
         tenant_id=user.tenant_id,
         email=payload.email,
