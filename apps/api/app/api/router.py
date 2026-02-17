@@ -12,6 +12,7 @@ from app.api.routes import (
     sms,
     tenant,
     uploads,
+    users,
 )
 
 api_router = APIRouter()
@@ -26,3 +27,4 @@ api_router.include_router(driver.router)
 api_router.include_router(tenant.router)
 api_router.include_router(uploads.router)
 api_router.include_router(sms.router)
+api_router.include_router(users.router)

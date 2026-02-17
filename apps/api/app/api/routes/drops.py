@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict
 from datetime import date
 
@@ -11,6 +12,7 @@ from app.api.services import find_matching_address, log_event, now_utc
 from app.models.entities import CapacityHold, Customer, CustomerAddress, DeliveryMode, Drop, Load, ProductCatalogItem, UserRole, WindowCapacity, WindowCode
 
 router = APIRouter(prefix="/drops", tags=["drops"])
+logger = logging.getLogger("dispatch.capacity")
 
 
 class ItemIn(BaseModel):
@@ -72,8 +74,11 @@ def reserve_capacity(db: Session, tenant_id, day: date, window: WindowCode, requ
     )
     remaining = cap.capacity_total - cap.capacity_used - active_holds
     if remaining < required_loads:
+        logger.warning("capacity_conflict", extra={"tenant_id": str(tenant_id), "service_date": str(day), "window": window.value, "required_loads": required_loads, "remaining": remaining})
         raise HTTPException(status_code=409, detail={"code": "capacity_conflict", "message": "Insufficient window capacity"})
     cap.capacity_used += required_loads
+    if cap.capacity_used > cap.capacity_total:
+        raise HTTPException(status_code=409, detail={"code": "capacity_conflict", "message": "Capacity exceeded"})
     return cap
 
 
@@ -183,6 +188,8 @@ def reschedule_drop(drop_id: str, payload: RescheduleIn, user: AuthUser = Depend
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
 
     load_count = db.execute(select(func.count(Load.id)).where(Load.drop_id == drop.id, Load.tenant_id == user.tenant_id)).scalar_one()
+    if load_count == 0:
+        raise HTTPException(status_code=409, detail={"code": "invalid_drop", "message": "Drops without loads are not allowed"})
     old_cap = db.execute(
         select(WindowCapacity)
         .where(WindowCapacity.tenant_id == user.tenant_id, WindowCapacity.service_date == drop.scheduled_date, WindowCapacity.window_code == drop.scheduled_window)
