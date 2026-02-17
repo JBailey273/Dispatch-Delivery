@@ -1,4 +1,4 @@
-from app.models.entities import CapacityHold, Customer, CustomerAddress, Drop, EventLog, Load, ProductCatalogItem, Tenant, User, WindowCapacity
+from app.models.entities import CapacityHold, Channel, Customer, CustomerAddress, Drop, EventLog, Load, ProductCatalogItem, Tenant, User, WindowCapacity
 
 __all__ = [
     "Tenant",
@@ -8,6 +8,7 @@ __all__ = [
     "CustomerAddress",
     "WindowCapacity",
     "CapacityHold",
+    "Channel",
     "Drop",
     "Load",
     "EventLog",

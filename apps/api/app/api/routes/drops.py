@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
 from app.api.services import find_matching_address, log_event, now_utc
-from app.models.entities import Customer, CustomerAddress, DeliveryMode, Drop, Load, ProductCatalogItem, UserRole, WindowCapacity, WindowCode
+from app.models.entities import CapacityHold, Customer, CustomerAddress, DeliveryMode, Drop, Load, ProductCatalogItem, UserRole, WindowCapacity, WindowCode
 
 router = APIRouter(prefix="/drops", tags=["drops"])
 
@@ -57,7 +57,20 @@ def reserve_capacity(db: Session, tenant_id, day: date, window: WindowCode, requ
         cap = WindowCapacity(tenant_id=tenant_id, service_date=day, window_code=window, capacity_total=tenant.capacity_per_window, capacity_used=0)
         db.add(cap)
         db.flush()
-    remaining = cap.capacity_total - cap.capacity_used
+    active_holds = (
+        db.execute(
+            select(func.coalesce(func.sum(CapacityHold.units_held), 0)).where(
+                CapacityHold.tenant_id == tenant_id,
+                CapacityHold.service_date == day,
+                CapacityHold.window_code == window,
+                CapacityHold.released_at.is_(None),
+                CapacityHold.converted_at.is_(None),
+                CapacityHold.expires_at > now_utc(),
+            )
+        ).scalar_one()
+        or 0
+    )
+    remaining = cap.capacity_total - cap.capacity_used - active_holds
     if remaining < required_loads:
         raise HTTPException(status_code=409, detail={"code": "capacity_conflict", "message": "Insufficient window capacity"})
     cap.capacity_used += required_loads

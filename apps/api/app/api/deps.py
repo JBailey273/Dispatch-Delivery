@@ -1,14 +1,15 @@
 import uuid
 from dataclasses import dataclass
+from hashlib import sha256
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.models.entities import UserRole
+from app.models.entities import Channel, UserRole
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
@@ -47,3 +48,17 @@ def require_roles(*roles: UserRole):
 
 def db_dep(db: Session = Depends(get_db)) -> Session:
     return db
+
+
+@dataclass
+class ChannelAuth:
+    tenant_id: uuid.UUID
+    channel_id: uuid.UUID
+
+
+def require_channel(x_channel_key: str = Header(alias="X-Channel-Key"), db: Session = Depends(db_dep)) -> ChannelAuth:
+    key_hash = sha256(x_channel_key.encode("utf-8")).hexdigest()
+    channel = db.query(Channel).filter(Channel.api_key_hash == key_hash, Channel.is_active == True).one_or_none()  # noqa: E712
+    if not channel:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"code": "unauthorized", "message": "Invalid channel key"})
+    return ChannelAuth(tenant_id=channel.tenant_id, channel_id=channel.id)
