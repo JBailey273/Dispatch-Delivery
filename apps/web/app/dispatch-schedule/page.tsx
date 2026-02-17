@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { api, requireRole } from '../lib/auth';
+import { ApiError, api, requireRole } from '../lib/auth';
 
 type Suggestion = {
   suggestion_type: string;
@@ -36,9 +36,11 @@ export default function DispatchSchedulePage() {
   const [changedLoads, setChangedLoads] = useState<Set<string>>(new Set());
   const [selectedProposalLoads, setSelectedProposalLoads] = useState<Record<string, Set<string>>>({});
   const [lastAppliedProposal, setLastAppliedProposal] = useState<string | null>(null);
+  const [error, setError] = useState('');
   const driverLoadWarningThreshold = 8;
 
   const load = async () => {
+    setError('');
     const [scheduleData, suggestionsData, proposalData] = await Promise.all([
       api(`/dispatch/schedule?day=${day}`),
       api(`/dispatch/suggestions?day=${day}`),
@@ -116,6 +118,7 @@ export default function DispatchSchedulePage() {
   return (
     <main>
       <h1>Dispatch Schedule</h1>
+      {error && <p style={{ color: '#b00020' }}>{error}</p>}
       <input type="date" value={day} onChange={(e) => setDay(e.target.value)} /> <button onClick={load}>Refresh</button>
 
       <section style={{ border: '1px solid #ddd', borderRadius: 8, padding: 12, marginTop: 12, marginBottom: 12 }}>
@@ -231,12 +234,18 @@ export default function DispatchSchedulePage() {
       )}
       <button
         onClick={async () => {
-          await api('/dispatch/loads/assign', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ load_ids: loadIds, driver_user_id: driver }),
-          });
-          await load();
+          try {
+            await api('/dispatch/loads/assign', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ load_ids: loadIds, driver_user_id: driver }),
+            });
+            await load();
+          } catch (err) {
+            const apiErr = err as ApiError;
+            setError(apiErr.message || 'Assignment failed.');
+            await load();
+          }
         }}
       >
         Assign selected

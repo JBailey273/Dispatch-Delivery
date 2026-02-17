@@ -9,6 +9,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, ChannelAuth, db_dep, require_channel, require_roles
+from app.api.guardrails import CapacityMutationContext, locked_capacity_row, mutate_capacity_or_409
 from app.api.services import log_event, normalize_us_phone, now_utc
 from app.models.entities import (
     CapacityHold,
@@ -129,20 +130,6 @@ def _is_blacked_out(db: Session, tenant_id, day: date, window: WindowCode) -> bo
         )
     ).scalar_one_or_none()
     return blackout is not None
-
-def _capacity_row_locked(db: Session, tenant_id, day: date, window: WindowCode) -> WindowCapacity:
-    cap = db.execute(
-        select(WindowCapacity)
-        .where(WindowCapacity.tenant_id == tenant_id, WindowCapacity.service_date == day, WindowCapacity.window_code == window)
-        .with_for_update()
-    ).scalar_one_or_none()
-    if cap:
-        return cap
-    tenant = db.execute(select(Tenant).where(Tenant.id == tenant_id)).scalar_one()
-    cap = WindowCapacity(tenant_id=tenant_id, service_date=day, window_code=window, capacity_total=tenant.capacity_per_window, capacity_used=0)
-    db.add(cap)
-    db.flush()
-    return cap
 
 
 def _upsert_customer_and_address(db: Session, tenant_id, payload: ConfirmOrderIn) -> tuple[Customer, CustomerAddress]:
@@ -267,7 +254,7 @@ def channel_availability(payload: AvailabilityIn, channel: ChannelAuth = Depends
 def create_hold(payload: HoldCreateIn, channel: ChannelAuth = Depends(require_channel), db: Session = Depends(db_dep)):
     if _is_blacked_out(db, channel.tenant_id, payload.date, payload.window):
         raise HTTPException(status_code=409, detail={"code": "window_blacked_out", "message": "Window unavailable"})
-    cap = _capacity_row_locked(db, channel.tenant_id, payload.date, payload.window)
+    cap = locked_capacity_row(db, channel.tenant_id, payload.date, payload.window)
     active_holds = _active_holds(db, channel.tenant_id, payload.date, payload.window)
     remaining = cap.capacity_total - cap.capacity_used - active_holds
     if remaining < payload.required_loads:
@@ -317,16 +304,21 @@ def confirm_hold(hold_token: str, payload: ConfirmOrderIn, channel: ChannelAuth 
     if payload.drop.requested_date != hold.service_date or payload.drop.requested_window != hold.window_code:
         raise HTTPException(status_code=409, detail={"code": "hold_window_mismatch", "message": "Hold window mismatch"})
 
-    cap = _capacity_row_locked(db, channel.tenant_id, hold.service_date, hold.window_code)
+    cap = locked_capacity_row(db, channel.tenant_id, hold.service_date, hold.window_code)
     if cap.capacity_total - cap.capacity_used < required_loads:
         logger.warning("failed_hold_confirmation", extra={"tenant_id": str(channel.tenant_id), "hold_token": hold_token, "reason": "capacity_conflict"})
         raise HTTPException(status_code=409, detail={"code": "capacity_conflict", "message": "Insufficient window capacity"})
 
     customer, address = _upsert_customer_and_address(db, channel.tenant_id, payload)
     drop, load_ids = _create_drop_and_loads(db, channel.tenant_id, payload, grouped, customer.id, address.id)
-    cap.capacity_used += required_loads
-    if cap.capacity_used > cap.capacity_total:
-        raise HTTPException(status_code=409, detail={"code": "capacity_conflict", "message": "Insufficient window capacity"})
+    mutate_capacity_or_409(
+        db,
+        channel.tenant_id,
+        hold.service_date,
+        hold.window_code,
+        required_loads,
+        CapacityMutationContext(source="channel", reason="hold_confirm", reference_id=hold_token),
+    )
     hold.converted_at = now_utc()
     hold.converted_drop_id = drop.id
 
@@ -341,7 +333,7 @@ def ingest_order(payload: ConfirmOrderIn, channel: ChannelAuth = Depends(require
     required_loads, grouped = _required_loads(db, channel.tenant_id, payload.items)
     if _is_blacked_out(db, channel.tenant_id, payload.drop.requested_date, payload.drop.requested_window):
         raise HTTPException(status_code=409, detail={"code": "window_blacked_out", "message": "Window unavailable"})
-    cap = _capacity_row_locked(db, channel.tenant_id, payload.drop.requested_date, payload.drop.requested_window)
+    cap = locked_capacity_row(db, channel.tenant_id, payload.drop.requested_date, payload.drop.requested_window)
     active_holds = _active_holds(db, channel.tenant_id, payload.drop.requested_date, payload.drop.requested_window)
     remaining = cap.capacity_total - cap.capacity_used - active_holds
     if remaining < required_loads:
@@ -351,7 +343,14 @@ def ingest_order(payload: ConfirmOrderIn, channel: ChannelAuth = Depends(require
 
     customer, address = _upsert_customer_and_address(db, channel.tenant_id, payload)
     drop, load_ids = _create_drop_and_loads(db, channel.tenant_id, payload, grouped, customer.id, address.id)
-    cap.capacity_used += required_loads
+    mutate_capacity_or_409(
+        db,
+        channel.tenant_id,
+        payload.drop.requested_date,
+        payload.drop.requested_window,
+        required_loads,
+        CapacityMutationContext(source="channel", reason="order_ingest", reference_id=payload.external_order.id),
+    )
     log_event(db, channel.tenant_id, "order.ingested", "channel", {"external_order_id": payload.external_order.id, "drop_id": str(drop.id)})
     log_event(db, channel.tenant_id, "capacity.consumed", "channel", {"date": str(payload.drop.requested_date), "window": payload.drop.requested_window.value, "units": required_loads})
     db.commit()

@@ -64,9 +64,10 @@ class StatusIn(BaseModel):
 def _ensure_transition(load: Load, requested: LoadStatus) -> None:
     allowed = {
         LoadStatus.ASSIGNED: {LoadStatus.LOADED_LEAVING, LoadStatus.EXCEPTION},
-        LoadStatus.LOADED_LEAVING: {LoadStatus.DELIVERED},
+        LoadStatus.LOADED_LEAVING: {LoadStatus.DELIVERED, LoadStatus.EXCEPTION},
         LoadStatus.EXCEPTION: set(),
         LoadStatus.DELIVERED: set(),
+        LoadStatus.CANCELLED: set(),
     }
     if requested not in allowed.get(load.status, set()):
         raise HTTPException(status_code=409, detail={"code": "invalid_transition", "message": "Invalid status transition"})
@@ -80,7 +81,10 @@ def update_load_status(
     user: AuthUser = Depends(require_roles(UserRole.DRIVER)),
     db: Session = Depends(db_dep),
 ):
-    requested = LoadStatus(payload.status)
+    try:
+        requested = LoadStatus(payload.status)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail={"code": "invalid_transition", "message": "Invalid status transition"}) from exc
     load = db.execute(select(Load).where(Load.id == load_id, Load.tenant_id == user.tenant_id).with_for_update()).scalar_one_or_none()
     if not load:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Load not found"})

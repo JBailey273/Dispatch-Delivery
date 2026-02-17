@@ -15,6 +15,7 @@ from app.api.dispatch_suggestions import (
     invalidate_suggestion_cache,
 )
 from app.api.optimization import apply_proposal, generate_proposals, undo_proposal
+from app.api.guardrails import guard_load_editable
 from app.api.services import enqueue_sms_job, log_event, now_utc
 from app.billing.service import ensure_billing_account, get_plan, scheduling_gate
 from app.models.entities import Customer, CustomerAddress, Drop, Load, LoadStatus, OptimizationProposal, User, UserRole, WindowCapacity, WindowCode
@@ -131,8 +132,9 @@ def assign_loads(payload: AssignIn, user: AuthUser = Depends(require_roles(UserR
     schedule_decision = scheduling_gate(db, user.tenant_id)
     if not schedule_decision.allowed:
         raise HTTPException(status_code=402, detail={"code": schedule_decision.code, "message": schedule_decision.message})
-    rows = db.execute(select(Load).where(Load.tenant_id == user.tenant_id, Load.id.in_(payload.load_ids))).scalars().all()
+    rows = db.execute(select(Load).where(Load.tenant_id == user.tenant_id, Load.id.in_(payload.load_ids)).with_for_update()).scalars().all()
     for l in rows:
+        guard_load_editable(l, "reassigned")
         l.driver_user_id = payload.driver_user_id
         l.truck_label = payload.truck_label
         if l.status == LoadStatus.CANCELLED:
@@ -158,9 +160,10 @@ def reassign_all(payload: ReassignAllIn, user: AuthUser = Depends(require_roles(
             Load.route_date == payload.day,
             Load.driver_user_id == payload.from_driver_user_id,
             Load.status.notin_([LoadStatus.DELIVERED, LoadStatus.CANCELLED]),
-        )
+        ).with_for_update()
     ).scalars().all()
     for l in rows:
+        guard_load_editable(l, "reassigned")
         l.driver_user_id = payload.to_driver_user_id
     log_event(db, user.tenant_id, "loads.reassigned_all", "api", payload.model_dump(mode="json"))
     db.commit()
@@ -174,8 +177,9 @@ def assign_entire_drop(drop_id: str, payload: AssignIn, user: AuthUser = Depends
     schedule_decision = scheduling_gate(db, user.tenant_id)
     if not schedule_decision.allowed:
         raise HTTPException(status_code=402, detail={"code": schedule_decision.code, "message": schedule_decision.message})
-    rows = db.execute(select(Load).where(Load.tenant_id == user.tenant_id, Load.drop_id == drop_id)).scalars().all()
+    rows = db.execute(select(Load).where(Load.tenant_id == user.tenant_id, Load.drop_id == drop_id).with_for_update()).scalars().all()
     for l in rows:
+        guard_load_editable(l, "reassigned")
         l.driver_user_id = payload.driver_user_id
         l.truck_label = payload.truck_label
         if l.status != LoadStatus.CANCELLED:

@@ -2,6 +2,17 @@
 
 export type Session = { token: string; role: string; tenant_id: string; tenant_slug?: string; tenant_name?: string };
 
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
+
 export function getSession(): Session | null {
   if (typeof window === 'undefined') return null;
   const raw = localStorage.getItem('session');
@@ -32,6 +43,8 @@ export async function api(path: string, opts: RequestInit = {}) {
   };
   const res = await fetch(`http://localhost:8000/api/v1${path}`, { ...opts, headers, cache: 'no-store' });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.detail?.message || body?.detail || 'Request failed');
+  if (!res.ok) {
+    throw new ApiError(body?.detail?.message || body?.detail || 'Request failed', res.status, body?.detail?.code);
+  }
   return body;
 }
