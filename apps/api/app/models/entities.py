@@ -78,6 +78,9 @@ class Tenant(Base, TimestampMixin):
 
 class User(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "email", name="uq_users_tenant_email"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
@@ -228,6 +231,7 @@ class BlackoutReason(str, enum.Enum):
 class ChannelType(str, enum.Enum):
     MANUAL = "manual"
     WOOCOMMERCE = "woocommerce"
+    CUSTOM = "custom"
 
 
 class BillingAccountStatus(str, enum.Enum):
@@ -293,6 +297,9 @@ class OperationalBlackout(Base, TenantScopedMixin, TimestampMixin):
 
 class Channel(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "channels"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_channels_tenant_name"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)

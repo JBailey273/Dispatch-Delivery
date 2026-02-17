@@ -26,6 +26,12 @@ class UserUpdateIn(BaseModel):
     default_truck_identifier: str | None = None
 
 
+def _active_admin_count(db: Session, tenant_id: str) -> int:
+    return int(
+        db.execute(select(func.count(User.id)).where(User.tenant_id == tenant_id, User.role == UserRole.ADMIN, User.is_active.is_(True))).scalar_one()
+    )
+
+
 @router.get("")
 def list_users(user: AuthUser = Depends(require_roles(UserRole.ADMIN)), db: Session = Depends(db_dep)):
     users = db.execute(select(User).where(User.tenant_id == user.tenant_id)).scalars().all()
@@ -63,15 +69,29 @@ def update_user(user_id: str, payload: UserUpdateIn, actor: AuthUser = Depends(r
     if not target:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "User not found"})
 
-    if payload.role and target.id == actor.user_id and target.role == UserRole.ADMIN and payload.role != UserRole.ADMIN:
-        admin_count = db.execute(select(func.count(User.id)).where(User.tenant_id == actor.tenant_id, User.role == UserRole.ADMIN, User.is_active == True)).scalar_one()  # noqa: E712
-        if admin_count <= 1:
-            raise HTTPException(status_code=400, detail={"code": "last_admin", "message": "Cannot remove last Admin role"})
+    if payload.role and target.role == UserRole.ADMIN and payload.role != UserRole.ADMIN and _active_admin_count(db, actor.tenant_id) <= 1:
+        raise HTTPException(status_code=400, detail={"code": "last_admin", "message": "Cannot remove last Admin role"})
+
+    if payload.is_active is False and target.role == UserRole.ADMIN and target.is_active and _active_admin_count(db, actor.tenant_id) <= 1:
+        raise HTTPException(status_code=400, detail={"code": "last_admin", "message": "Cannot disable the last active Admin"})
 
     updates = payload.model_dump(exclude_unset=True)
     for key, value in updates.items():
         setattr(target, key, value)
     db.add(target)
     log_event(db, actor.tenant_id, "user.updated", "api", {"user_id": user_id, "updates": updates})
+    db.commit()
+    return {"status": "ok"}
+
+
+@router.delete("/{user_id}")
+def delete_user(user_id: str, actor: AuthUser = Depends(require_roles(UserRole.ADMIN)), db: Session = Depends(db_dep)):
+    target = db.execute(select(User).where(User.id == user_id, User.tenant_id == actor.tenant_id)).scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "User not found"})
+    if target.role == UserRole.ADMIN and target.is_active and _active_admin_count(db, actor.tenant_id) <= 1:
+        raise HTTPException(status_code=400, detail={"code": "last_admin", "message": "Cannot delete the last active Admin"})
+    db.delete(target)
+    log_event(db, actor.tenant_id, "user.deleted", "api", {"user_id": user_id, "email": target.email})
     db.commit()
     return {"status": "ok"}

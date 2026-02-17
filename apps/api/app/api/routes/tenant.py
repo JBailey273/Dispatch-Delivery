@@ -1,4 +1,5 @@
 from datetime import time
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
@@ -43,6 +44,29 @@ class TenantUpsertIn(BaseModel):
         if "windowA_end" in info.data and v < info.data["windowA_end"]:
             raise ValueError("Window ranges must not overlap")
         return v
+
+    @field_validator("windowA_end")
+    @classmethod
+    def window_a_valid(cls, v: time, info):
+        if "windowA_start" in info.data and v <= info.data["windowA_start"]:
+            raise ValueError("windowA_end must be later than windowA_start")
+        return v
+
+    @field_validator("windowB_end")
+    @classmethod
+    def window_b_valid(cls, v: time, info):
+        if "windowB_start" in info.data and v <= info.data["windowB_start"]:
+            raise ValueError("windowB_end must be later than windowB_start")
+        return v
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str):
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError("timezone must be a valid IANA timezone") from exc
+        return value
 
     @field_validator("optimization_aggressiveness")
     @classmethod

@@ -10,6 +10,7 @@ from app.api.routes import (
     driver,
     drops,
     operations,
+    platform_admin,
     product_catalog,
     sms,
     tenant,
@@ -33,3 +34,5 @@ api_router.include_router(sms.router)
 api_router.include_router(users.router)
 api_router.include_router(operations.router)
 api_router.include_router(operations.admin_router)
+
+api_router.include_router(platform_admin.router)

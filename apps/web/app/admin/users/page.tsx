@@ -15,6 +15,10 @@ export default function UsersPage(){
     <select value={form.role} onChange={e=>setForm({...form,role:e.target.value})}><option value='admin'>Admin</option><option value='dispatcher'>Dispatcher</option><option value='driver'>Driver</option></select>
     <input placeholder='default truck (driver optional)' value={form.default_truck_identifier} onChange={e=>setForm({...form,default_truck_identifier:e.target.value})}/>
     <button onClick={async()=>{await api('/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(form)});load();}}>Create</button>
-    <ul>{users.map(u=><li key={u.id}>{u.email} - {u.role} [{u.is_active?'active':'disabled'}] <button onClick={async()=>{await api(`/users/${u.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({is_active:!u.is_active})});load();}}>toggle</button></li>)}</ul>
+    <ul>{users.map(u=><li key={u.id}>{u.email} - {u.role} [{u.is_active?'active':'disabled'}] <button onClick={async()=>{
+      if(!confirm(`${u.is_active ? 'Disable' : 'Enable'} user ${u.email}?`)) return;
+      await api(`/users/${u.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({is_active:!u.is_active})});
+      load();
+    }}>{u.is_active?'Disable':'Enable'}</button></li>)}</ul>
   </main>
 }
