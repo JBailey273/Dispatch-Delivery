@@ -195,9 +195,32 @@ class CapacityHold(Base, TenantScopedMixin, TimestampMixin):
     converted_drop_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("drops.id"), nullable=True)
 
 
+class BlackoutReason(str, enum.Enum):
+    WEATHER = "weather"
+    EQUIPMENT = "equipment"
+    STAFFING = "staffing"
+    OTHER = "other"
+
+
 class ChannelType(str, enum.Enum):
     MANUAL = "manual"
     WOOCOMMERCE = "woocommerce"
+
+
+
+
+class OperationalBlackout(Base, TenantScopedMixin, TimestampMixin):
+    __tablename__ = "operational_blackouts"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "service_date", "window_code", name="uq_operational_blackout"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    service_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    window_code: Mapped[WindowCode | None] = mapped_column(Enum(WindowCode, name="window_code"), nullable=True)
+    reason_code: Mapped[BlackoutReason] = mapped_column(Enum(BlackoutReason, name="blackout_reason"), nullable=False)
+    reason_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
 class Channel(Base, TenantScopedMixin, TimestampMixin):

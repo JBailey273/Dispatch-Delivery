@@ -15,6 +15,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <header style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <strong>{session.tenant_name || session.tenant_slug || session.tenant_id}</strong>
           <Link href="/dispatch-schedule">Operations</Link>
+          <Link href="/ops-dashboard">Ops Dashboard</Link>
           {isAdmin && (
             <>
               <Link href="/admin/tenant">Administration</Link>

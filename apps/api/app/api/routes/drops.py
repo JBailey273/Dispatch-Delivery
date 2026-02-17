@@ -4,12 +4,12 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
 from app.api.services import find_matching_address, log_event, now_utc
-from app.models.entities import CapacityHold, Customer, CustomerAddress, DeliveryMode, Drop, Load, ProductCatalogItem, UserRole, WindowCapacity, WindowCode
+from app.models.entities import CapacityHold, Customer, CustomerAddress, DeliveryMode, Drop, Load, OperationalBlackout, ProductCatalogItem, UserRole, WindowCapacity, WindowCode
 
 router = APIRouter(prefix="/drops", tags=["drops"])
 logger = logging.getLogger("dispatch.capacity")
@@ -46,7 +46,20 @@ class ManualDropIn(BaseModel):
     items: list[ItemIn]
 
 
+def _is_blacked_out(db: Session, tenant_id, day: date, window: WindowCode) -> bool:
+    return db.execute(
+        select(OperationalBlackout.id).where(
+            OperationalBlackout.tenant_id == tenant_id,
+            OperationalBlackout.service_date == day,
+            OperationalBlackout.active.is_(True),
+            or_(OperationalBlackout.window_code.is_(None), OperationalBlackout.window_code == window),
+        )
+    ).scalar_one_or_none() is not None
+
+
 def reserve_capacity(db: Session, tenant_id, day: date, window: WindowCode, required_loads: int):
+    if _is_blacked_out(db, tenant_id, day, window):
+        raise HTTPException(status_code=409, detail={"code": "window_blacked_out", "message": "Window unavailable"})
     cap = db.execute(
         select(WindowCapacity)
         .where(WindowCapacity.tenant_id == tenant_id, WindowCapacity.service_date == day, WindowCapacity.window_code == window)
