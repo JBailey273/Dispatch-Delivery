@@ -30,6 +30,12 @@ def _render_message(job: dict) -> str:
     return "Dispatch update"
 
 
+def _table_exists(conn, table_name: str) -> bool:
+    qualified_name = f"public.{table_name}"
+    result = conn.execute(text("SELECT to_regclass(:table_name)"), {"table_name": qualified_name}).scalar_one_or_none()
+    return result is not None
+
+
 def _log_event(conn, tenant_id: str, event_type: str, payload: dict):
     conn.execute(
         text(
@@ -83,6 +89,13 @@ def expire_holds_job() -> dict:
     now = datetime.now(timezone.utc)
     released = 0
     with engine.begin() as conn:
+        if not _table_exists(conn, "capacity_holds"):
+            logger.warning("Skipping hold expiry because capacity_holds table does not exist yet")
+            return {"status": "skipped", "reason": "missing_table", "table": "capacity_holds"}
+        if not _table_exists(conn, "event_logs"):
+            logger.warning("Skipping hold expiry because event_logs table does not exist yet")
+            return {"status": "skipped", "reason": "missing_table", "table": "event_logs"}
+
         holds = conn.execute(
             text(
                 """
@@ -104,7 +117,14 @@ def expire_holds_job() -> dict:
 def diagnostics_job() -> dict:
     now = datetime.now(timezone.utc)
     found = 0
+    required_tables = {"window_capacities", "drops", "loads", "capacity_holds", "event_logs"}
+
     with engine.begin() as conn:
+        missing_tables = sorted(table for table in required_tables if not _table_exists(conn, table))
+        if missing_tables:
+            logger.warning("Skipping diagnostics because tables are missing", extra={"missing_tables": missing_tables})
+            return {"status": "skipped", "reason": "missing_tables", "tables": missing_tables}
+
         over = conn.execute(text("SELECT id, tenant_id, service_date, window_code, capacity_used, capacity_total FROM window_capacities WHERE capacity_used > capacity_total")).mappings().all()
         for row in over:
             _log_event(conn, str(row["tenant_id"]), "anomaly.capacity_overrun", {"window_capacity_id": str(row["id"]), "service_date": str(row["service_date"]), "window": row["window_code"], "used": row["capacity_used"], "total": row["capacity_total"]})
@@ -186,7 +206,7 @@ def process_billing_webhook_job(raw_job: str) -> dict:
             updated = res.rowcount or 0
             rows = conn.execute(text("SELECT tenant_id FROM billing_accounts WHERE stripe_customer_id = :customer_id"), {"customer_id": customer_id}).mappings().all()
             for row in rows:
-                _log_event(conn, str(row["tenant_id"]), "billing.status.changed", "worker", {"new_status": status, "event_type": event_type, "event_id": event_id})
+                _log_event(conn, str(row["tenant_id"]), "billing.status.changed", {"new_status": status, "event_type": event_type, "event_id": event_id})
     return {"status": "processed", "updated": updated}
 
 
