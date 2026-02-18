@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     app_name: str = "Dispatch Delivery API"
     api_prefix: str = "/api/v1"
 
-    database_url: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/dispatch"
+    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/dispatch"
     redis_url: str = "redis://localhost:6379/0"
 
     jwt_secret: str = "change-me"
