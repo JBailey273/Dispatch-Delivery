@@ -1,14 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ApiError, api, requireRole } from '../../lib/auth';
 
 const POLL_INTERVAL_MS = 15000;
 const CONNECTION_STALE_MS = 90000;
 
-export default function DriverLoadListPage() {
+function DriverLoadListContent() {
   const [loads, setLoads] = useState<any[]>([]);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [lastServerVersion, setLastServerVersion] = useState<string | null>(null);
@@ -77,6 +77,7 @@ export default function DriverLoadListPage() {
       {params.get('reassigned') === '1' && <p style={{ color: 'darkorange' }}>This delivery was reassigned by dispatch.</p>}
       {authExpired && <p style={{ color: 'darkred' }}>Session expired. Please sign in again.</p>}
       {connectionIssue && <p style={{ color: 'darkred' }}>Connection issue. Waiting for sync to resume.</p>}
+      <p>Last sync version: {lastServerVersion || 'n/a'}</p>
       <p>Last sync: {lastSyncText}</p>
       <ul>
         {loads.map((l) => (
@@ -86,5 +87,13 @@ export default function DriverLoadListPage() {
         ))}
       </ul>
     </main>
+  );
+}
+
+export default function DriverLoadListPage() {
+  return (
+    <Suspense fallback={<main><h1>My Loads Today</h1><p>Loading…</p></main>}>
+      <DriverLoadListContent />
+    </Suspense>
   );
 }
