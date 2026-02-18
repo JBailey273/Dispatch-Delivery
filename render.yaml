@@ -27,7 +27,7 @@ services:
       - key: REDIS_URL
         fromService:
           name: dispatch-redis
-          type: keyvalue
+          type: redis
           property: connectionString
       - key: JWT_SECRET
         sync: false
@@ -63,7 +63,7 @@ services:
       - key: REDIS_URL
         fromService:
           name: dispatch-redis
-          type: keyvalue
+          type: redis
           property: connectionString
       - key: TWILIO_ACCOUNT_SID
         sync: false
@@ -72,13 +72,13 @@ services:
       - key: TWILIO_FROM_NUMBER
         sync: false
 
+  - type: redis
+    name: dispatch-redis
+    ipAllowList: []
+    plan: starter
+
 databases:
   - name: dispatch-postgres
     databaseName: dispatch
     user: dispatch
     plan: basic-256mb
-
-keyvalueInstances:
-  - name: dispatch-redis
-    plan: starter
-    maxmemoryPolicy: allkeys-lru
