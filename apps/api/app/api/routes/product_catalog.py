@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,11 +22,11 @@ class ProductIn(BaseModel):
 
 @router.post("/import")
 async def import_product_catalog(
-    file: UploadFile = File(...),
+    request: Request,
     user: AuthUser = Depends(require_roles(UserRole.ADMIN)),
     db: Session = Depends(db_dep),
 ):
-    rows = parse_csv_upload(await file.read())
+    rows = parse_csv_upload(await request.body())
     required = {"sku", "name", "delivery_mode", "unit", "active"}
     created = updated = skipped = 0
     errors: list[dict] = []
