@@ -3,7 +3,7 @@
 services:
   - type: web
     name: dispatch-web
-    env: node
+    runtime: node
     rootDir: apps/web
     plan: starter
     buildCommand: npm install && npm run build
@@ -14,7 +14,7 @@ services:
 
   - type: web
     name: dispatch-api
-    env: python
+    runtime: python
     rootDir: apps/api
     plan: starter
     buildCommand: pip install -r requirements.txt
@@ -50,7 +50,7 @@ services:
 
   - type: worker
     name: dispatch-worker
-    env: python
+    runtime: python
     rootDir: apps/worker
     plan: starter
     buildCommand: pip install -r requirements.txt
