@@ -35,7 +35,8 @@ export default function AdminCatalogPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setIsAdmin(getSession()?.role === 'admin'); }, []);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); setIsAdmin(getSession()?.role === 'admin'); }, []);
 
   const filtered = items.filter(i => {
     if (!showInactive && !i.active) return false;
@@ -99,6 +100,7 @@ export default function AdminCatalogPage() {
     finally { setSaving(false); }
   };
 
+  if (!mounted) return null;
   if (!requireRole(['dispatcher'])) return <div className="page"><p>Unauthorized</p></div>;
 
   return (
