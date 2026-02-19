@@ -167,7 +167,7 @@ export default function NewDropPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...newAddr, is_default: addresses.length === 0 }),
       });
-      const saved = res.address || res;
+      const saved: Address = { id: res.id, line1: newAddr.line1, line2: newAddr.line2, city: newAddr.city, state: newAddr.state, postal_code: newAddr.postal_code, is_default: addresses.length === 0 };
       const updated = [...addresses, saved];
       setAddresses(updated);
       setAddressId(saved.id);
