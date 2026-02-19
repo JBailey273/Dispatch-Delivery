@@ -29,6 +29,9 @@ export function clearSession() {
 }
 
 export function requireRole(roles: string[]): boolean {
+  // During SSR, render optimistically to avoid hydration mismatch.
+  // API calls enforce auth server-side; unauthorized users get redirected on 401.
+  if (typeof window === 'undefined') return true;
   const s = getSession();
   if (!s) return false;
   return s.role === 'admin' || roles.includes(s.role);
