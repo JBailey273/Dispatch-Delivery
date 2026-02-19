@@ -3,6 +3,7 @@ import time
 import uuid
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from redis import Redis
 from sqlalchemy import text
@@ -15,6 +16,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dispatch.api")
 
 app = FastAPI(title=settings.app_name)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "https://app.eastmeadowgardencenter.com",
+        "https://dispatch-web-b6qc.onrender.com",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(api_router, prefix=settings.api_prefix)
 
 
@@ -27,7 +41,7 @@ async def request_context_middleware(request: Request, call_next):
     tenant_slug = request.headers.get("X-Tenant-Slug")
     if not tenant_slug and host:
         first_label = host.split(":")[0].split(".")[0]
-        if first_label not in {"localhost", "127", "api", "www"}:
+        if first_label not in {"localhost", "127", "api", "www", "app", "dispatch-api-mb6e"}:
             tenant_slug = first_label
     if not tenant_slug and request.url.path.startswith("/t/"):
         parts = request.url.path.split("/")
