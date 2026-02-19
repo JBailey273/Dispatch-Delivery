@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -71,9 +72,15 @@ async def import_product_catalog(
 
 @router.post("")
 def create_product(payload: ProductIn, user: AuthUser = Depends(require_roles(UserRole.ADMIN)), db: Session = Depends(db_dep)):
-    item = ProductCatalogItem(tenant_id=user.tenant_id, **payload.model_dump(exclude_none=True), bulk_group=payload.bulk_group or payload.sku)
+    payload_data = payload.model_dump(exclude_none=True)
+    payload_data["bulk_group"] = payload.bulk_group or payload.sku
+    item = ProductCatalogItem(tenant_id=user.tenant_id, **payload_data)
     db.add(item)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail={"code": "duplicate_sku", "message": "A product with this SKU already exists"}) from exc
     db.refresh(item)
     return {"id": str(item.id)}
 
