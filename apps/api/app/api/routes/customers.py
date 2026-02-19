@@ -26,6 +26,39 @@ class AddressIn(BaseModel):
     is_default: bool = False
 
 
+@router.get("")
+def list_customers(
+    limit: int = Query(default=100, ge=1, le=500),
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.DRIVER)),
+    db: Session = Depends(db_dep),
+):
+    last_ordered_subquery = (
+        select(Drop.customer_id, func.max(Drop.scheduled_date).label("last_ordered"))
+        .where(Drop.tenant_id == user.tenant_id)
+        .group_by(Drop.customer_id)
+        .subquery()
+    )
+    stmt = (
+        select(Customer, last_ordered_subquery.c.last_ordered)
+        .outerjoin(last_ordered_subquery, last_ordered_subquery.c.customer_id == Customer.id)
+        .where(Customer.tenant_id == user.tenant_id)
+        .order_by(last_ordered_subquery.c.last_ordered.desc().nullslast(), Customer.name.asc())
+        .limit(limit)
+    )
+    customers = db.execute(stmt).all()
+    return {
+        "results": [
+            {
+                "id": str(c.id),
+                "name": c.name,
+                "phone_e164": c.phone_e164,
+                "last_ordered": str(last_ordered) if last_ordered else None,
+            }
+            for c, last_ordered in customers
+        ]
+    }
+
+
 @router.get("/search")
 def search_customers(
     q: str = Query(..., min_length=1),
@@ -132,6 +165,24 @@ def update_customer_name(customer_id: str, payload: dict, user: AuthUser = Depen
         log_event(db, user.tenant_id, "customer.name_changed", "api", {"customer_id": customer_id, "from": old_name, "to": new_name})
     db.commit()
     return {"customer_id": customer_id, "name": new_name, "name_mismatch": mismatch}
+
+
+@router.get("/{customer_id}")
+def get_customer(customer_id: str, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.DRIVER)), db: Session = Depends(db_dep)):
+    customer = db.execute(select(Customer).where(Customer.id == customer_id, Customer.tenant_id == user.tenant_id)).scalar_one_or_none()
+    if not customer:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Customer not found"})
+    last_ordered_subquery = (
+        select(func.max(Drop.scheduled_date).label("last_ordered"))
+        .where(Drop.tenant_id == user.tenant_id, Drop.customer_id == customer.id)
+    ).scalar_subquery()
+    last_ordered = db.execute(select(last_ordered_subquery)).scalar_one_or_none()
+    return {
+        "id": str(customer.id),
+        "name": customer.name,
+        "phone_e164": customer.phone_e164,
+        "last_ordered": str(last_ordered) if last_ordered else None,
+    }
 
 
 @router.get("/{customer_id}/addresses")
