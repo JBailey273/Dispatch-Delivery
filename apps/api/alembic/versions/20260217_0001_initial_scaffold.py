@@ -25,10 +25,6 @@ load_status = sa.Enum("pending", "loaded_leaving", "exception", "delivered", "ca
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    for enum in [user_role, delivery_mode, window_code, drop_window_code, load_window_code, load_status]:
-        enum.create(bind, checkfirst=True)
-
     op.create_table(
         "tenants",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
