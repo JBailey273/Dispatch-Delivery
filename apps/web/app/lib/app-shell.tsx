@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { clearSession, getSession } from './auth';
+import { useEffect, useState } from 'react';
+import { clearSession, getSession, Session } from './auth';
 
 function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
   const pathname = usePathname();
@@ -13,12 +14,19 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const session = getSession();
-  const isLogin = pathname === '/login';
-  const isAdmin = session?.role === 'admin';
-  const isDriver = session?.role === 'driver';
+  const [session, setSession] = useState<Session | null>(null);
+  const [mounted, setMounted] = useState(false);
 
-  if (!session || isLogin) return <>{children}</>;
+  useEffect(() => {
+    setSession(getSession());
+    setMounted(true);
+  }, [pathname]);
+
+  const isLogin = pathname === '/login';
+  if (!mounted || !session || isLogin) return <>{children}</>;
+
+  const isAdmin = session.role === 'admin';
+  const isDriver = session.role === 'driver';
 
   return (
     <>
