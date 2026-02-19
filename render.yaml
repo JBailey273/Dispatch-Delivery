@@ -10,14 +10,14 @@ services:
     startCommand: npm run start
     envVars:
       - key: NEXT_PUBLIC_API_BASE_URL
-        value: https://dispatch-api.onrender.com/api/v1
+        value: https://dispatch-api-mb6e.onrender.com/api/v1
 
   - type: web
     name: dispatch-api
     runtime: python
     rootDir: apps/api
     plan: starter
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && alembic upgrade head
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
