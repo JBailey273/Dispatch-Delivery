@@ -1,6 +1,6 @@
 'use client';
 
-import { KeyboardEvent, useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { KeyboardEvent, Suspense, useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ApiError, api, requireRole } from '../lib/auth';
 
@@ -27,6 +27,10 @@ function capColor(u: number, t: number) {
 }
 
 export default function NewDropPage() {
+  return <Suspense fallback={<div className="page" style={{ textAlign: 'center', padding: 40 }}><div className="spinner spinner-lg" style={{ margin: '0 auto' }} /></div>}><NewDropInner /></Suspense>;
+}
+
+function NewDropInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const phoneRef = useRef<HTMLInputElement>(null);
