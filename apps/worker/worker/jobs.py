@@ -142,7 +142,7 @@ def diagnostics_job() -> dict:
         stuck = conn.execute(text("""
             SELECT l.id, l.tenant_id, l.route_date, l.route_window
             FROM loads l
-            WHERE l.status = 'assigned' AND l.route_date < CURRENT_DATE
+            WHERE l.status = 'ASSIGNED' AND l.route_date < CURRENT_DATE
         """)).mappings().all()
         for row in stuck:
             _log_event(conn, str(row["tenant_id"]), "anomaly.load_stuck_assigned", {"load_id": str(row["id"]), "route_date": str(row["route_date"]), "route_window": row["route_window"]})
@@ -163,19 +163,19 @@ def diagnostics_job() -> dict:
 
 def _status_from_event(event_type: str, payload: dict) -> str | None:
     if event_type in {"invoice.payment_failed"}:
-        return "past_due"
+        return "PAST_DUE"
     if event_type in {"invoice.payment_succeeded", "customer.subscription.created", "subscription.created"}:
-        return "active"
+        return "ACTIVE"
     if event_type in {"customer.subscription.deleted", "subscription.deleted"}:
-        return "suspended"
+        return "SUSPENDED"
     if event_type in {"customer.subscription.updated", "subscription.updated"}:
         sub_status = (payload.get("data", {}).get("object", {}).get("status") or "").lower()
         if sub_status in {"active", "trialing"}:
-            return "active"
+            return "ACTIVE"
         if sub_status in {"past_due", "unpaid"}:
-            return "past_due"
+            return "PAST_DUE"
         if sub_status in {"canceled", "incomplete_expired"}:
-            return "suspended"
+            return "SUSPENDED"
     return None
 
 
