@@ -20,7 +20,8 @@ export default function AvailabilityTestPage() {
   const [ingestResult, setIngestResult] = useState<any>(null);
 
   const channelApi = async (path: string, body: any) => {
-    const res = await fetch(`http://localhost:8000/api/v1${path}`, {
+    const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
+    const res = await fetch(`${base}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Channel-Key': channelKey },
       body: JSON.stringify(body),

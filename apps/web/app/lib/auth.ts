@@ -41,7 +41,8 @@ export async function api(path: string, opts: RequestInit = {}) {
     ...(s ? { Authorization: `Bearer ${s.token}` } : {}),
     ...(s?.tenant_slug ? { 'X-Tenant-Slug': s.tenant_slug } : {}),
   };
-  const res = await fetch(`http://localhost:8000/api/v1${path}`, { ...opts, headers, cache: 'no-store' });
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
+  const res = await fetch(`${base}${path}`, { ...opts, headers, cache: 'no-store' });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     const errCode = body?.detail?.code;

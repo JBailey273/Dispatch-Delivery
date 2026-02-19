@@ -16,7 +16,8 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/v1/auth/login', {
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
+      const res = await fetch(`${base}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -26,7 +27,7 @@ export default function LoginPage() {
 
       let tenantSettings: any = null;
       try {
-        const tRes = await fetch('http://localhost:8000/api/v1/tenant/settings', { headers: { Authorization: `Bearer ${data.access_token}` } });
+        const tRes = await fetch(`${base}/tenant/settings`, { headers: { Authorization: `Bearer ${data.access_token}` } });
         tenantSettings = await tRes.json();
       } catch { tenantSettings = null; }
 

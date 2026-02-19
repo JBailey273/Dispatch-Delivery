@@ -5,7 +5,8 @@ import { useEffect, useState } from 'react';
 type Tenant = { id: string; name: string; slug: string; status: string; created_at: string };
 
 async function platformApi(path: string, secret: string, opts: RequestInit = {}) {
-  const res = await fetch(`http://localhost:8000/api/v1/platform${path}`, {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
+  const res = await fetch(`${base}/platform${path}`, {
     ...opts,
     headers: { 'Content-Type': 'application/json', 'X-Platform-Admin': secret, ...(opts.headers || {}) },
   });
