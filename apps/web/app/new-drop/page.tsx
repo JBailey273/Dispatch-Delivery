@@ -1,7 +1,7 @@
 'use client';
 
 import { KeyboardEvent, useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ApiError, api, requireRole } from '../lib/auth';
 
 /* ── Types ── */
@@ -28,6 +28,7 @@ function capColor(u: number, t: number) {
 
 export default function NewDropPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const phoneRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState('');
 
@@ -68,6 +69,15 @@ export default function NewDropPage() {
     phoneRef.current?.focus();
     api('/product-catalog').then(d => setCatalog(d.items || [])).catch(() => null);
   }, []);
+
+  /* ── Preload customer from URL param ── */
+  useEffect(() => {
+    const customerId = searchParams.get('customerId');
+    if (!customerId || customer) return;
+    api(`/customers/${customerId}`).then(data => {
+      if (data?.id) selectCustomer(data);
+    }).catch(() => null);
+  }, [searchParams]);
 
   /* ── Computed ── */
   const requiredLoads = useMemo(() => {
