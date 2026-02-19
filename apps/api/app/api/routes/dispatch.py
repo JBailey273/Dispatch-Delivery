@@ -18,7 +18,7 @@ from app.api.optimization import apply_proposal, generate_proposals, undo_propos
 from app.api.guardrails import guard_load_editable
 from app.api.services import enqueue_sms_job, log_event, now_utc
 from app.billing.service import ensure_billing_account, get_plan, scheduling_gate
-from app.models.entities import Customer, CustomerAddress, Drop, Load, LoadStatus, OperationalBlackout, OptimizationProposal, User, UserRole, WindowCapacity, WindowCode
+from app.models.entities import Customer, CustomerAddress, Drop, Load, LoadStatus, OperationalBlackout, OptimizationProposal, Tenant, User, UserRole, WindowCapacity, WindowCode
 
 router = APIRouter(prefix="/dispatch", tags=["dispatch"])
 logger = logging.getLogger("dispatch.ops")
@@ -26,6 +26,8 @@ logger = logging.getLogger("dispatch.ops")
 
 @router.get("/schedule")
 def dispatch_schedule(day: date, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+    tenant = db.execute(select(Tenant).where(Tenant.id == user.tenant_id)).scalar_one()
+    default_cap = tenant.capacity_per_window
     orphaned = db.execute(select(Load.id).where(Load.tenant_id == user.tenant_id, Load.route_date == day, ~Load.drop_id.in_(select(Drop.id)))).scalars().all()
     if orphaned:
         logger.error("orphaned_loads_detected", extra={"tenant_id": str(user.tenant_id), "count": len(orphaned)})
@@ -73,8 +75,8 @@ def dispatch_schedule(day: date, user: AuthUser = Depends(require_roles(UserRole
     return {
         "date": str(day),
         "windows": {
-            "A": {"capacity": cap_map.get("A", {"used": 0, "total": 0, "remaining_capacity": 0}), "groups": by_window["A"], "disabled": "A" in disabled_windows},
-            "B": {"capacity": cap_map.get("B", {"used": 0, "total": 0, "remaining_capacity": 0}), "groups": by_window["B"], "disabled": "B" in disabled_windows},
+            "A": {"capacity": cap_map.get("A", {"used": 0, "total": default_cap, "remaining_capacity": default_cap}), "groups": by_window["A"], "disabled": "A" in disabled_windows},
+            "B": {"capacity": cap_map.get("B", {"used": 0, "total": default_cap, "remaining_capacity": default_cap}), "groups": by_window["B"], "disabled": "B" in disabled_windows},
         },
     }
 
