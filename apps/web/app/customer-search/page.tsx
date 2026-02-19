@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ApiError, api, requireRole } from '../lib/auth';
 
@@ -11,9 +11,10 @@ export default function CustomerSearchPage() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState('');
-  const [results, setResults] = useState<CustomerResult[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
+  const [allCustomers, setAllCustomers] = useState<CustomerResult[]>([]);
+  const [searchResults, setSearchResults] = useState<CustomerResult[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [error, setError] = useState('');
 
   // Expanded customer
@@ -27,21 +28,45 @@ export default function CustomerSearchPage() {
   const [newPhone, setNewPhone] = useState('');
   const [creating, setCreating] = useState(false);
 
-  const search = useCallback(async () => {
-    if (!q.trim()) return;
-    setError('');
-    setLoading(true);
-    setSearched(true);
-    setExpanded(null);
-    try {
-      const data = await api(`/customers/search?q=${encodeURIComponent(q)}`);
-      setResults(data.results || []);
-    } catch (err) {
-      setError((err as ApiError).message || 'Search failed');
-    } finally {
-      setLoading(false);
+  // Load all customers on mount
+  useEffect(() => {
+    api('/customers').then(d => { setAllCustomers(d.results || []); }).catch(err => setError((err as ApiError).message || 'Failed to load customers')).finally(() => setLoading(false));
+  }, []);
+
+  // Live filter: client-side for short queries, API search for longer ones
+  const [debounceTimer, setDebounceTimer] = useState<NodeJS.Timeout | null>(null);
+
+  const handleQueryChange = (val: string) => {
+    setQ(val);
+    if (debounceTimer) clearTimeout(debounceTimer);
+
+    if (!val.trim()) {
+      setSearchResults(null);
+      return;
     }
-  }, [q]);
+
+    const timer = setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const data = await api(`/customers/search?q=${encodeURIComponent(val)}`);
+        setSearchResults(data.results || []);
+      } catch { /* fall back to client filter */ }
+      finally { setSearchLoading(false); }
+    }, 300);
+    setDebounceTimer(timer);
+  };
+
+  // Determine which list to display
+  const displayed = (() => {
+    if (searchResults !== null) return searchResults;
+    if (!q.trim()) return allCustomers;
+    // Client-side fallback while waiting for search
+    const lower = q.toLowerCase();
+    return allCustomers.filter(c =>
+      c.name.toLowerCase().includes(lower) ||
+      c.phone_e164.includes(q)
+    );
+  })();
 
   const toggleExpand = async (id: string) => {
     if (expanded === id) { setExpanded(null); return; }
@@ -62,7 +87,7 @@ export default function CustomerSearchPage() {
     setCreating(true);
     setError('');
     try {
-      const data = await api('/customers', {
+      await api('/customers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newName || 'Walk-in Customer', phone: newPhone }),
@@ -70,10 +95,11 @@ export default function CustomerSearchPage() {
       setShowCreate(false);
       setNewName('');
       setNewPhone('');
-      setQ(newPhone);
-      const refreshed = await api(`/customers/search?q=${encodeURIComponent(newPhone)}`);
-      setResults(refreshed.results || []);
-      setSearched(true);
+      // Refresh the full list
+      const refreshed = await api('/customers');
+      setAllCustomers(refreshed.results || []);
+      setQ('');
+      setSearchResults(null);
     } catch (err) {
       setError((err as ApiError).message || 'Create failed');
     } finally {
@@ -90,7 +116,7 @@ export default function CustomerSearchPage() {
         <div className="cs-top">
           <div>
             <h1>Customers</h1>
-            <p style={{ color: 'var(--gray-500)', marginTop: 2 }}>Search by name, phone, or address</p>
+            <p style={{ color: 'var(--gray-500)', marginTop: 2 }}>{allCustomers.length} customer{allCustomers.length !== 1 ? 's' : ''}</p>
           </div>
           <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>+ New Customer</button>
         </div>
@@ -101,34 +127,36 @@ export default function CustomerSearchPage() {
           <input
             ref={inputRef}
             className="cs-search-input"
-            placeholder="Phone number, name, or address…"
+            placeholder="Filter by name, phone, or address…"
             value={q}
-            onChange={e => setQ(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && search()}
+            onChange={e => handleQueryChange(e.target.value)}
             autoFocus
           />
-          <button className="btn btn-primary btn-sm" onClick={search} disabled={loading}>
-            {loading ? 'Searching…' : 'Search'}
-          </button>
+          {q && <button className="btn btn-ghost btn-sm" onClick={() => { setQ(''); setSearchResults(null); }}>✕</button>}
+          {searchLoading && <div className="spinner" />}
         </div>
 
         {error && <div className="alert alert-error" style={{ marginBottom: 16 }}><span>⚠</span> {error}</div>}
 
-        {/* Results */}
-        {searched && !loading && results.length === 0 && (
+        {/* Loading */}
+        {loading && <div style={{ textAlign: 'center', padding: 40 }}><div className="spinner spinner-lg" style={{ margin: '0 auto' }} /></div>}
+
+        {/* Empty state */}
+        {!loading && displayed.length === 0 && (
           <div className="card">
             <div className="empty-state">
               <div className="empty-state-icon">👤</div>
-              <div className="empty-state-title">No customers found</div>
-              <div className="empty-state-desc">Try a different search term or create a new customer.</div>
-              <button className="btn btn-secondary btn-sm" onClick={() => { setShowCreate(true); setNewPhone(q); }} style={{ marginTop: 8 }}>
+              <div className="empty-state-title">{q ? 'No matching customers' : 'No customers yet'}</div>
+              <div className="empty-state-desc">{q ? 'Try a different search term or create a new customer.' : 'Create your first customer to get started.'}</div>
+              <button className="btn btn-secondary btn-sm" onClick={() => { setShowCreate(true); if (q) setNewPhone(q); }} style={{ marginTop: 8 }}>
                 + Create Customer
               </button>
             </div>
           </div>
         )}
 
-        {results.length > 0 && (
+        {/* Customer table */}
+        {!loading && displayed.length > 0 && (
           <div className="card">
             <table className="data-table">
               <thead>
@@ -140,8 +168,8 @@ export default function CustomerSearchPage() {
                 </tr>
               </thead>
               <tbody>
-                {results.map(r => (
-                  <>
+                {displayed.map(r => (
+                  <> 
                     <tr key={r.id} onClick={() => toggleExpand(r.id)} style={{ cursor: 'pointer' }}>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -155,7 +183,7 @@ export default function CustomerSearchPage() {
                       <td style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>{r.phone_e164}</td>
                       <td>{r.last_ordered ? <span style={{ fontSize: 13 }}>{r.last_ordered}</span> : <span style={{ color: 'var(--gray-300)', fontSize: 13 }}>—</span>}</td>
                       <td>
-                        <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); router.push(`/new-drop?phone=${encodeURIComponent(r.phone_e164)}`); }}>
+                        <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); router.push(`/new-drop?customerId=${r.id}`); }}>
                           New Order
                         </button>
                       </td>
