@@ -149,7 +149,7 @@ export default function DispatchSchedulePage() {
         const monthCells = visibleRange as { date: Date; other: boolean }[];
         const nonOther = monthCells.filter(c => !c.other);
         startDate = toKey(nonOther[0].date);
-        days = Math.min(21, nonOther.length);
+        days = nonOther.length;
       }
       const resp = await api(`/availability?start_date=${startDate}&days=${days}`);
       const map: Record<string, { A: CapWindow | null; B: CapWindow | null }> = {};
