@@ -23,8 +23,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   const isLogin = pathname === '/login';
-  if (!mounted || !session || isLogin) return <>{children}</>;
-
+  if (!mounted || isLogin) return <>{children}</>;
+  if (!session) {
+    if (typeof window !== 'undefined') router.push('/login');
+    return null;
+  }
   const isAdmin = session.role === 'admin';
   const isDriver = session.role === 'driver';
 
