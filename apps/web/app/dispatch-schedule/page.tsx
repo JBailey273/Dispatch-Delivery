@@ -254,13 +254,12 @@ export default function DispatchSchedulePage() {
   };
 
   const reassignDriver = async (loadId: string, driverId: string) => {
-    if (!driverId) return;
     setReassigningLoadId(loadId);
     try {
       await api('/dispatch/loads/assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ load_ids: [loadId], driver_user_id: driverId }),
+        body: JSON.stringify({ load_ids: [loadId], driver_user_id: driverId || null }),
       });
       // Refresh modal data
       if (selectedDropId) {
