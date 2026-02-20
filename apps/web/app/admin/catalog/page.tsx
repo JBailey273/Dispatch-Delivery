@@ -10,6 +10,7 @@ const MODE_PILL: Record<string, string> = { bulk_load: 'pill-green', bag: 'pill-
 
 export default function AdminCatalogPage() {
   const [isAdmin, setIsAdmin] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,9 +35,8 @@ export default function AdminCatalogPage() {
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
-  const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); setIsAdmin(getSession()?.role === 'admin'); }, []);
+  useEffect(() => { if (mounted) load(); }, [mounted, load]);
 
   const filtered = items.filter(i => {
     if (!showInactive && !i.active) return false;
