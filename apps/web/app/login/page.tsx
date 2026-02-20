@@ -32,7 +32,7 @@ export default function LoginPage() {
       } catch { tenantSettings = null; }
 
       setSession({ token: data.access_token, role: data.role, tenant_id: data.tenant_id, tenant_slug: tenantSettings?.slug, tenant_name: tenantSettings?.name });
-      router.push(data.role === 'driver' ? '/driver/loads' : '/ops-dashboard');
+      router.push(data.role.toLowerCase() === 'driver' ? '/driver/loads' : '/ops-dashboard');
     } catch {
       setError('Network error — is the API running?');
     } finally {
