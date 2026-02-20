@@ -15,9 +15,20 @@ function daysInMonth(y: number, m: number) { return new Date(y, m + 1, 0).getDat
 function firstDow(y: number, m: number) { return new Date(y, m, 1).getDay(); }
 function toKey(d: Date) { return d.toISOString().slice(0, 10); }
 function sameDay(a: Date, b: Date) { return toKey(a) === toKey(b); }
+function fmtPhone(p: string) {
+  const d = p.replace(/\D/g, '');
+  if (d.length === 11 && d[0] === '1') return `(${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
+  return p;
+}
+function fmtDateLong(ds: string) {
+  const d = new Date(ds + 'T12:00:00');
+  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  return `${days[d.getDay()]}, ${FULL_MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
 
 type CapWindow = { date: string; window: string; used: number; total: number; remaining_capacity: number; available: boolean; active_holds: number };
-type LoadItem = { id: string; drop_id: string; status: string; material: string; qty: number; unit: string; historical_flags?: any };
+type LoadItem = { id: string; drop_id: string; order_ref: string; status: string; material: string; qty: number; unit: string; customer_name: string; customer_phone: string; address_short: string; driver_name: string; historical_flags?: any };
 type ScheduleData = {
   date: string;
   windows: {
@@ -25,7 +36,14 @@ type ScheduleData = {
     B: { capacity: { used: number; total: number; remaining_capacity: number }; groups: Record<string, LoadItem[]>; disabled: boolean };
   };
 };
-type DropDetail = { id: string; scheduled_date: string; scheduled_window: string; customer_phone: string; required_loads: number; last_reschedule_sms_at: string | null };
+type DropDetailModal = {
+  id: string; ref: string; order_number: number | null; external_order_id: string | null; source: string;
+  scheduled_date: string; scheduled_window: string;
+  customer_name: string; customer_phone: string; delivery_address: { line1: string; line2?: string | null; city: string; state: string; postal_code: string } | null;
+  notes: string | null; required_loads: number;
+  loads: { id: string; material: string; qty: number; unit: string; status: string; driver_name: string | null }[];
+  notify_sent_at: string | null; last_reschedule_sms_at: string | null;
+};
 type Driver = { id: string; email: string; name: string; truck: string | null };
 
 function capColor(used: number, total: number): string {
@@ -60,7 +78,7 @@ export default function DispatchSchedulePage() {
   const [capData, setCapData] = useState<Record<string, { A: CapWindow | null; B: CapWindow | null }>>({});
   const [schedule, setSchedule] = useState<ScheduleData | null>(null);
   const [scheduleLoading, setScheduleLoading] = useState(false);
-  const [dropDetail, setDropDetail] = useState<DropDetail | null>(null);
+  const [dropDetail, setDropDetail] = useState<DropDetailModal | null>(null);
   const [selectedDropId, setSelectedDropId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
@@ -386,7 +404,10 @@ export default function DispatchSchedulePage() {
                       <input type="checkbox" checked={assignLoadIds.includes(load.id)} onChange={() => toggleLoad(load.id)} />
                     </label>
                     <div className="order-info">
-                      <div className="order-name">{load.material} x{load.qty} {load.unit}</div>
+                      <div className="order-ref">#{load.order_ref}</div>
+                      <div className="order-customer">{load.customer_name}</div>
+                      <div className="order-addr">{load.address_short}</div>
+                      <div className="order-material">{load.material} x{load.qty} {load.unit}</div>
                       <div className="order-driver">{driver === 'Unassigned' ? '⚠️ Unassigned' : `🚚 ${driver}`}</div>
                     </div>
                     <span className={`pill ${pillClass}`}>
@@ -420,7 +441,10 @@ export default function DispatchSchedulePage() {
                       <input type="checkbox" checked={assignLoadIds.includes(load.id)} onChange={() => toggleLoad(load.id)} />
                     </label>
                     <div className="order-info">
-                      <div className="order-name">{load.material} x{load.qty} {load.unit}</div>
+                      <div className="order-ref">#{load.order_ref}</div>
+                      <div className="order-customer">{load.customer_name}</div>
+                      <div className="order-addr">{load.address_short}</div>
+                      <div className="order-material">{load.material} x{load.qty} {load.unit}</div>
                       <div className="order-driver">{driver === 'Unassigned' ? '⚠️ Unassigned' : `🚚 ${driver}`}</div>
                     </div>
                     <span className={`pill ${pillClass}`}>
@@ -460,51 +484,88 @@ export default function DispatchSchedulePage() {
       {/* ── Drop Detail Modal ── */}
       {selectedDropId && (
         <div className="modal-overlay" onClick={() => { setSelectedDropId(null); setDropDetail(null); }}>
-          <div className="modal-card" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Drop Detail</h2>
-              <button className="btn btn-ghost btn-sm" onClick={() => { setSelectedDropId(null); setDropDetail(null); }} style={{ fontSize: 18, padding: '4px 8px' }}>✕</button>
-            </div>
+          <div className="modal-card drop-modal" onClick={e => e.stopPropagation()}>
             {dropDetail ? (
-              <div className="modal-body">
-                <div className="modal-row">
-                  <div className="modal-field">
-                    <div className="modal-label">Drop ID</div>
-                    <div className="modal-value" style={{ fontSize: 13, fontFamily: 'monospace' }}>{dropDetail.id}</div>
+              <>
+                <div className="modal-header">
+                  <div>
+                    <h2 style={{ margin: 0 }}>Order #{dropDetail.ref}</h2>
+                    {dropDetail.source && <span className="dm-source">{dropDetail.source === 'manual' ? 'Manual Entry' : dropDetail.source}</span>}
+                  </div>
+                  <button className="btn btn-ghost btn-sm" onClick={() => { setSelectedDropId(null); setDropDetail(null); }} style={{ fontSize: 18, padding: '4px 8px' }}>✕</button>
+                </div>
+                <div className="modal-body">
+                  {/* Customer */}
+                  <div className="dm-section">
+                    <div className="dm-section-label">Customer</div>
+                    <div className="dm-customer-name">{dropDetail.customer_name}</div>
+                    <div className="dm-customer-phone">{fmtPhone(dropDetail.customer_phone)}</div>
+                    {dropDetail.delivery_address && (
+                      <div className="dm-addr">
+                        📍 {dropDetail.delivery_address.line1}
+                        {dropDetail.delivery_address.line2 && `, ${dropDetail.delivery_address.line2}`}
+                        , {dropDetail.delivery_address.city}, {dropDetail.delivery_address.state} {dropDetail.delivery_address.postal_code}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Schedule */}
+                  <div className="dm-section">
+                    <div className="dm-section-label">Scheduled</div>
+                    <div className="dm-schedule-date">{fmtDateLong(dropDetail.scheduled_date)}</div>
+                    <div className="dm-schedule-window">{dropDetail.scheduled_window === 'A' ? '🌅 AM Window (9am–1pm)' : '🌤 PM Window (1pm–5pm)'}</div>
+                  </div>
+
+                  {/* Loads */}
+                  <div className="dm-section">
+                    <div className="dm-section-label">Loads ({dropDetail.loads.length})</div>
+                    {dropDetail.loads.map(l => {
+                      const isUnassigned = !l.driver_name;
+                      const dStatus = isUnassigned && l.status === 'assigned' ? 'pending' : l.status;
+                      const pc = dStatus === 'pending' ? 'pill-amber' : (STATUS_PILL[l.status] || 'pill-gray');
+                      const pl = dStatus === 'pending' ? 'Pending' : (STATUS_LABEL[l.status] || l.status);
+                      return (
+                        <div key={l.id} className="dm-load-row">
+                          <div className="dm-load-info">
+                            <span className="dm-load-material">{l.material}</span>
+                            <span className="dm-load-qty">{l.qty} {l.unit}{l.qty !== 1 ? 's' : ''}</span>
+                          </div>
+                          <div className="dm-load-meta">
+                            <span className={`pill pill-sm ${pc}`}>{pl}</span>
+                            <span className="dm-load-driver">{l.driver_name ? `🚚 ${l.driver_name}` : '⚠️ Unassigned'}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Notifications */}
+                  <div className="dm-section">
+                    <div className="dm-section-label">Notifications</div>
+                    <div className="dm-notify-item">
+                      <span>Delivery Notification</span>
+                      {dropDetail.notify_sent_at
+                        ? <span className="pill pill-sm pill-green">Sent</span>
+                        : <span className="pill pill-sm pill-gray">Not sent</span>}
+                    </div>
+                    <div className="dm-notify-item">
+                      <span>Reschedule SMS</span>
+                      {dropDetail.last_reschedule_sms_at
+                        ? <span className="pill pill-sm pill-amber">Sent</span>
+                        : <span className="pill pill-sm pill-gray">Not sent</span>}
+                    </div>
                   </div>
                 </div>
-                <div className="modal-row">
-                  <div className="modal-field">
-                    <div className="modal-label">Customer Phone</div>
-                    <div className="modal-value">{dropDetail.customer_phone}</div>
-                  </div>
-                  <div className="modal-field">
-                    <div className="modal-label">Required Loads</div>
-                    <div className="modal-value">{dropDetail.required_loads}</div>
-                  </div>
+                <div className="modal-footer">
+                  <Link href={`/dispatch/drops/${selectedDropId}`} className="btn btn-primary btn-sm" style={{ textDecoration: 'none' }}>
+                    Modify Order
+                  </Link>
+                  <button className="btn btn-ghost btn-sm" onClick={() => { setSelectedDropId(null); setDropDetail(null); }}>Close</button>
                 </div>
-                <div className="modal-row">
-                  <div className="modal-field">
-                    <div className="modal-label">Scheduled</div>
-                    <div className="modal-value">{dropDetail.scheduled_date} — Window {dropDetail.scheduled_window}</div>
-                  </div>
-                </div>
-                <div className="modal-row">
-                  <div className="modal-field">
-                    <div className="modal-label">Last Reschedule SMS</div>
-                    <div className="modal-value">{dropDetail.last_reschedule_sms_at || 'Not sent'}</div>
-                  </div>
-                </div>
-              </div>
+              </>
             ) : (
               <div style={{ padding: 32, textAlign: 'center' }}><div className="spinner" style={{ margin: '0 auto' }} /></div>
             )}
-            <div className="modal-footer">
-              <Link href={`/dispatch/drops/${selectedDropId}`} className="btn btn-primary btn-sm" style={{ textDecoration: 'none' }}>
-                Full Detail / Edit
-              </Link>
-              <button className="btn btn-ghost btn-sm" onClick={() => { setSelectedDropId(null); setDropDetail(null); }}>Close</button>
-            </div>
           </div>
         </div>
       )}
@@ -581,12 +642,15 @@ const schedulerStyles = `
   .window-bar { height: 8px; border-radius: 4px; background: var(--gray-100); overflow: hidden; margin-bottom: 12px; }
   .window-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
 
-  .order-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius-md); cursor: pointer; transition: background 0.12s; }
+  .order-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: var(--radius-md); cursor: pointer; transition: background 0.12s; border: 1px solid var(--border-light); margin-bottom: 6px; }
   .order-row:hover { background: var(--surface); box-shadow: var(--shadow-xs); }
-  .order-check { display: flex; align-items: center; flex-shrink: 0; }
+  .order-check { display: flex; align-items: center; flex-shrink: 0; margin-top: 3px; }
   .order-check input { width: 16px; height: 16px; cursor: pointer; accent-color: var(--green-600); }
   .order-info { flex: 1; min-width: 0; }
-  .order-name { font-size: 14px; font-weight: 600; color: var(--gray-900); }
+  .order-ref { font-size: 11px; font-weight: 700; color: var(--green-700); letter-spacing: 0.03em; margin-bottom: 1px; }
+  .order-customer { font-size: 14px; font-weight: 600; color: var(--gray-900); }
+  .order-addr { font-size: 12px; color: var(--gray-500); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .order-material { font-size: 13px; color: var(--gray-700); font-weight: 500; }
   .order-driver { font-size: 12px; color: var(--gray-500); margin-top: 2px; }
 
   .assign-bar { display: flex; align-items: center; gap: 8px; padding: 12px 20px; border-top: 2px solid var(--green-200); background: var(--green-50); flex-wrap: wrap; }
@@ -601,6 +665,26 @@ const schedulerStyles = `
   .modal-label { font-size: 12px; font-weight: 600; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
   .modal-value { font-size: 15px; font-weight: 500; color: var(--gray-900); }
   .modal-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 24px; border-top: 1px solid var(--border-light); }
+
+  /* Drop detail modal */
+  .drop-modal { max-width: 540px; }
+  .dm-source { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px; margin-left: 8px; vertical-align: middle; background: var(--gray-100); color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.04em; }
+  .dm-section { padding-bottom: 14px; border-bottom: 1px solid var(--border-light); }
+  .dm-section:last-child { border-bottom: none; padding-bottom: 0; }
+  .dm-section-label { font-size: 11px; font-weight: 700; color: var(--gray-400); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+  .dm-customer-name { font-size: 16px; font-weight: 700; color: var(--gray-900); }
+  .dm-customer-phone { font-size: 14px; color: var(--gray-600); margin-top: 2px; }
+  .dm-addr { font-size: 13px; color: var(--gray-500); margin-top: 4px; }
+  .dm-schedule-date { font-size: 15px; font-weight: 600; color: var(--gray-900); }
+  .dm-schedule-window { font-size: 13px; color: var(--gray-600); margin-top: 2px; }
+  .dm-load-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-radius: var(--radius-md); background: var(--gray-50); margin-bottom: 4px; }
+  .dm-load-info { display: flex; align-items: baseline; gap: 8px; }
+  .dm-load-material { font-size: 14px; font-weight: 600; color: var(--gray-900); }
+  .dm-load-qty { font-size: 13px; color: var(--gray-500); }
+  .dm-load-meta { display: flex; align-items: center; gap: 8px; }
+  .dm-load-driver { font-size: 12px; color: var(--gray-500); }
+  .pill-sm { font-size: 11px; padding: 2px 8px; }
+  .dm-notify-item { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   @keyframes modalIn { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 
