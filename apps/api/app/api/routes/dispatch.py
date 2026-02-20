@@ -97,15 +97,46 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
     if not row:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
     drop, customer = row
-    required_loads = db.execute(select(func.count(Load.id)).where(Load.tenant_id == user.tenant_id, Load.drop_id == drop.id)).scalar_one()
+
+    # Delivery address
+    address = db.execute(select(CustomerAddress).where(CustomerAddress.id == drop.address_id)).scalar_one_or_none()
+    addr_dict = None
+    if address:
+        addr_dict = {
+            "line1": address.line1, "line2": address.line2,
+            "city": address.city, "state": address.state, "postal_code": address.postal_code,
+        }
+
+    # Loads with driver info
+    load_rows = db.execute(
+        select(Load, User).outerjoin(User, User.id == Load.driver_user_id)
+        .where(Load.tenant_id == user.tenant_id, Load.drop_id == drop.id)
+    ).all()
+    loads_out = []
+    for ld, driver in load_rows:
+        loads_out.append({
+            "id": str(ld.id),
+            "material": ld.material_name_snapshot,
+            "qty": ld.qty,
+            "unit": ld.unit,
+            "status": ld.status.value,
+            "driver_name": driver.email.split("@")[0] if driver else None,
+            "driver_email": driver.email if driver else None,
+        })
+
     return {
         "id": str(drop.id),
+        "ref": str(drop.id)[:8].upper(),
         "scheduled_date": str(drop.scheduled_date),
         "scheduled_window": drop.scheduled_window.value,
         "notify_sent_at": drop.notify_sent_at.isoformat() if drop.notify_sent_at else None,
         "last_reschedule_sms_at": drop.last_reschedule_sms_at.isoformat() if drop.last_reschedule_sms_at else None,
+        "customer_name": customer.name,
         "customer_phone": customer.phone_e164,
-        "required_loads": int(required_loads or 0),
+        "delivery_address": addr_dict,
+        "notes": drop.notes,
+        "required_loads": len(loads_out),
+        "loads": loads_out,
     }
 
 
