@@ -165,15 +165,21 @@ export default function DispatchSchedulePage() {
 
   useEffect(() => { fetchCapacity(); }, [fetchCapacity]);
 
-  /* ── Fetch month delivery summary for calendar cards ── */
+  /* ── Fetch delivery summary for calendar cards ── */
   const fetchMonthSummary = useCallback(async () => {
-    if (viewMode !== 'month') return;
     try {
-      const monthCells = visibleRange as { date: Date; other: boolean }[];
-      const nonOther = monthCells.filter(c => !c.other);
-      if (nonOther.length === 0) return;
-      const startDate = toKey(nonOther[0].date);
-      const endDate = toKey(nonOther[nonOther.length - 1].date);
+      let startDate: string, endDate: string;
+      if (viewMode === 'week') {
+        const weekDays = visibleRange as Date[];
+        startDate = toKey(weekDays[0]);
+        endDate = toKey(weekDays[weekDays.length - 1]);
+      } else {
+        const monthCells = visibleRange as { date: Date; other: boolean }[];
+        const nonOther = monthCells.filter(c => !c.other);
+        if (nonOther.length === 0) return;
+        startDate = toKey(nonOther[0].date);
+        endDate = toKey(nonOther[nonOther.length - 1].date);
+      }
       const resp = await api(`/dispatch/month-summary?start_date=${startDate}&end_date=${endDate}`);
       setMonthSummary(resp.days || {});
     } catch {
@@ -339,6 +345,16 @@ export default function DispatchSchedulePage() {
                           <div className="cap-label" style={{ marginTop: 4 }}><span>PM</span><span>{pmU}/{pmT || '—'}</span></div>
                           <div className="cap-bar"><div className={`cap-fill ${capColor(pmU, pmT)}`} style={{ width: pmT > 0 ? `${Math.round(pmU / pmT * 100)}%` : '0%' }} /></div>
                         </div>
+                        {(monthSummary[k] || []).length > 0 && (
+                          <div className="wk-drops">
+                            {(monthSummary[k] || []).map((d, di) => (
+                              <div key={di} className={`wk-drop-chip ${d.window === 'A' ? 'wk-chip-am' : 'wk-chip-pm'}`}>
+                                <span className="wk-chip-name">{d.customer_name}</span>
+                                <span className="wk-chip-mat">{d.materials}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -653,6 +669,14 @@ const schedulerStyles = `
   .week-col:hover { background: var(--gray-25); }
   .week-col.today { background: var(--green-25); }
   .week-col.selected { background: rgba(15,133,48,0.04); }
+
+  .wk-drops { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; overflow-y: auto; flex: 1; }
+  .wk-drop-chip { padding: 5px 8px; border-radius: var(--radius-sm); font-family: var(--font-heading); border-left: 3px solid; cursor: pointer; transition: all 0.12s; }
+  .wk-drop-chip:hover { transform: translateX(2px); }
+  .wk-chip-am { background: rgba(26,158,58,0.07); border-left-color: var(--green-500); }
+  .wk-chip-pm { background: rgba(37,99,235,0.05); border-left-color: var(--blue-500); }
+  .wk-chip-name { display: block; font-size: 11.5px; font-weight: 700; color: var(--gray-800); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wk-chip-mat { display: block; font-size: 10px; font-weight: 500; color: var(--gray-500); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   .cap-row { display: flex; flex-direction: column; gap: 4px; }
   .cap-label { font-family: var(--font-heading); font-size: 11px; font-weight: 700; color: var(--gray-500); display: flex; justify-content: space-between; letter-spacing: 0.01em; }
