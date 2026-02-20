@@ -1,7 +1,7 @@
 'use client';
 
-import { KeyboardEvent, Suspense, useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { KeyboardEvent, useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { ApiError, api, requireRole } from '../lib/auth';
 
 /* ── Types ── */
@@ -27,12 +27,7 @@ function capColor(u: number, t: number) {
 }
 
 export default function NewDropPage() {
-  return <Suspense fallback={<div className="page" style={{ textAlign: 'center', padding: 40 }}><div className="spinner spinner-lg" style={{ margin: '0 auto' }} /></div>}><NewDropInner /></Suspense>;
-}
-
-function NewDropInner() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const phoneRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState('');
 
@@ -46,8 +41,6 @@ function NewDropInner() {
   // Address
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [addressId, setAddressId] = useState('');
-  const [showNewAddr, setShowNewAddr] = useState(false);
-  const [newAddr, setNewAddr] = useState({ line1: '', line2: '', city: '', state: '', postal_code: '' });
 
   // Products
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
@@ -74,15 +67,6 @@ function NewDropInner() {
     api('/product-catalog').then(d => setCatalog(d.items || [])).catch(() => null);
   }, []);
 
-  /* ── Preload customer from URL param ── */
-  useEffect(() => {
-    const customerId = searchParams.get('customerId');
-    if (!customerId || customer) return;
-    api(`/customers/${customerId}`).then(data => {
-      if (data?.id) selectCustomer(data);
-    }).catch(() => null);
-  }, [searchParams]);
-
   /* ── Computed ── */
   const requiredLoads = useMemo(() => {
     if (!items.length || !catalog.length) return 0;
@@ -103,7 +87,7 @@ function NewDropInner() {
     const start = new Date(calMonth.y, calMonth.m, 1);
     const days = daysInMonth(calMonth.y, calMonth.m);
     try {
-      const a = await api(`/availability?required_loads=${Math.max(1, requiredLoads)}&start_date=${toKey(start)}&days=${Math.min(21, days)}`);
+      const a = await api(`/availability?required_loads=${Math.max(1, requiredLoads)}&start_date=${toKey(start)}&days=${days}`);
       setAvailability(a.windows || []);
     } catch { /* silent */ }
   }, [calMonth, requiredLoads]);
@@ -157,8 +141,6 @@ function NewDropInner() {
   const selectCustomer = async (c: CustomerResult) => {
     setCustomer(c);
     setCustomerName(c.name || '');
-    setShowNewAddr(false);
-    setNewAddr({ line1: '', line2: '', city: '', state: '', postal_code: '' });
     try {
       const ad = await api(`/customers/${c.id}/addresses`);
       const fetched = ad.addresses || [];
@@ -166,30 +148,7 @@ function NewDropInner() {
       const lastUsed = typeof window === 'undefined' ? '' : localStorage.getItem(`${LAST_ADDRESS_KEY}${c.id}`) || '';
       const def = fetched.find((a: Address) => a.id === lastUsed) || fetched.find((a: Address) => a.is_default) || fetched[0];
       setAddressId(def?.id || '');
-      if (fetched.length === 0) setShowNewAddr(true);
-    } catch { setAddresses([]); setShowNewAddr(true); }
-  };
-
-  const saveNewAddress = async () => {
-    if (!customer || !newAddr.line1.trim() || !newAddr.city.trim() || !newAddr.state.trim() || !newAddr.postal_code.trim()) {
-      setError('Please fill in all required address fields.');
-      return;
-    }
-    try {
-      const res = await api(`/customers/${customer.id}/addresses`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...newAddr, is_default: addresses.length === 0 }),
-      });
-      const saved: Address = { id: res.id, line1: newAddr.line1, line2: newAddr.line2, city: newAddr.city, state: newAddr.state, postal_code: newAddr.postal_code, is_default: addresses.length === 0 };
-      const updated = [...addresses, saved];
-      setAddresses(updated);
-      setAddressId(saved.id);
-      setShowNewAddr(false);
-      setNewAddr({ line1: '', line2: '', city: '', state: '', postal_code: '' });
-    } catch (err) {
-      setError((err as ApiError).message || 'Failed to save address');
-    }
+    } catch { setAddresses([]); }
   };
 
   /* ── Item management ── */
@@ -330,58 +289,21 @@ function NewDropInner() {
         <div className="nd-card card">
           <div className="nd-card-head"><span className="nd-card-icon">📍</span><span className="nd-card-title">Delivery Address</span></div>
           <div className="nd-card-body">
-            {!customer ? (
+            {addresses.length === 0 ? (
               <p style={{ color: 'var(--gray-400)', fontSize: 14 }}>Look up a customer first to see saved addresses</p>
             ) : (
-              <>
-                {addresses.length > 0 && (
-                  <div className="nd-addr-list">
-                    {addresses.map(a => (
-                      <div key={a.id} className={`nd-addr-opt${addressId === a.id ? ' sel' : ''}`} onClick={() => { setAddressId(a.id); setShowNewAddr(false); }}>
-                        <div className="nd-addr-radio">{addressId === a.id ? '●' : '○'}</div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 600 }}>{a.line1}{a.line2 ? `, ${a.line2}` : ''}</div>
-                          <div className="text-sm" style={{ color: 'var(--gray-500)' }}>{a.city}, {a.state} {a.postal_code}</div>
-                        </div>
-                        {a.is_default && <span className="pill pill-green" style={{ fontSize: 11 }}>Default</span>}
-                      </div>
-                    ))}
+              <div className="nd-addr-list">
+                {addresses.map(a => (
+                  <div key={a.id} className={`nd-addr-opt${addressId === a.id ? ' sel' : ''}`} onClick={() => setAddressId(a.id)}>
+                    <div className="nd-addr-radio">{addressId === a.id ? '●' : '○'}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600 }}>{a.line1}{a.line2 ? `, ${a.line2}` : ''}</div>
+                      <div className="text-sm" style={{ color: 'var(--gray-500)' }}>{a.city}, {a.state} {a.postal_code}</div>
+                    </div>
+                    {a.is_default && <span className="pill pill-green" style={{ fontSize: 11 }}>Default</span>}
                   </div>
-                )}
-
-                {!showNewAddr ? (
-                  <button className="btn btn-secondary btn-sm" style={{ marginTop: addresses.length > 0 ? 12 : 0 }} onClick={() => setShowNewAddr(true)}>+ Add New Address</button>
-                ) : (
-                  <div className="nd-new-addr" style={{ marginTop: addresses.length > 0 ? 12 : 0 }}>
-                    <div className="form-group">
-                      <label className="form-label">Street Address *</label>
-                      <input placeholder="123 Main St" value={newAddr.line1} onChange={e => setNewAddr({ ...newAddr, line1: e.target.value })} />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Apt / Unit</label>
-                      <input placeholder="Apt 2B (optional)" value={newAddr.line2} onChange={e => setNewAddr({ ...newAddr, line2: e.target.value })} />
-                    </div>
-                    <div className="nd-addr-row-3">
-                      <div className="form-group">
-                        <label className="form-label">City *</label>
-                        <input placeholder="East Meadow" value={newAddr.city} onChange={e => setNewAddr({ ...newAddr, city: e.target.value })} />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label">State *</label>
-                        <input placeholder="NY" maxLength={2} value={newAddr.state} onChange={e => setNewAddr({ ...newAddr, state: e.target.value.toUpperCase() })} />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label">ZIP *</label>
-                        <input placeholder="11554" value={newAddr.postal_code} onChange={e => setNewAddr({ ...newAddr, postal_code: e.target.value })} />
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                      <button className="btn btn-primary btn-sm" onClick={saveNewAddress}>Save Address</button>
-                      {addresses.length > 0 && <button className="btn btn-ghost btn-sm" onClick={() => setShowNewAddr(false)}>Cancel</button>}
-                    </div>
-                  </div>
-                )}
-              </>
+                ))}
+              </div>
             )}
           </div>
         </div>
@@ -532,11 +454,6 @@ const pageStyles = `
   .nd-addr-opt.sel { border-color: var(--green-400); background: var(--green-50); }
   .nd-addr-radio { font-size: 18px; color: var(--gray-300); flex-shrink: 0; }
   .nd-addr-opt.sel .nd-addr-radio { color: var(--green-600); }
-
-  /* New address form */
-  .nd-new-addr { padding: 16px; background: var(--gray-50); border: 1px solid var(--border-light); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: 10px; }
-  .nd-addr-row-3 { display: grid; grid-template-columns: 1fr 80px 100px; gap: 10px; }
-  @media (max-width: 500px) { .nd-addr-row-3 { grid-template-columns: 1fr; } }
 
   /* Mini calendar */
   .nd-cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
