@@ -26,6 +26,7 @@ type ScheduleData = {
   };
 };
 type DropDetail = { id: string; scheduled_date: string; scheduled_window: string; customer_phone: string; required_loads: number; last_reschedule_sms_at: string | null };
+type Driver = { id: string; email: string; name: string; truck: string | null };
 
 function capColor(used: number, total: number): string {
   if (total === 0) return 'green';
@@ -68,6 +69,7 @@ export default function DispatchSchedulePage() {
   const [assignDriverId, setAssignDriverId] = useState('');
   const [assignBusy, setAssignBusy] = useState(false);
   const [assignMsg, setAssignMsg] = useState('');
+  const [drivers, setDrivers] = useState<Driver[]>([]);
 
   /* ── Compute visible date range ── */
   const visibleRange = useMemo(() => {
@@ -163,6 +165,11 @@ export default function DispatchSchedulePage() {
   }, [selDate]);
 
   useEffect(() => { fetchSchedule(); }, [fetchSchedule]);
+
+  // Fetch available drivers
+  useEffect(() => {
+    api('/dispatch/drivers').then(d => setDrivers(d.drivers || [])).catch(() => null);
+  }, []);
 
   /* ── Drop detail modal ── */
   const openDrop = async (dropId: string) => {
@@ -369,7 +376,11 @@ export default function DispatchSchedulePage() {
                 </div>
                 {schedule.windows.A.disabled && <div className="alert alert-warning" style={{ marginBottom: 12, fontSize: 13 }}>⚠ This window is blacked out for new scheduling</div>}
                 {amLoads.length === 0 && <div style={{ fontSize: 14, color: 'var(--gray-400)', padding: '8px 0' }}>No loads in this window</div>}
-                {amLoads.map(({ driver, load }) => (
+                {amLoads.map(({ driver, load }) => {
+                  const displayStatus = driver === 'Unassigned' && load.status === 'assigned' ? 'pending' : load.status;
+                  const pillClass = displayStatus === 'pending' ? 'pill-amber' : (STATUS_PILL[load.status] || 'pill-gray');
+                  const pillLabel = displayStatus === 'pending' ? 'Pending' : (STATUS_LABEL[load.status] || load.status);
+                  return (
                   <div key={load.id} className="order-row" onClick={() => openDrop(load.drop_id)}>
                     <label className="order-check" onClick={e => e.stopPropagation()}>
                       <input type="checkbox" checked={assignLoadIds.includes(load.id)} onChange={() => toggleLoad(load.id)} />
@@ -378,11 +389,12 @@ export default function DispatchSchedulePage() {
                       <div className="order-name">{load.material} x{load.qty} {load.unit}</div>
                       <div className="order-driver">{driver === 'Unassigned' ? '⚠️ Unassigned' : `🚚 ${driver}`}</div>
                     </div>
-                    <span className={`pill ${STATUS_PILL[load.status] || 'pill-gray'}`}>
-                      <span className="pill-dot" />{STATUS_LABEL[load.status] || load.status}
+                    <span className={`pill ${pillClass}`}>
+                      <span className="pill-dot" />{pillLabel}
                     </span>
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* PM Window */}
@@ -398,7 +410,11 @@ export default function DispatchSchedulePage() {
                 </div>
                 {schedule.windows.B.disabled && <div className="alert alert-warning" style={{ marginBottom: 12, fontSize: 13 }}>⚠ This window is blacked out for new scheduling</div>}
                 {pmLoads.length === 0 && <div style={{ fontSize: 14, color: 'var(--gray-400)', padding: '8px 0' }}>No loads in this window</div>}
-                {pmLoads.map(({ driver, load }) => (
+                {pmLoads.map(({ driver, load }) => {
+                  const displayStatus = driver === 'Unassigned' && load.status === 'assigned' ? 'pending' : load.status;
+                  const pillClass = displayStatus === 'pending' ? 'pill-amber' : (STATUS_PILL[load.status] || 'pill-gray');
+                  const pillLabel = displayStatus === 'pending' ? 'Pending' : (STATUS_LABEL[load.status] || load.status);
+                  return (
                   <div key={load.id} className="order-row" onClick={() => openDrop(load.drop_id)}>
                     <label className="order-check" onClick={e => e.stopPropagation()}>
                       <input type="checkbox" checked={assignLoadIds.includes(load.id)} onChange={() => toggleLoad(load.id)} />
@@ -407,23 +423,28 @@ export default function DispatchSchedulePage() {
                       <div className="order-name">{load.material} x{load.qty} {load.unit}</div>
                       <div className="order-driver">{driver === 'Unassigned' ? '⚠️ Unassigned' : `🚚 ${driver}`}</div>
                     </div>
-                    <span className={`pill ${STATUS_PILL[load.status] || 'pill-gray'}`}>
-                      <span className="pill-dot" />{STATUS_LABEL[load.status] || load.status}
+                    <span className={`pill ${pillClass}`}>
+                      <span className="pill-dot" />{pillLabel}
                     </span>
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Assignment bar */}
               {assignLoadIds.length > 0 && (
                 <div className="assign-bar">
                   <div style={{ fontSize: 14, fontWeight: 600 }}>{assignLoadIds.length} load{assignLoadIds.length !== 1 ? 's' : ''} selected</div>
-                  <input
-                    placeholder="Driver user ID or email"
+                  <select
                     value={assignDriverId}
                     onChange={e => setAssignDriverId(e.target.value)}
-                    style={{ flex: 1, padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', fontFamily: 'inherit', fontSize: 14 }}
-                  />
+                    style={{ flex: 1, padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', fontFamily: 'inherit', fontSize: 14, background: 'var(--surface)' }}
+                  >
+                    <option value="">Select a driver…</option>
+                    {drivers.map(d => (
+                      <option key={d.id} value={d.id}>{d.name}{d.truck ? ` (${d.truck})` : ''} — {d.email}</option>
+                    ))}
+                  </select>
                   <button className="btn btn-primary btn-sm" onClick={handleAssign} disabled={assignBusy || !assignDriverId}>
                     {assignBusy ? 'Assigning…' : 'Assign'}
                   </button>
