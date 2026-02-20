@@ -82,6 +82,7 @@ def dispatch_schedule(day: date, user: AuthUser = Depends(require_roles(UserRole
                 "customer_phone": customer.phone_e164,
                 "address_short": addr_short,
                 "driver_name": driver_display,
+                "driver_user_id": str(driver.id) if driver else None,
                 "historical_flags": {
                     "exception_count": history.exception_count,
                     "has_exception_history": history.exception_count > 0,
@@ -190,6 +191,7 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
             "qty": ld.qty,
             "unit": ld.unit,
             "status": ld.status.value,
+            "driver_user_id": str(driver.id) if driver else None,
             "driver_name": driver.display_name if driver else None,
             "driver_email": driver.email if driver else None,
         })
