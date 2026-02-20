@@ -484,7 +484,7 @@ const styles = `
   .dd-header { margin-bottom: 24px; }
   .dd-back { color: var(--gray-400); text-decoration: none; font-size: 13px; font-weight: 500; transition: color 0.15s; }
   .dd-back:hover { color: var(--green-600); }
-  .dd-title { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin: 4px 0 0; }
+  .dd-title { font-family: var(--font-heading); font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin: 4px 0 0; }
   .dd-ref { color: var(--green-700); }
   .dd-source-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 12px; margin-left: 10px; vertical-align: middle; background: var(--blue-50, #eff6ff); color: var(--blue-700, #1d4ed8); text-transform: uppercase; letter-spacing: 0.04em; }
   .dd-source-badge.manual { background: var(--gray-100); color: var(--gray-500); }
@@ -498,8 +498,8 @@ const styles = `
   @media (max-width: 640px) { .dd-hero-grid { grid-template-columns: 1fr; } }
   .dd-hero-card { padding: 20px 24px; }
   .dd-hero-icon { font-size: 24px; margin-bottom: 4px; }
-  .dd-hero-label { font-size: 11px; font-weight: 700; color: var(--gray-400); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
-  .dd-hero-name { font-size: 18px; font-weight: 700; color: var(--gray-900); line-height: 1.3; }
+  .dd-hero-label { font-family: var(--font-heading); font-size: 11px; font-weight: 700; color: var(--gray-400); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+  .dd-hero-name { font-family: var(--font-heading); font-size: 18px; font-weight: 700; color: var(--gray-900); line-height: 1.3; }
   .dd-hero-phone { font-size: 15px; color: var(--gray-600); margin-top: 4px; }
   .dd-hero-addr { font-size: 13px; color: var(--gray-500); margin-top: 8px; line-height: 1.5; display: flex; gap: 6px; }
   .dd-addr-icon { flex-shrink: 0; }
