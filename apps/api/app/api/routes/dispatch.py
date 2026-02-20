@@ -107,6 +107,58 @@ def list_drivers(user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), d
     return {"drivers": [{"id": str(d.id), "email": d.email, "name": d.display_name, "truck": d.default_truck_identifier} for d in drivers]}
 
 
+@router.get("/month-summary")
+def month_summary(
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
+    db: Session = Depends(db_dep),
+):
+    """Lightweight summary of deliveries per day for calendar month cells."""
+    drops = db.execute(
+        select(Drop, Customer)
+        .join(Customer, Customer.id == Drop.customer_id)
+        .where(
+            Drop.tenant_id == user.tenant_id,
+            Drop.scheduled_date >= start_date,
+            Drop.scheduled_date <= end_date,
+        )
+        .order_by(Drop.scheduled_date, Drop.scheduled_window)
+    ).all()
+
+    # Collect materials per drop
+    drop_ids = [str(d.id) for d, _ in drops]
+    materials_map: dict[str, list[str]] = defaultdict(list)
+    if drop_ids:
+        loads = db.execute(
+            select(Load.drop_id, Load.material_name_snapshot)
+            .where(Load.drop_id.in_([d.id for d, _ in drops]))
+        ).all()
+        for load_drop_id, mat in loads:
+            materials_map[str(load_drop_id)].append(mat)
+
+    days: dict[str, list] = defaultdict(list)
+    for drop, customer in drops:
+        if drop.external_order_id:
+            order_ref = drop.external_order_id
+        elif drop.order_number:
+            order_ref = f"D-{drop.order_number:05d}"
+        else:
+            order_ref = str(drop.id)[:8].upper()
+
+        mats = materials_map.get(str(drop.id), [])
+        days[str(drop.scheduled_date)].append({
+            "drop_id": str(drop.id),
+            "order_ref": order_ref,
+            "customer_name": customer.name,
+            "materials": ", ".join(mats) if mats else "",
+            "window": drop.scheduled_window.value,
+            "status": drop.status,
+        })
+
+    return {"days": dict(days)}
+
+
 @router.get("/drops/{drop_id}")
 def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
     row = db.execute(
