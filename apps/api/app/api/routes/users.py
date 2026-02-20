@@ -16,11 +16,15 @@ class UserCreateIn(BaseModel):
     email: EmailStr
     password: str
     role: UserRole
+    first_name: str | None = None
+    last_name: str | None = None
     is_active: bool = True
     default_truck_identifier: str | None = None
 
 
 class UserUpdateIn(BaseModel):
+    first_name: str | None = None
+    last_name: str | None = None
     role: UserRole | None = None
     is_active: bool | None = None
     default_truck_identifier: str | None = None
@@ -35,7 +39,7 @@ def _active_admin_count(db: Session, tenant_id: str) -> int:
 @router.get("")
 def list_users(user: AuthUser = Depends(require_roles(UserRole.ADMIN)), db: Session = Depends(db_dep)):
     users = db.execute(select(User).where(User.tenant_id == user.tenant_id)).scalars().all()
-    return {"items": [{"id": str(u.id), "email": u.email, "role": u.role.value, "is_active": u.is_active, "default_truck_identifier": u.default_truck_identifier} for u in users]}
+    return {"items": [{"id": str(u.id), "email": u.email, "first_name": u.first_name, "last_name": u.last_name, "display_name": u.display_name, "role": u.role.value, "is_active": u.is_active, "default_truck_identifier": u.default_truck_identifier} for u in users]}
 
 
 @router.post("")
@@ -53,6 +57,8 @@ def create_user(payload: UserCreateIn, user: AuthUser = Depends(require_roles(Us
         tenant_id=user.tenant_id,
         email=payload.email,
         hashed_password=get_password_hash(payload.password),
+        first_name=payload.first_name,
+        last_name=payload.last_name,
         role=payload.role,
         is_active=payload.is_active,
         default_truck_identifier=payload.default_truck_identifier,
