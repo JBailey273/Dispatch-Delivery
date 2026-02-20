@@ -81,6 +81,14 @@ def dispatch_schedule(day: date, user: AuthUser = Depends(require_roles(UserRole
     }
 
 
+@router.get("/drivers")
+def list_drivers(user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+    drivers = db.execute(
+        select(User).where(User.tenant_id == user.tenant_id, User.role == UserRole.DRIVER, User.is_active == True)  # noqa: E712
+    ).scalars().all()
+    return {"drivers": [{"id": str(d.id), "email": d.email, "name": d.email.split("@")[0], "truck": d.default_truck_identifier} for d in drivers]}
+
+
 @router.get("/drops/{drop_id}")
 def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
     row = db.execute(
