@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError, api, requireRole } from '../../lib/auth';
 
-type UserItem = { id: string; email: string; role: string; is_active: boolean; default_truck_identifier?: string | null };
+type UserItem = { id: string; email: string; first_name?: string | null; last_name?: string | null; display_name?: string; role: string; is_active: boolean; default_truck_identifier?: string | null };
 
 const ROLE_PILL: Record<string, string> = { admin: 'pill-blue', dispatcher: 'pill-green', driver: 'pill-amber' };
 const ROLE_LABEL: Record<string, string> = { admin: 'Admin', dispatcher: 'Dispatcher', driver: 'Driver' };
@@ -17,7 +17,7 @@ export default function UsersPage() {
   // Modal
   const [modal, setModal] = useState<'create' | 'edit' | null>(null);
   const [editUser, setEditUser] = useState<UserItem | null>(null);
-  const [form, setForm] = useState({ email: '', password: 'password', role: 'dispatcher', default_truck_identifier: '' });
+  const [form, setForm] = useState({ email: '', password: 'password', first_name: '', last_name: '', role: 'dispatcher', default_truck_identifier: '' });
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -32,13 +32,13 @@ export default function UsersPage() {
   useEffect(() => { load(); }, [load]);
 
   const openCreate = () => {
-    setForm({ email: '', password: 'password', role: 'dispatcher', default_truck_identifier: '' });
+    setForm({ email: '', password: 'password', first_name: '', last_name: '', role: 'dispatcher', default_truck_identifier: '' });
     setEditUser(null);
     setModal('create');
   };
 
   const openEdit = (u: UserItem) => {
-    setForm({ email: u.email, password: '', role: u.role, default_truck_identifier: u.default_truck_identifier || '' });
+    setForm({ email: u.email, password: '', first_name: u.first_name || '', last_name: u.last_name || '', role: u.role, default_truck_identifier: u.default_truck_identifier || '' });
     setEditUser(u);
     setModal('edit');
   };
@@ -48,11 +48,11 @@ export default function UsersPage() {
     setError('');
     try {
       if (modal === 'edit' && editUser) {
-        const updates: any = { role: form.role, default_truck_identifier: form.default_truck_identifier || null };
+        const updates: any = { first_name: form.first_name || null, last_name: form.last_name || null, role: form.role, default_truck_identifier: form.default_truck_identifier || null };
         await api(`/users/${editUser.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates) });
         setSuccess('User updated');
       } else {
-        await api('/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+        await api('/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, first_name: form.first_name || null, last_name: form.last_name || null }) });
         setSuccess('User created');
       }
       setModal(null);
@@ -70,7 +70,7 @@ export default function UsersPage() {
   };
 
   const deleteUser = async (u: UserItem) => {
-    if (!confirm(`Delete user ${u.email}? This cannot be undone.`)) return;
+    if (!confirm(`Delete user ${u.display_name || u.email}? This cannot be undone.`)) return;
     setError('');
     try {
       await api(`/users/${u.id}`, { method: 'DELETE' });
@@ -128,10 +128,10 @@ export default function UsersPage() {
                   <tr key={u.id} style={{ opacity: u.is_active ? 1 : 0.55 }}>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div className="usr-avatar">{u.email?.charAt(0)?.toUpperCase() || '?'}</div>
+                        <div className="usr-avatar">{(u.first_name || u.email)?.charAt(0)?.toUpperCase() || '?'}</div>
                         <div>
-                          <div style={{ fontWeight: 600, color: 'var(--gray-900)' }}>{u.email}</div>
-                          <div style={{ fontSize: 12, color: 'var(--gray-400)', fontFamily: 'var(--font-mono)' }}>{u.id.slice(0, 8)}…</div>
+                          <div style={{ fontWeight: 600, color: 'var(--gray-900)' }}>{u.display_name || u.email}</div>
+                          <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>{u.email}</div>
                         </div>
                       </div>
                     </td>
@@ -168,9 +168,19 @@ export default function UsersPage() {
                 <button className="btn btn-ghost btn-sm" onClick={() => setModal(null)}>✕</button>
               </div>
               <div className="modal-body">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="form-group">
+                    <label className="form-label">First Name</label>
+                    <input value={form.first_name} onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))} placeholder="John" autoFocus={modal === 'create'} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Last Name</label>
+                    <input value={form.last_name} onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))} placeholder="Smith" />
+                  </div>
+                </div>
                 <div className="form-group">
                   <label className="form-label">Email</label>
-                  <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="user@example.com" disabled={modal === 'edit'} autoFocus={modal === 'create'} />
+                  <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="user@example.com" disabled={modal === 'edit'} />
                 </div>
                 {modal === 'create' && (
                   <div className="form-group">
