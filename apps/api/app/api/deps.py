@@ -37,9 +37,10 @@ def _enforce_tenant_guard(db: Session, request: Request | None, tenant_id: uuid.
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db), request: Request = None) -> AuthUser:
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+        role_str = payload["role"].upper()
         user = AuthUser(
             user_id=uuid.UUID(payload["sub"]),
-            role=UserRole(payload["role"]),
+            role=UserRole(role_str),
             tenant_id=uuid.UUID(payload["tenant_id"]),
         )
         _enforce_tenant_guard(db, request, user.tenant_id)
