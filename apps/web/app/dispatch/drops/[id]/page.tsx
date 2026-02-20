@@ -9,7 +9,8 @@ import { ApiError, api, requireRole } from '../../../lib/auth';
 type Address = { line1: string; line2?: string | null; city: string; state: string; postal_code: string };
 type LoadItem = { id: string; material: string; qty: number; unit: string; status: string; driver_name: string | null; driver_email: string | null };
 type DropDetail = {
-  id: string; ref: string; scheduled_date: string; scheduled_window: string;
+  id: string; ref: string; order_number: number | null; external_order_id: string | null;
+  source: string; scheduled_date: string; scheduled_window: string;
   customer_name: string; customer_phone: string; delivery_address: Address | null;
   notes: string | null; required_loads: number; loads: LoadItem[];
   notify_sent_at: string | null; last_reschedule_sms_at: string | null;
@@ -60,6 +61,7 @@ export default function DispatchDropDetailPage() {
   const [smsOverride, setSmsOverride] = useState(false);
   const [smsSending, setSmsSending] = useState(false);
   const [showSms, setShowSms] = useState(false);
+  const [notifySending, setNotifySending] = useState(false);
 
   // Reschedule state
   const [showReschedule, setShowReschedule] = useState(false);
@@ -146,6 +148,16 @@ export default function DispatchDropDetailPage() {
     finally { setSmsSending(false); }
   };
 
+  const sendDeliveryNotification = async () => {
+    setNotifySending(true); setError('');
+    try {
+      await api(`/dispatch/drops/${id}/send-delivery-notification`, { method: 'POST' });
+      setSuccess('Delivery notification sent.');
+      fetchDrop();
+    } catch (err) { setError((err as ApiError).message || 'Failed to send notification'); }
+    finally { setNotifySending(false); }
+  };
+
   const reschedule = async () => {
     if (!drop) return;
     setRescheduling(true); setError('');
@@ -175,7 +187,13 @@ export default function DispatchDropDetailPage() {
           <div>
             <Link href="/dispatch-schedule" className="dd-back">← Back to Schedule</Link>
             <h1 className="dd-title">
-              Drop <span className="dd-ref">#{drop?.ref || '...'}</span>
+              Order <span className="dd-ref">#{drop?.ref || '...'}</span>
+              {drop?.source && drop.source !== 'manual' && (
+                <span className="dd-source-badge">{drop.source}</span>
+              )}
+              {drop?.source === 'manual' && (
+                <span className="dd-source-badge manual">Manual</span>
+              )}
             </h1>
           </div>
         </div>
@@ -229,10 +247,11 @@ export default function DispatchDropDetailPage() {
                   <div className="dd-notify-actions">
                     {drop.notify_sent_at
                       ? <span className="pill pill-green">Sent {new Date(drop.notify_sent_at).toLocaleString()}</span>
-                      : <>
-                          <span className="pill pill-gray">Not sent</span>
-                        </>
+                      : <span className="pill pill-gray">Not sent</span>
                     }
+                    <button className="btn btn-secondary btn-sm" onClick={sendDeliveryNotification} disabled={notifySending}>
+                      {notifySending ? 'Sending…' : '📱 Send Notification'}
+                    </button>
                   </div>
                 </div>
                 <div className="dd-notify-row" style={{ borderBottom: 'none' }}>
@@ -264,8 +283,8 @@ export default function DispatchDropDetailPage() {
                     <tr>
                       <th>Material</th>
                       <th>Qty</th>
-                      <th>Driver</th>
                       <th>Status</th>
+                      <th>Driver</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -278,13 +297,13 @@ export default function DispatchDropDetailPage() {
                         <tr key={l.id}>
                           <td style={{ fontWeight: 600 }}>{l.material}</td>
                           <td>{l.qty} {l.unit}{l.qty !== 1 ? 's' : ''}</td>
+                          <td><span className={`pill ${pillCls}`}>{pillLbl}</span></td>
                           <td>
                             {l.driver_name
                               ? <span className="dd-driver-tag">🚚 {l.driver_name}</span>
                               : <span className="dd-unassigned-tag">⚠️ Unassigned</span>
                             }
                           </td>
-                          <td><span className={`pill ${pillCls}`}>{pillLbl}</span></td>
                         </tr>
                       );
                     })}
@@ -467,6 +486,8 @@ const styles = `
   .dd-back:hover { color: var(--green-600); }
   .dd-title { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin: 4px 0 0; }
   .dd-ref { color: var(--green-700); }
+  .dd-source-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 12px; margin-left: 10px; vertical-align: middle; background: var(--blue-50, #eff6ff); color: var(--blue-700, #1d4ed8); text-transform: uppercase; letter-spacing: 0.04em; }
+  .dd-source-badge.manual { background: var(--gray-100); color: var(--gray-500); }
 
   /* Alerts */
   .dd-alert { margin-bottom: 12px; display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-radius: var(--radius-md); font-size: 14px; }
