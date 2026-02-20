@@ -289,7 +289,7 @@ def _confirm_hold_transaction(hold: CapacityHold, payload: ConfirmOrderIn, chann
 def check_availability(
     required_loads: int = Query(default=1, ge=0),
     start_date: date | None = Query(default=None),
-    days: int = Query(default=7, ge=1, le=21),
+    days: int = Query(default=7, ge=1, le=45),
     user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
     db: Session = Depends(db_dep),
 ) -> dict:
