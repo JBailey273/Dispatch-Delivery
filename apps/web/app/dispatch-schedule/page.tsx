@@ -76,6 +76,7 @@ export default function DispatchSchedulePage() {
   const [navOffset, setNavOffset] = useState(0);
 
   const [capData, setCapData] = useState<Record<string, { A: CapWindow | null; B: CapWindow | null }>>({});
+  const [monthSummary, setMonthSummary] = useState<Record<string, { drop_id: string; order_ref: string; customer_name: string; materials: string; window: string; status: string }[]>>({});
   const [schedule, setSchedule] = useState<ScheduleData | null>(null);
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [dropDetail, setDropDetail] = useState<DropDetailModal | null>(null);
@@ -164,6 +165,24 @@ export default function DispatchSchedulePage() {
 
   useEffect(() => { fetchCapacity(); }, [fetchCapacity]);
 
+  /* ── Fetch month delivery summary for calendar cards ── */
+  const fetchMonthSummary = useCallback(async () => {
+    if (viewMode !== 'month') return;
+    try {
+      const monthCells = visibleRange as { date: Date; other: boolean }[];
+      const nonOther = monthCells.filter(c => !c.other);
+      if (nonOther.length === 0) return;
+      const startDate = toKey(nonOther[0].date);
+      const endDate = toKey(nonOther[nonOther.length - 1].date);
+      const resp = await api(`/dispatch/month-summary?start_date=${startDate}&end_date=${endDate}`);
+      setMonthSummary(resp.days || {});
+    } catch {
+      // Silently fail
+    }
+  }, [viewMode, visibleRange]);
+
+  useEffect(() => { fetchMonthSummary(); }, [fetchMonthSummary]);
+
   /* ── Fetch schedule for selected day ── */
   const fetchSchedule = useCallback(async () => {
     setScheduleLoading(true);
@@ -215,6 +234,7 @@ export default function DispatchSchedulePage() {
       setAssignLoadIds([]);
       await fetchSchedule();
       await fetchCapacity();
+      fetchMonthSummary();
     } catch (err) {
       const e = err as ApiError;
       setAssignMsg(e.message || 'Assignment failed.');
@@ -342,6 +362,7 @@ export default function DispatchSchedulePage() {
                     const amU = dc?.A?.used ?? 0, amT = dc?.A?.total ?? 0;
                     const pmU = dc?.B?.used ?? 0, pmT = dc?.B?.total ?? 0;
                     const colors: Record<string, string> = { green: 'var(--green-500)', amber: 'var(--amber-400)', red: 'var(--red-500)' };
+                    const dayDrops = monthSummary[k] || [];
                     return (
                       <div
                         key={i}
@@ -349,6 +370,18 @@ export default function DispatchSchedulePage() {
                         onClick={() => !cell.other && setSelDate(new Date(cell.date))}
                       >
                         <div className="mc-date">{cell.date.getDate()}</div>
+                        {!cell.other && dayDrops.length > 0 && (
+                          <div className="mc-drops">
+                            {dayDrops.slice(0, 3).map((d, di) => (
+                              <div key={di} className={`mc-drop-chip ${d.window === 'A' ? 'mc-chip-am' : 'mc-chip-pm'}`}>
+                                <span className="mc-chip-name">{d.customer_name}</span>
+                              </div>
+                            ))}
+                            {dayDrops.length > 3 && (
+                              <div className="mc-drop-more">+{dayDrops.length - 3} more</div>
+                            )}
+                          </div>
+                        )}
                         {!cell.other && (amT > 0 || pmT > 0) && (
                           <div className="mc-bars">
                             {amT > 0 && (
@@ -381,7 +414,7 @@ export default function DispatchSchedulePage() {
             <div className="detail-sub">
               {amLoads.length + pmLoads.length} load{amLoads.length + pmLoads.length !== 1 ? 's' : ''} · {(amCap.remaining_capacity ?? 0) + (pmCap.remaining_capacity ?? 0)} slots remaining
             </div>
-            <button className="btn btn-secondary btn-sm" onClick={() => { fetchSchedule(); fetchCapacity(); }} style={{ marginTop: 8 }}>
+            <button className="btn btn-secondary btn-sm" onClick={() => { fetchSchedule(); fetchCapacity(); fetchMonthSummary(); }} style={{ marginTop: 8 }}>
               Refresh
             </button>
           </div>
@@ -634,7 +667,7 @@ const schedulerStyles = `
   .month-header { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--border); }
   .month-dow { text-align: center; padding: 10px; font-family: var(--font-heading); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--gray-400); }
   .month-body { display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: 1fr; flex: 1; overflow-y: auto; }
-  .month-cell { border-right: 1px solid var(--border-light); border-bottom: 1px solid var(--border-light); padding: 8px 10px; cursor: pointer; min-height: 90px; transition: all 0.12s; display: flex; flex-direction: column; gap: 4px; position: relative; }
+  .month-cell { border-right: 1px solid var(--border-light); border-bottom: 1px solid var(--border-light); padding: 8px 10px; cursor: pointer; min-height: 110px; transition: all 0.12s; display: flex; flex-direction: column; gap: 2px; position: relative; }
   .month-cell:hover { background: var(--gray-25); }
   .month-cell:nth-child(7n) { border-right: none; }
   .month-cell.other { opacity: 0.25; pointer-events: none; }
@@ -643,7 +676,13 @@ const schedulerStyles = `
   .month-cell.selected { background: rgba(15,133,48,0.06); box-shadow: inset 0 0 0 2px var(--green-300); border-radius: 2px; }
   .mc-date { font-family: var(--font-heading); font-size: 15px; font-weight: 700; color: var(--gray-600); letter-spacing: -0.01em; }
   .month-cell.today .mc-date { color: var(--green-700); font-weight: 800; font-size: 16px; }
-  .mc-bars { display: flex; flex-direction: column; gap: 6px; margin-top: auto; flex: 1; justify-content: flex-end; }
+  .mc-bars { display: flex; flex-direction: column; gap: 6px; margin-top: auto; }
+  .mc-drops { display: flex; flex-direction: column; gap: 3px; flex: 1; overflow: hidden; margin-top: 2px; }
+  .mc-drop-chip { padding: 2px 6px; border-radius: 4px; font-family: var(--font-heading); font-size: 10.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; border-left: 3px solid; }
+  .mc-chip-am { background: rgba(26,158,58,0.08); border-left-color: var(--green-500); color: var(--gray-700); }
+  .mc-chip-pm { background: rgba(37,99,235,0.06); border-left-color: var(--blue-500); color: var(--gray-700); }
+  .mc-chip-name { display: block; overflow: hidden; text-overflow: ellipsis; }
+  .mc-drop-more { font-family: var(--font-heading); font-size: 10px; font-weight: 700; color: var(--gray-400); padding-left: 6px; }
   .mc-cap-row { display: flex; flex-direction: column; gap: 2px; }
   .mc-cap-label { font-family: var(--font-heading); font-size: 10px; font-weight: 700; color: var(--gray-400); display: flex; justify-content: space-between; letter-spacing: 0.02em; }
   .mc-bar-track { height: 4px; border-radius: 2px; background: var(--gray-100); overflow: hidden; }
