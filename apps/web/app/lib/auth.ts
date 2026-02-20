@@ -16,7 +16,11 @@ export class ApiError extends Error {
 export function getSession(): Session | null {
   if (typeof window === 'undefined') return null;
   const raw = localStorage.getItem('session');
-  return raw ? (JSON.parse(raw) as Session) : null;
+  if (!raw) return null;
+  const parsed = JSON.parse(raw) as Session;
+  // Normalize role to lowercase for consistent frontend checks
+  if (parsed.role) parsed.role = parsed.role.toLowerCase();
+  return parsed;
 }
 
 export function setSession(session: Session) {
@@ -51,6 +55,9 @@ export async function api(path: string, opts: RequestInit = {}) {
     const errCode = body?.detail?.code;
     if (res.status === 401) {
       clearSession();
+      if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+        window.location.href = '/login';
+      }
       throw new ApiError('Session expired. Please sign in again.', res.status, 'auth_expired');
     }
     throw new ApiError(body?.detail?.message || body?.detail || 'Request failed', res.status, errCode);
