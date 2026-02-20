@@ -46,24 +46,42 @@ def dispatch_schedule(day: date, user: AuthUser = Depends(require_roles(UserRole
         if code
     )
     loads = db.execute(
-        select(Load, Drop, User)
+        select(Load, Drop, User, Customer, CustomerAddress)
         .join(Drop, Drop.id == Load.drop_id)
         .outerjoin(User, User.id == Load.driver_user_id)
+        .join(Customer, Customer.id == Drop.customer_id)
+        .join(CustomerAddress, CustomerAddress.id == Drop.address_id)
         .where(Load.tenant_id == user.tenant_id, Load.route_date == day)
     ).all()
 
     by_window = {"A": defaultdict(list), "B": defaultdict(list)}
-    for load, drop, driver in loads:
-        key = driver.email if driver else "Unassigned"
+    for load, drop, driver, customer, address in loads:
+        driver_display = driver.display_name if driver else "Unassigned"
         history = get_address_history(db, str(user.tenant_id), str(drop.address_id))
-        by_window[load.route_window.value][key].append(
+
+        # Build order reference
+        if drop.external_order_id:
+            order_ref = drop.external_order_id
+        elif drop.order_number:
+            order_ref = f"D-{drop.order_number:05d}"
+        else:
+            order_ref = str(drop.id)[:8].upper()
+
+        addr_short = f"{address.line1}, {address.city}"
+
+        by_window[load.route_window.value][driver_display].append(
             {
                 "id": str(load.id),
                 "drop_id": str(drop.id),
+                "order_ref": order_ref,
                 "status": load.status.value,
                 "material": load.material_name_snapshot,
                 "qty": load.qty,
                 "unit": load.unit,
+                "customer_name": customer.name,
+                "customer_phone": customer.phone_e164,
+                "address_short": addr_short,
+                "driver_name": driver_display,
                 "historical_flags": {
                     "exception_count": history.exception_count,
                     "has_exception_history": history.exception_count > 0,
@@ -86,7 +104,7 @@ def list_drivers(user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), d
     drivers = db.execute(
         select(User).where(User.tenant_id == user.tenant_id, User.role == UserRole.DRIVER, User.is_active == True)  # noqa: E712
     ).scalars().all()
-    return {"drivers": [{"id": str(d.id), "email": d.email, "name": d.email.split("@")[0], "truck": d.default_truck_identifier} for d in drivers]}
+    return {"drivers": [{"id": str(d.id), "email": d.email, "name": d.display_name, "truck": d.default_truck_identifier} for d in drivers]}
 
 
 @router.get("/drops/{drop_id}")
@@ -120,7 +138,7 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
             "qty": ld.qty,
             "unit": ld.unit,
             "status": ld.status.value,
-            "driver_name": driver.email.split("@")[0] if driver else None,
+            "driver_name": driver.display_name if driver else None,
             "driver_email": driver.email if driver else None,
         })
 
