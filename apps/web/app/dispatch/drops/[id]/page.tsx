@@ -192,14 +192,13 @@ export default function DispatchDropDetailPage() {
   };
 
   const reassignDriver = async (loadId: string, driverId: string) => {
-    if (!driverId) return;
     setReassigning(loadId); setError('');
     try {
       await api('/dispatch/loads/assign', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ load_ids: [loadId], driver_user_id: driverId }),
+        body: JSON.stringify({ load_ids: [loadId], driver_user_id: driverId || null }),
       });
-      setSuccess('Driver reassigned.');
+      setSuccess(driverId ? 'Driver reassigned.' : 'Driver unassigned.');
       fetchDrop();
     } catch (err) { setError((err as ApiError).message || 'Reassignment failed'); }
     finally { setReassigning(null); }
