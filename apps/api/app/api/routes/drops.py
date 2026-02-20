@@ -17,6 +17,14 @@ router = APIRouter(prefix="/drops", tags=["drops"])
 logger = logging.getLogger("dispatch.capacity")
 
 
+def next_order_number(db: Session, tenant_id) -> int:
+    """Generate the next sequential order number for a tenant."""
+    current_max = db.execute(
+        select(func.coalesce(func.max(Drop.order_number), 0)).where(Drop.tenant_id == tenant_id)
+    ).scalar_one()
+    return current_max + 1
+
+
 class ItemIn(BaseModel):
     sku: str
     qty: int
@@ -183,6 +191,8 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
             tenant_id=user.tenant_id,
             customer_id=customer.id,
             address_id=address.id,
+            order_number=next_order_number(db, user.tenant_id),
+            source="manual",
             scheduled_date=payload.scheduled_date,
             scheduled_window=payload.scheduled_window,
             notes=payload.notes,
@@ -214,7 +224,7 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
         db.rollback()
         raise
 
-    return {"drop_id": str(drop.id), "load_ids": load_ids, "required_loads": required_loads}
+    return {"drop_id": str(drop.id), "order_number": drop.order_number, "load_ids": load_ids, "required_loads": required_loads}
 
 
 class RescheduleIn(BaseModel):
