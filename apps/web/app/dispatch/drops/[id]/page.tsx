@@ -7,7 +7,8 @@ import { ApiError, api, requireRole } from '../../../lib/auth';
 
 /* ── Types ── */
 type Address = { line1: string; line2?: string | null; city: string; state: string; postal_code: string };
-type LoadItem = { id: string; material: string; qty: number; unit: string; status: string; driver_name: string | null; driver_email: string | null };
+type LoadItem = { id: string; material: string; qty: number; unit: string; status: string; driver_user_id: string | null; driver_name: string | null; driver_email: string | null };
+type Driver = { id: string; name: string; email: string };
 type DropDetail = {
   id: string; ref: string; order_number: number | null; external_order_id: string | null;
   source: string; scheduled_date: string; scheduled_window: string;
@@ -51,6 +52,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 export default function DispatchDropDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const [mounted, setMounted] = useState(false);
   const [drop, setDrop] = useState<DropDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -72,6 +74,11 @@ export default function DispatchDropDetailPage() {
   // Reschedule calendar state
   const [rescCalMonth, setRescCalMonth] = useState(() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 1); });
   const [rescCapData, setRescCapData] = useState<Record<string, { A: CapWindow | null; B: CapWindow | null }>>({});
+  const [rescDriverId, setRescDriverId] = useState('');
+
+  // Driver reassignment
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [reassigning, setReassigning] = useState<string | null>(null);
 
   const fetchDrop = useCallback(async () => {
     setLoading(true);
@@ -85,7 +92,11 @@ export default function DispatchDropDetailPage() {
     } finally { setLoading(false); }
   }, [id]);
 
+  useEffect(() => { setMounted(true); }, []);
   useEffect(() => { fetchDrop(); }, [fetchDrop]);
+  useEffect(() => {
+    api('/dispatch/drivers').then(d => setDrivers(d.drivers || [])).catch(() => null);
+  }, []);
 
   // Fetch capacity for reschedule calendar
   const fetchRescCapacity = useCallback(async () => {
@@ -166,10 +177,32 @@ export default function DispatchDropDetailPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scheduled_date: rescDate, scheduled_window: rescWindow }),
       });
+      // Optionally reassign all loads to a different driver
+      if (rescDriverId && drop.loads.length > 0) {
+        const loadIds = drop.loads.map(l => l.id);
+        await api('/dispatch/loads/assign', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ load_ids: loadIds, driver_user_id: rescDriverId }),
+        });
+      }
       setSuccess('Drop rescheduled successfully');
-      setShowReschedule(false); fetchDrop();
+      setShowReschedule(false); setRescDriverId(''); fetchDrop();
     } catch (err) { setError((err as ApiError).message || 'Reschedule failed'); }
     finally { setRescheduling(false); }
+  };
+
+  const reassignDriver = async (loadId: string, driverId: string) => {
+    if (!driverId) return;
+    setReassigning(loadId); setError('');
+    try {
+      await api('/dispatch/loads/assign', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ load_ids: [loadId], driver_user_id: driverId }),
+      });
+      setSuccess('Driver reassigned.');
+      fetchDrop();
+    } catch (err) { setError((err as ApiError).message || 'Reassignment failed'); }
+    finally { setReassigning(null); }
   };
 
   if (!requireRole(['dispatcher'])) return <div className="page"><p>Unauthorized</p></div>;
@@ -177,6 +210,8 @@ export default function DispatchDropDetailPage() {
   const today = new Date();
   const rescDateObj = rescDate ? new Date(rescDate + 'T12:00:00') : null;
   const rescDayCap = rescDate ? rescCapData[rescDate] : null;
+
+  if (!mounted) return <div style={{ minHeight: '100vh' }} />;
 
   return (
     <>
@@ -229,7 +264,7 @@ export default function DispatchDropDetailPage() {
                   </span>
                 </div>
                 <div className="dd-hero-loads">{drop.required_loads} load{drop.required_loads !== 1 ? 's' : ''}</div>
-                <button className="btn btn-secondary btn-sm" style={{ marginTop: 12 }} onClick={() => setShowReschedule(true)}>
+                <button className="btn btn-secondary btn-sm" style={{ marginTop: 12 }} onClick={() => { setRescDriverId(''); setShowReschedule(true); }}>
                   📅 Reschedule
                 </button>
               </div>
@@ -293,16 +328,33 @@ export default function DispatchDropDetailPage() {
                       const displayStatus = isUnassignedDriver && l.status === 'assigned' ? 'pending' : l.status;
                       const pillCls = displayStatus === 'pending' ? 'pill-amber' : (STATUS_PILL[l.status] || 'pill-gray');
                       const pillLbl = displayStatus === 'pending' ? 'Pending' : (STATUS_LABEL[l.status] || l.status);
+                      const isTerminal = ['delivered', 'cancelled'].includes(l.status);
                       return (
                         <tr key={l.id}>
                           <td style={{ fontWeight: 600 }}>{l.material}</td>
                           <td>{l.qty} {l.unit}{l.qty !== 1 ? 's' : ''}</td>
                           <td><span className={`pill ${pillCls}`}>{pillLbl}</span></td>
                           <td>
-                            {l.driver_name
-                              ? <span className="dd-driver-tag">🚚 {l.driver_name}</span>
-                              : <span className="dd-unassigned-tag">⚠️ Unassigned</span>
-                            }
+                            {isTerminal ? (
+                              l.driver_name
+                                ? <span className="dd-driver-tag">🚚 {l.driver_name}</span>
+                                : <span className="dd-unassigned-tag">⚠️ Unassigned</span>
+                            ) : (
+                              <div className="dd-driver-select-wrap">
+                                <select
+                                  className="dd-driver-select"
+                                  value={l.driver_user_id || ''}
+                                  disabled={reassigning === l.id}
+                                  onChange={e => reassignDriver(l.id, e.target.value)}
+                                >
+                                  <option value="">⚠️ Unassigned</option>
+                                  {drivers.map(d => (
+                                    <option key={d.id} value={d.id}>{d.name}</option>
+                                  ))}
+                                </select>
+                                {reassigning === l.id && <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />}
+                              </div>
+                            )}
                           </td>
                         </tr>
                       );
@@ -462,6 +514,20 @@ export default function DispatchDropDetailPage() {
                     )}
                   </div>
                 )}
+                {/* Optional driver change */}
+                <div className="resc-driver-section">
+                  <div className="resc-driver-label">Change Driver (optional)</div>
+                  <select
+                    className="resc-driver-select"
+                    value={rescDriverId}
+                    onChange={e => setRescDriverId(e.target.value)}
+                  >
+                    <option value="">Keep current driver{drop?.loads.length === 1 && drop.loads[0].driver_name ? ` (${drop.loads[0].driver_name})` : 's'}</option>
+                    {drivers.map(d => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <div className="modal-footer resc-footer">
                 <button className="btn btn-ghost" onClick={() => setShowReschedule(false)}>Cancel</button>
@@ -528,6 +594,8 @@ const styles = `
   .dd-loads-table tr:last-child td { border-bottom: none; }
   .dd-driver-tag { color: var(--green-700); font-weight: 600; font-size: 13px; }
   .dd-unassigned-tag { color: var(--amber-600); font-weight: 600; font-size: 13px; }
+  .dd-driver-select-wrap { display: flex; align-items: center; gap: 6px; }
+  .dd-driver-select { width: auto; min-width: 140px; padding: 5px 8px; font-size: 13px; font-weight: 500; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); cursor: pointer; font-family: inherit; }
 
   /* ID footer */
   .dd-id-footer { text-align: center; padding: 16px 0 8px; font-size: 11px; color: var(--gray-300); }
@@ -579,5 +647,8 @@ const styles = `
   .resc-slot-num.full { color: var(--red-500); }
   .resc-slot-label { font-size: 11px; color: var(--gray-400); }
 
+  .resc-driver-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-light); }
+  .resc-driver-label { font-family: var(--font-heading); font-size: 12px; font-weight: 700; color: var(--gray-500); margin-bottom: 6px; }
+  .resc-driver-select { width: 100%; padding: 9px 12px; font-size: 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); cursor: pointer; font-family: inherit; }
   .resc-footer { display: flex; justify-content: flex-end; gap: 10px; }
 `;
