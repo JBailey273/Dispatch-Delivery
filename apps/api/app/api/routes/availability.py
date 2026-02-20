@@ -207,11 +207,22 @@ def _upsert_customer_and_address(db: Session, tenant_id, payload: ConfirmOrderIn
     return customer, address
 
 
-def _create_drop_and_loads(db: Session, tenant_id, payload: ConfirmOrderIn, grouped: dict[str, dict], customer_id, address_id):
+def _next_order_number(db: Session, tenant_id) -> int:
+    current_max = db.execute(
+        select(func.coalesce(func.max(Drop.order_number), 0)).where(Drop.tenant_id == tenant_id)
+    ).scalar_one()
+    return current_max + 1
+
+
+def _create_drop_and_loads(db: Session, tenant_id, payload: ConfirmOrderIn, grouped: dict[str, dict], customer_id, address_id, *, source: str = "channel"):
+    ext_id = payload.external_order.id if payload.external_order else None
     drop = Drop(
         tenant_id=tenant_id,
         customer_id=customer_id,
         address_id=address_id,
+        order_number=_next_order_number(db, tenant_id),
+        external_order_id=ext_id,
+        source=source,
         scheduled_date=payload.drop.requested_date,
         scheduled_window=payload.drop.requested_window,
         notes=payload.drop.notes,
