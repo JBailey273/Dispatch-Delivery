@@ -28,7 +28,7 @@ function fmtDateLong(ds: string) {
 }
 
 type CapWindow = { date: string; window: string; used: number; total: number; remaining_capacity: number; available: boolean; active_holds: number };
-type LoadItem = { id: string; drop_id: string; order_ref: string; status: string; material: string; qty: number; unit: string; customer_name: string; customer_phone: string; address_short: string; driver_name: string; historical_flags?: any };
+type LoadItem = { id: string; drop_id: string; order_ref: string; status: string; material: string; qty: number; unit: string; customer_name: string; customer_phone: string; address_short: string; driver_name: string; driver_user_id: string | null; historical_flags?: any };
 type ScheduleData = {
   date: string;
   windows: {
@@ -41,7 +41,7 @@ type DropDetailModal = {
   scheduled_date: string; scheduled_window: string;
   customer_name: string; customer_phone: string; delivery_address: { line1: string; line2?: string | null; city: string; state: string; postal_code: string } | null;
   notes: string | null; required_loads: number;
-  loads: { id: string; material: string; qty: number; unit: string; status: string; driver_name: string | null }[];
+  loads: { id: string; material: string; qty: number; unit: string; status: string; driver_user_id: string | null; driver_name: string | null }[];
   notify_sent_at: string | null; last_reschedule_sms_at: string | null;
 };
 type Driver = { id: string; email: string; name: string; truck: string | null };
@@ -70,10 +70,13 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function DispatchSchedulePage() {
+  const [mounted, setMounted] = useState(false);
   const today = useMemo(() => new Date(), []);
   const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
   const [selDate, setSelDate] = useState(today);
   const [navOffset, setNavOffset] = useState(0);
+
+  useEffect(() => { setMounted(true); }, []);
 
   const [capData, setCapData] = useState<Record<string, { A: CapWindow | null; B: CapWindow | null }>>({});
   const [monthSummary, setMonthSummary] = useState<Record<string, { drop_id: string; order_ref: string; customer_name: string; materials: string; window: string; status: string }[]>>({});
@@ -88,6 +91,7 @@ export default function DispatchSchedulePage() {
   const [assignDriverId, setAssignDriverId] = useState('');
   const [assignBusy, setAssignBusy] = useState(false);
   const [assignMsg, setAssignMsg] = useState('');
+  const [reassigningLoadId, setReassigningLoadId] = useState<string | null>(null);
   const [drivers, setDrivers] = useState<Driver[]>([]);
 
   /* ── Compute visible date range ── */
@@ -249,9 +253,71 @@ export default function DispatchSchedulePage() {
     }
   };
 
+  const reassignDriver = async (loadId: string, driverId: string) => {
+    if (!driverId) return;
+    setReassigningLoadId(loadId);
+    try {
+      await api('/dispatch/loads/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ load_ids: [loadId], driver_user_id: driverId }),
+      });
+      // Refresh modal data
+      if (selectedDropId) {
+        const resp = await api(`/dispatch/drops/${selectedDropId}`);
+        setDropDetail(resp);
+      }
+      await fetchSchedule();
+    } catch (err) {
+      setError((err as ApiError).message || 'Reassignment failed');
+    } finally { setReassigningLoadId(null); }
+  };
+
   /* ── Load toggle ── */
   const toggleLoad = (loadId: string) => {
     setAssignLoadIds(prev => prev.includes(loadId) ? prev.filter(id => id !== loadId) : [...prev, loadId]);
+  };
+
+  /* ── Render a load card (shared by AM/PM) ── */
+  const renderLoadCard = (driver: string, load: LoadItem) => {
+    const displayStatus = driver === 'Unassigned' && load.status === 'assigned' ? 'pending' : load.status;
+    const pillClass = displayStatus === 'pending' ? 'pill-amber' : (STATUS_PILL[load.status] || 'pill-gray');
+    const pillLabel = displayStatus === 'pending' ? 'Pending' : (STATUS_LABEL[load.status] || load.status);
+    const isTerminal = ['delivered', 'cancelled'].includes(load.status);
+    return (
+      <div key={load.id} className="order-row" onClick={() => openDrop(load.drop_id)}>
+        <label className="order-check" onClick={e => e.stopPropagation()}>
+          <input type="checkbox" checked={assignLoadIds.includes(load.id)} onChange={() => toggleLoad(load.id)} />
+        </label>
+        <div className="order-info">
+          <div className="order-ref">#{load.order_ref}</div>
+          <div className="order-customer">{load.customer_name}</div>
+          <div className="order-addr">{load.address_short}</div>
+          <div className="order-material">{load.material} x{load.qty} {load.unit}</div>
+          <div className="order-driver-row" onClick={e => e.stopPropagation()}>
+            {isTerminal ? (
+              <span className="order-driver">{load.driver_name || '—'}</span>
+            ) : (
+              <select
+                className="order-driver-select"
+                value={load.driver_user_id || ''}
+                disabled={reassigningLoadId === load.id}
+                onChange={e => { e.stopPropagation(); reassignDriver(load.id, e.target.value); }}
+              >
+                <option value="">⚠️ Unassigned</option>
+                {drivers.map(d => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            )}
+            {reassigningLoadId === load.id && <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />}
+          </div>
+        </div>
+        <span className={`pill ${pillClass}`}>
+          <span className="pill-dot" />{pillLabel}
+        </span>
+      </div>
+    );
   };
 
   /* ── Flatten loads by window ── */
@@ -280,6 +346,8 @@ export default function DispatchSchedulePage() {
   const pmCap = schedule?.windows.B.capacity || dayCap?.B || { used: 0, total: 0, remaining_capacity: 0 };
   const amLoads = getWindowLoads('A');
   const pmLoads = getWindowLoads('B');
+
+  if (!mounted) return <div style={{ height: '100vh' }} />;
 
   return (
     <>
@@ -452,29 +520,8 @@ export default function DispatchSchedulePage() {
                   <div className={`window-fill cap-fill ${capColor(amCap.used, amCap.total)}`} style={{ width: amCap.total > 0 ? `${Math.round(amCap.used / amCap.total * 100)}%` : '0%' }} />
                 </div>
                 {schedule.windows.A.disabled && <div className="alert alert-warning" style={{ marginBottom: 12, fontSize: 13 }}>⚠ This window is blacked out for new scheduling</div>}
-                {amLoads.length === 0 && <div style={{ fontSize: 14, color: 'var(--gray-400)', padding: '8px 0' }}>No loads in this window</div>}
-                {amLoads.map(({ driver, load }) => {
-                  const displayStatus = driver === 'Unassigned' && load.status === 'assigned' ? 'pending' : load.status;
-                  const pillClass = displayStatus === 'pending' ? 'pill-amber' : (STATUS_PILL[load.status] || 'pill-gray');
-                  const pillLabel = displayStatus === 'pending' ? 'Pending' : (STATUS_LABEL[load.status] || load.status);
-                  return (
-                  <div key={load.id} className="order-row" onClick={() => openDrop(load.drop_id)}>
-                    <label className="order-check" onClick={e => e.stopPropagation()}>
-                      <input type="checkbox" checked={assignLoadIds.includes(load.id)} onChange={() => toggleLoad(load.id)} />
-                    </label>
-                    <div className="order-info">
-                      <div className="order-ref">#{load.order_ref}</div>
-                      <div className="order-customer">{load.customer_name}</div>
-                      <div className="order-addr">{load.address_short}</div>
-                      <div className="order-material">{load.material} x{load.qty} {load.unit}</div>
-                      <div className="order-driver">{driver === 'Unassigned' ? '⚠️ Unassigned' : `🚚 ${driver}`}</div>
-                    </div>
-                    <span className={`pill ${pillClass}`}>
-                      <span className="pill-dot" />{pillLabel}
-                    </span>
-                  </div>
-                  );
-                })}
+                {amLoads.length === 0 && <div className="no-loads">No loads in this window</div>}
+                {amLoads.map(({ driver, load }) => renderLoadCard(driver, load))}
               </div>
 
               {/* PM Window */}
@@ -489,29 +536,8 @@ export default function DispatchSchedulePage() {
                   <div className={`window-fill cap-fill ${capColor(pmCap.used, pmCap.total)}`} style={{ width: pmCap.total > 0 ? `${Math.round(pmCap.used / pmCap.total * 100)}%` : '0%' }} />
                 </div>
                 {schedule.windows.B.disabled && <div className="alert alert-warning" style={{ marginBottom: 12, fontSize: 13 }}>⚠ This window is blacked out for new scheduling</div>}
-                {pmLoads.length === 0 && <div style={{ fontSize: 14, color: 'var(--gray-400)', padding: '8px 0' }}>No loads in this window</div>}
-                {pmLoads.map(({ driver, load }) => {
-                  const displayStatus = driver === 'Unassigned' && load.status === 'assigned' ? 'pending' : load.status;
-                  const pillClass = displayStatus === 'pending' ? 'pill-amber' : (STATUS_PILL[load.status] || 'pill-gray');
-                  const pillLabel = displayStatus === 'pending' ? 'Pending' : (STATUS_LABEL[load.status] || load.status);
-                  return (
-                  <div key={load.id} className="order-row" onClick={() => openDrop(load.drop_id)}>
-                    <label className="order-check" onClick={e => e.stopPropagation()}>
-                      <input type="checkbox" checked={assignLoadIds.includes(load.id)} onChange={() => toggleLoad(load.id)} />
-                    </label>
-                    <div className="order-info">
-                      <div className="order-ref">#{load.order_ref}</div>
-                      <div className="order-customer">{load.customer_name}</div>
-                      <div className="order-addr">{load.address_short}</div>
-                      <div className="order-material">{load.material} x{load.qty} {load.unit}</div>
-                      <div className="order-driver">{driver === 'Unassigned' ? '⚠️ Unassigned' : `🚚 ${driver}`}</div>
-                    </div>
-                    <span className={`pill ${pillClass}`}>
-                      <span className="pill-dot" />{pillLabel}
-                    </span>
-                  </div>
-                  );
-                })}
+                {pmLoads.length === 0 && <div className="no-loads">No loads in this window</div>}
+                {pmLoads.map(({ driver, load }) => renderLoadCard(driver, load))}
               </div>
 
               {/* Assignment bar */}
@@ -583,6 +609,7 @@ export default function DispatchSchedulePage() {
                       const dStatus = isUnassigned && l.status === 'assigned' ? 'pending' : l.status;
                       const pc = dStatus === 'pending' ? 'pill-amber' : (STATUS_PILL[l.status] || 'pill-gray');
                       const pl = dStatus === 'pending' ? 'Pending' : (STATUS_LABEL[l.status] || l.status);
+                      const isTerminal = ['delivered', 'cancelled'].includes(l.status);
                       return (
                         <div key={l.id} className="dm-load-row">
                           <div className="dm-load-info">
@@ -591,7 +618,26 @@ export default function DispatchSchedulePage() {
                           </div>
                           <div className="dm-load-meta">
                             <span className={`pill pill-sm ${pc}`}>{pl}</span>
-                            <span className="dm-load-driver">{l.driver_name ? `🚚 ${l.driver_name}` : '⚠️ Unassigned'}</span>
+                          </div>
+                          <div className="dm-load-driver-row">
+                            {isTerminal ? (
+                              <span className="dm-load-driver">{l.driver_name ? `🚚 ${l.driver_name}` : '⚠️ Unassigned'}</span>
+                            ) : (
+                              <div className="dm-driver-select-wrap">
+                                <select
+                                  className="dm-driver-select"
+                                  value={l.driver_user_id || ''}
+                                  disabled={reassigningLoadId === l.id}
+                                  onChange={e => reassignDriver(l.id, e.target.value)}
+                                >
+                                  <option value="">⚠️ Unassigned</option>
+                                  {drivers.map(d => (
+                                    <option key={d.id} value={d.id}>{d.name}</option>
+                                  ))}
+                                </select>
+                                {reassigningLoadId === l.id && <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />}
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
@@ -617,7 +663,7 @@ export default function DispatchSchedulePage() {
                 </div>
                 <div className="modal-footer">
                   <Link href={`/dispatch/drops/${selectedDropId}`} className="btn btn-primary btn-sm" style={{ textDecoration: 'none' }}>
-                    Modify Order
+                    Modify Delivery
                   </Link>
                   <button className="btn btn-ghost btn-sm" onClick={() => { setSelectedDropId(null); setDropDetail(null); }}>Close</button>
                 </div>
@@ -736,7 +782,11 @@ const schedulerStyles = `
   .order-customer { font-family: var(--font-heading); font-size: 14px; font-weight: 700; color: var(--gray-900); letter-spacing: -0.01em; }
   .order-addr { font-size: 12px; color: var(--gray-400); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .order-material { font-size: 13px; color: var(--gray-700); font-weight: 600; background: var(--gray-50); display: inline-block; padding: 2px 8px; border-radius: var(--radius-sm); }
-  .order-driver { font-size: 12px; color: var(--gray-500); margin-top: 4px; }
+  .order-driver-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+  .order-driver { font-size: 12px; color: var(--gray-500); }
+  .order-driver-select { padding: 3px 8px; font-family: var(--font-body); font-size: 11px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--gray-700); cursor: pointer; max-width: 170px; transition: border-color 0.15s; appearance: auto; }
+  .order-driver-select:focus { border-color: var(--green-400); outline: none; box-shadow: 0 0 0 2px rgba(15,133,48,0.08); }
+  .order-driver-select:disabled { opacity: 0.5; cursor: wait; }
 
   /* ── Assign bar ── */
   .assign-bar { display: flex; align-items: center; gap: 8px; padding: 14px 24px; border-top: 2px solid var(--green-200); background: var(--green-25); flex-wrap: wrap; }
@@ -764,11 +814,14 @@ const schedulerStyles = `
   .dm-addr { font-size: 13px; color: var(--gray-500); margin-top: 4px; }
   .dm-schedule-date { font-family: var(--font-heading); font-size: 15px; font-weight: 700; color: var(--gray-900); }
   .dm-schedule-window { font-size: 13px; color: var(--gray-600); margin-top: 2px; }
-  .dm-load-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-radius: var(--radius-md); background: var(--gray-50); margin-bottom: 4px; }
+  .dm-load-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--gray-50); margin-bottom: 4px; }
   .dm-load-info { display: flex; align-items: baseline; gap: 8px; }
   .dm-load-material { font-family: var(--font-heading); font-size: 14px; font-weight: 700; color: var(--gray-900); }
   .dm-load-qty { font-size: 13px; color: var(--gray-500); }
-  .dm-load-meta { display: flex; align-items: center; gap: 8px; }
+  .dm-load-meta { margin-left: auto; }
+  .dm-load-driver-row { width: 100%; }
+  .dm-driver-select-wrap { display: flex; align-items: center; gap: 6px; }
+  .dm-driver-select { width: 100%; padding: 5px 8px; font-size: 12px; font-weight: 500; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); cursor: pointer; font-family: inherit; }
   .dm-load-driver { font-size: 12px; color: var(--gray-500); }
   .pill-sm { font-size: 11px; padding: 2px 8px; }
   .dm-notify-item { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; font-size: 14px; }
