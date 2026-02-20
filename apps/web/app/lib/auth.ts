@@ -55,9 +55,6 @@ export async function api(path: string, opts: RequestInit = {}) {
     const errCode = body?.detail?.code;
     if (res.status === 401) {
       clearSession();
-      if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-        window.location.href = '/login';
-      }
       throw new ApiError('Session expired. Please sign in again.', res.status, 'auth_expired');
     }
     throw new ApiError(body?.detail?.message || body?.detail || 'Request failed', res.status, errCode);
