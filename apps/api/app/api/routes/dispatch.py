@@ -124,9 +124,20 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
             "driver_email": driver.email if driver else None,
         })
 
+    # Build display reference
+    if drop.external_order_id:
+        display_ref = drop.external_order_id
+    elif drop.order_number:
+        display_ref = f"D-{drop.order_number:05d}"
+    else:
+        display_ref = str(drop.id)[:8].upper()
+
     return {
         "id": str(drop.id),
-        "ref": str(drop.id)[:8].upper(),
+        "ref": display_ref,
+        "order_number": drop.order_number,
+        "external_order_id": drop.external_order_id,
+        "source": drop.source or "manual",
         "scheduled_date": str(drop.scheduled_date),
         "scheduled_window": drop.scheduled_window.value,
         "notify_sent_at": drop.notify_sent_at.isoformat() if drop.notify_sent_at else None,
@@ -138,6 +149,32 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
         "required_loads": len(loads_out),
         "loads": loads_out,
     }
+
+
+@router.post("/drops/{drop_id}/send-delivery-notification")
+def send_delivery_notification(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)), db: Session = Depends(db_dep)):
+    row = db.execute(
+        select(Drop, Customer).join(Customer, Customer.id == Drop.customer_id)
+        .where(Drop.tenant_id == user.tenant_id, Drop.id == drop_id)
+    ).one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
+    drop, customer = row
+    window_label = "9am–1pm" if drop.scheduled_window.value == "A" else "1pm–5pm"
+    message = f"Your delivery is scheduled for {drop.scheduled_date.strftime('%A, %B %d')} between {window_label}. Please ensure the delivery area is accessible."
+    job = {
+        "tenant_id": str(user.tenant_id),
+        "to": customer.phone_e164,
+        "template": "delivery_notification",
+        "message": message,
+    }
+    dedupe_key = f"notify-{drop.id}-{int(now_utc().timestamp() // 300)}"
+    if not enqueue_sms_job(job, dedupe_key=dedupe_key):
+        raise HTTPException(status_code=409, detail={"code": "rate_limited", "message": "Notification was already sent recently. Wait a few minutes."})
+    drop.notify_sent_at = now_utc()
+    log_event(db, user.tenant_id, "delivery_notification.sent", "api", {"drop_id": drop_id})
+    db.commit()
+    return {"status": "sent", "sent_at": drop.notify_sent_at.isoformat()}
 
 
 class RescheduleSmsIn(BaseModel):
