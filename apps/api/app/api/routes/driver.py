@@ -74,6 +74,7 @@ def driver_drops(
             "notes": drop.notes,
             "notify_sent": drop.notify_sent_at is not None,
             "scheduled_window": drop.scheduled_window.value if drop.scheduled_window else None,
+            "drop_photos": drop.drop_photos if drop.drop_photos else [],
             "loads": [
                 {
                     "id": str(l.id),
