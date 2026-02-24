@@ -14,20 +14,22 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [session, setSession] = useState<Session | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setSession(getSession());
     setMounted(true);
-  }, [pathname]);
+  }, []);
 
   const isLogin = pathname === '/login';
   if (!mounted || isLogin) return <>{children}</>;
+
+  // Read session synchronously every render — no stale state race condition
+  const session = getSession();
   if (!session) {
-    if (typeof window !== 'undefined') router.push('/login');
+    router.push('/login');
     return null;
   }
+
   const isAdmin = session.role === 'admin';
   const isDriver = session.role === 'driver';
 
