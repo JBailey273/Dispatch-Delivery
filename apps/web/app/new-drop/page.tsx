@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ApiError, api, requireRole } from '../lib/auth';
 
@@ -26,7 +26,15 @@ function capColor(u: number, t: number) {
   return pct >= 1 ? 'red' : pct >= 0.75 ? 'amber' : 'green';
 }
 
-export default function NewDropPage() {
+export default function NewDropPageWrapper() {
+  return (
+    <Suspense fallback={<div className="page" style={{ padding: 40 }}>Loading...</div>}>
+      <NewDropPage />
+    </Suspense>
+  );
+}
+
+function NewDropPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const searchRef = useRef<HTMLInputElement>(null);
