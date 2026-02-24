@@ -198,7 +198,7 @@ export default function DriverPage() {
     setActionLoading(oosConfirm.loadId);
     try {
       await api(`/driver/loads/${oosConfirm.loadId}/status`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'exception', reason_code: 'OUT_OF_STOCK', notes: `Out of stock: ${oosConfirm.material}` }),
       });
       showToast('Returned to dispatch — out of stock.');
