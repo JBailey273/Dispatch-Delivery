@@ -49,6 +49,13 @@ const STATUS_LABEL: Record<string, string> = {
   assigned: 'Assigned', loaded_leaving: 'En Route', delivered: 'Delivered',
   exception: 'Exception', cancelled: 'Cancelled',
 };
+const ALL_STATUSES = [
+  { value: 'assigned', label: 'Assigned' },
+  { value: 'loaded_leaving', label: 'Out for Delivery' },
+  { value: 'delivered', label: 'Delivered' },
+  { value: 'exception', label: 'Exception' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
 
 export default function DispatchDropDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -191,6 +198,22 @@ export default function DispatchDropDetailPage() {
     finally { setRescheduling(false); }
   };
 
+// Status update
+  const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
+
+  const updateLoadStatus = async (loadId: string, newStatus: string) => {
+    setUpdatingStatus(loadId); setError('');
+    try {
+      await api(`/dispatch/loads/${loadId}/status`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      setSuccess(`Status updated to ${STATUS_LABEL[newStatus] || newStatus}.`);
+      fetchDrop();
+    } catch (err) { setError((err as ApiError).message || 'Status update failed'); }
+    finally { setUpdatingStatus(null); }
+  };
+  
   const reassignDriver = async (loadId: string, driverId: string) => {
     setReassigning(loadId); setError('');
     try {
@@ -324,15 +347,26 @@ export default function DispatchDropDetailPage() {
                   <tbody>
                     {drop.loads.map(l => {
                       const isUnassignedDriver = !l.driver_name;
-                      const displayStatus = isUnassignedDriver && l.status === 'assigned' ? 'pending' : l.status;
-                      const pillCls = displayStatus === 'pending' ? 'pill-amber' : (STATUS_PILL[l.status] || 'pill-gray');
-                      const pillLbl = displayStatus === 'pending' ? 'Pending' : (STATUS_LABEL[l.status] || l.status);
                       const isTerminal = ['delivered', 'cancelled'].includes(l.status);
                       return (
                         <tr key={l.id}>
                           <td style={{ fontWeight: 600 }}>{l.material}</td>
                           <td>{l.qty} {l.unit}{l.qty !== 1 ? 's' : ''}</td>
-                          <td><span className={`pill ${pillCls}`}>{pillLbl}</span></td>
+                          <td>
+                            <div className="dd-status-select-wrap">
+                              <select
+                                className="dd-status-select"
+                                value={l.status}
+                                disabled={updatingStatus === l.id}
+                                onChange={e => updateLoadStatus(l.id, e.target.value)}
+                              >
+                                {ALL_STATUSES.map(s => (
+                                  <option key={s.value} value={s.value}>{s.label}</option>
+                                ))}
+                              </select>
+                              {updatingStatus === l.id && <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />}
+                            </div>
+                          </td>
                           <td>
                             {isTerminal ? (
                               l.driver_name
@@ -553,6 +587,8 @@ const styles = `
   .dd-ref { color: var(--green-700); }
   .dd-source-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 12px; margin-left: 10px; vertical-align: middle; background: var(--blue-50, #eff6ff); color: var(--blue-700, #1d4ed8); text-transform: uppercase; letter-spacing: 0.04em; }
   .dd-source-badge.manual { background: var(--gray-100); color: var(--gray-500); }
+  .dd-status-select-wrap { display: flex; align-items: center; gap: 6px; }
+  .dd-status-select { width: auto; min-width: 130px; padding: 5px 8px; font-size: 13px; font-weight: 600; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); cursor: pointer; font-family: inherit; }
 
   /* Alerts */
   .dd-alert { margin-bottom: 12px; display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-radius: var(--radius-md); font-size: 14px; }
