@@ -49,6 +49,7 @@ function NewDropPage() {
   const [customer, setCustomer] = useState<CustomerResult | null>(null);
   const [searchResults, setSearchResults] = useState<CustomerResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [resultAddresses, setResultAddresses] = useState<Record<string, Address>>({});
 
   // Address
   const [addresses, setAddresses] = useState<Address[]>([]);
@@ -143,6 +144,14 @@ function NewDropPage() {
     return `${dow}, ${mon} ${d.getDate()} ${d.getFullYear()}`;
   };
 
+  /* ── Normalize search input: strip formatting if it looks like a phone ── */
+  const normalizeSearch = (raw: string): string => {
+    const stripped = raw.replace(/[\s()\-+.]/g, '');
+    // If after stripping it's all digits (and at least 7), treat as phone
+    if (/^\d{7,}$/.test(stripped)) return stripped;
+    return raw.trim();
+  };
+
   /* ── Customer lookup — works for name or phone ── */
   const lookup = async () => {
     if (!searchQuery.trim()) return;
@@ -152,12 +161,25 @@ function NewDropPage() {
     setAddresses([]);
     setAddressId('');
     setShowNewCustomerForm(false);
+    setResultAddresses({});
     try {
-      const s = await api(`/customers/search?q=${encodeURIComponent(searchQuery.trim())}`);
+      const q = normalizeSearch(searchQuery);
+      const s = await api(`/customers/search?q=${encodeURIComponent(q)}`);
       const results = (s.results || []) as CustomerResult[];
       const sorted = [...results].sort((a, b) => Number(Boolean(b.exact_phone_match)) - Number(Boolean(a.exact_phone_match)));
       setSearchResults(sorted);
       if (sorted.length === 1) selectCustomer(sorted[0]);
+      // Fetch default address for each result to show in the list
+      if (sorted.length > 1) {
+        sorted.slice(0, 5).forEach(async (r) => {
+          try {
+            const ad = await api(`/customers/${r.id}/addresses`);
+            const addrs = ad.addresses || [];
+            const def = addrs.find((a: Address) => a.is_default) || addrs[0];
+            if (def) setResultAddresses(prev => ({ ...prev, [r.id]: def }));
+          } catch { /* silent */ }
+        });
+      }
     } catch (err) {
       setError((err as ApiError).message || 'Search failed');
     } finally {
@@ -168,6 +190,7 @@ function NewDropPage() {
   const startNewCustomer = () => {
     setCustomer(null);
     setSearchResults([]);
+    setResultAddresses({});
     setAddresses([]);
     setAddressId('');
     setShowNewCustomerForm(true);
@@ -212,6 +235,7 @@ function NewDropPage() {
   const changeCustomer = () => {
     setCustomer(null);
     setSearchResults([]);
+    setResultAddresses({});
     setAddresses([]);
     setAddressId('');
     setSearchQuery('');
@@ -336,7 +360,7 @@ function NewDropPage() {
                   <input
                     ref={searchRef}
                     type="text"
-                    placeholder="Enter name or phone number"
+                    placeholder="Enter name or phone number\u2026"
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && lookup()}
@@ -351,16 +375,22 @@ function NewDropPage() {
 
                 {searchResults.length > 0 && (
                   <div className="nd-results">
-                    {searchResults.slice(0, 5).map(r => (
-                      <div key={r.id} className="nd-result-row" onClick={() => selectCustomer(r)}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 600 }}>{r.name}</div>
-                          <div className="text-sm" style={{ color: 'var(--gray-500)' }}>{r.phone_e164}</div>
+                    {searchResults.slice(0, 5).map(r => {
+                      const addr = resultAddresses[r.id];
+                      return (
+                        <div key={r.id} className="nd-result-row" onClick={() => selectCustomer(r)}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 600 }}>{r.name}</div>
+                            <div className="text-sm" style={{ color: 'var(--gray-500)' }}>{r.phone_e164}</div>
+                            {addr && <div className="text-sm" style={{ color: 'var(--gray-400)', marginTop: 2 }}>{addr.line1}, {addr.city}, {addr.state} {addr.postal_code}</div>}
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                            {r.exact_phone_match && <span className="pill pill-green"><span className="pill-dot" />Exact</span>}
+                            {r.last_ordered && <span className="text-xs" style={{ color: 'var(--gray-400)' }}>Last: {r.last_ordered}</span>}
+                          </div>
                         </div>
-                        {r.exact_phone_match && <span className="pill pill-green"><span className="pill-dot" />Exact</span>}
-                        {r.last_ordered && <span className="text-xs" style={{ color: 'var(--gray-400)' }}>Last: {r.last_ordered}</span>}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 
@@ -377,7 +407,7 @@ function NewDropPage() {
                     <label className="form-label">Phone Number *</label>
                     <input
                       type="tel"
-                      placeholder="(413) 555-0142"
+                      placeholder="(516) 555-0142"
                       value={newCustomerPhone}
                       onChange={e => setNewCustomerPhone(e.target.value)}
                       autoFocus
@@ -386,7 +416,7 @@ function NewDropPage() {
                   <div className="form-group">
                     <label className="form-label">Customer Name</label>
                     <input
-                      placeholder="Customer Name (optional)"
+                      placeholder="Customer name (optional)"
                       value={newCustomerName}
                       onChange={e => setNewCustomerName(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && createCustomer()}
@@ -454,15 +484,15 @@ function NewDropPage() {
                     <div className="nd-addr-row-3">
                       <div className="form-group">
                         <label className="form-label">City *</label>
-                        <input placeholder="Hampden" value={newAddr.city} onChange={e => setNewAddr({ ...newAddr, city: e.target.value })} />
+                        <input placeholder="East Meadow" value={newAddr.city} onChange={e => setNewAddr({ ...newAddr, city: e.target.value })} />
                       </div>
                       <div className="form-group">
                         <label className="form-label">State *</label>
-                        <input placeholder="MA" maxLength={2} value={newAddr.state} onChange={e => setNewAddr({ ...newAddr, state: e.target.value.toUpperCase() })} />
+                        <input placeholder="NY" maxLength={2} value={newAddr.state} onChange={e => setNewAddr({ ...newAddr, state: e.target.value.toUpperCase() })} />
                       </div>
                       <div className="form-group">
                         <label className="form-label">ZIP *</label>
-                        <input placeholder="01036" value={newAddr.postal_code} onChange={e => setNewAddr({ ...newAddr, postal_code: e.target.value })} />
+                        <input placeholder="11554" value={newAddr.postal_code} onChange={e => setNewAddr({ ...newAddr, postal_code: e.target.value })} />
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
