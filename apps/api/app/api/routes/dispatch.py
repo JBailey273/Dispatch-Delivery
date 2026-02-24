@@ -323,6 +323,64 @@ def assign_loads(payload: AssignIn, user: AuthUser = Depends(require_roles(UserR
     invalidate_suggestion_cache(str(user.tenant_id))
     return {"updated": len(rows)}
 
+class DispatchStatusIn(BaseModel):
+    status: str
+    reason_code: str | None = None
+    notes: str | None = None
+
+
+@router.post("/loads/{load_id}/status")
+def dispatcher_update_load_status(
+    load_id: str,
+    payload: DispatchStatusIn,
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)),
+    db: Session = Depends(db_dep),
+):
+    """Allow dispatchers/admins to set any load status — no driver ownership or POD checks."""
+    try:
+        requested = LoadStatus(payload.status)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "invalid_status",
+                "message": f"'{payload.status}' is not a valid status. Valid: {', '.join(s.value for s in LoadStatus)}",
+            },
+        ) from exc
+
+    load = db.execute(
+        select(Load).where(Load.id == load_id, Load.tenant_id == user.tenant_id).with_for_update()
+    ).scalar_one_or_none()
+    if not load:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Load not found"})
+
+    old_status = load.status.value
+    load.status = requested
+
+    if requested == LoadStatus.EXCEPTION:
+        if payload.reason_code:
+            try:
+                load.exception_reason_code = ExceptionReasonCode(payload.reason_code)
+            except ValueError:
+                pass
+        load.exception_notes = payload.notes
+
+    log_event(
+        db,
+        user.tenant_id,
+        "LOAD_STATUS_CHANGED",
+        "dispatch",
+        {
+            "load_id": load_id,
+            "from_status": old_status,
+            "status": requested.value,
+            "reason_code": payload.reason_code,
+            "notes": payload.notes,
+            "changed_by": str(user.user_id),
+        },
+    )
+    db.commit()
+    return {"load_id": load_id, "old_status": old_status, "new_status": requested.value}
 
 class ReassignAllIn(BaseModel):
     day: date
