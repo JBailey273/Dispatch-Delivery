@@ -108,14 +108,16 @@ export default function DashboardPage() {
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const weekAgo = new Date(today);
-    weekAgo.setDate(weekAgo.getDate() - 6);
+    const rangeStart = new Date(today);
+    rangeStart.setDate(rangeStart.getDate() - 3);
+    const rangeEnd = new Date(today);
+    rangeEnd.setDate(rangeEnd.getDate() + 3);
 
     const results = await Promise.allSettled([
       api(`/dispatch/schedule?day=${todayStr}`),
-      api(`/ops/reports/throughput?start_date=${toKey(weekAgo)}&end_date=${todayStr}`),
+      api(`/ops/reports/throughput?start_date=${toKey(rangeStart)}&end_date=${toKey(rangeEnd)}`),
       api(`/admin/diagnostics/anomalies?auto_fix=false`),
-      api(`/ops/reports/exceptions?start_date=${toKey(weekAgo)}&end_date=${todayStr}`),
+      api(`/ops/reports/exceptions?start_date=${toKey(rangeStart)}&end_date=${toKey(rangeEnd)}`),
       api(`/availability?start_date=${todayStr}&days=1`),
     ]);
 
@@ -282,7 +284,7 @@ export default function DashboardPage() {
 
               {/* 7-Day Overview (moved to second column) */}
               <div className="card">
-                <div className="dash-card-head">7-Day Overview</div>
+                <div className="dash-card-head">This Week</div>
                 <div className="dash-card-body">
                   <div className="dash-week-stats">
                     <div className="dash-week-stat"><span className="dash-ws-val">{weekDrops}</span><span className="dash-ws-label">Orders</span></div>
