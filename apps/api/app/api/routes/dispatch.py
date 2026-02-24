@@ -18,7 +18,7 @@ from app.api.optimization import apply_proposal, generate_proposals, undo_propos
 from app.api.guardrails import guard_load_editable
 from app.api.services import enqueue_sms_job, log_event, now_utc
 from app.billing.service import ensure_billing_account, get_plan, scheduling_gate
-from app.models.entities import Customer, CustomerAddress, Drop, Load, LoadStatus, OperationalBlackout, OptimizationProposal, Tenant, User, UserRole, WindowCapacity, WindowCode
+from app.models.entities import Customer, CustomerAddress, Drop, ExceptionReasonCode, Load, LoadStatus, OperationalBlackout, OptimizationProposal, Tenant, User, UserRole, WindowCapacity, WindowCode
 
 router = APIRouter(prefix="/dispatch", tags=["dispatch"])
 logger = logging.getLogger("dispatch.ops")
