@@ -159,6 +159,74 @@ def month_summary(
 
     return {"days": dict(days)}
 
+@router.get("/orders")
+def list_orders(
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    status: str | None = Query(default=None),
+    driver_name: str | None = Query(default=None),
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
+    db: Session = Depends(db_dep),
+):
+    """Full order/load list for the All Orders page with optional filters."""
+    stmt = (
+        select(Load, Drop, Customer, CustomerAddress, User)
+        .join(Drop, Drop.id == Load.drop_id)
+        .join(Customer, Customer.id == Drop.customer_id)
+        .join(CustomerAddress, CustomerAddress.id == Drop.address_id)
+        .outerjoin(User, User.id == Load.driver_user_id)
+        .where(
+            Load.tenant_id == user.tenant_id,
+            Load.route_date >= start_date,
+            Load.route_date <= end_date,
+        )
+    )
+
+    if status:
+        try:
+            status_enum = LoadStatus(status)
+            stmt = stmt.where(Load.status == status_enum)
+        except ValueError:
+            pass
+
+    stmt = stmt.order_by(Load.route_date.desc(), Load.route_window, Customer.name)
+    rows = db.execute(stmt).all()
+
+    orders = []
+    for load, drop, customer, address, driver in rows:
+        driver_display = driver.display_name if driver else None
+
+        # Apply driver_name filter (done in Python because it's a computed field)
+        if driver_name:
+            if driver_name == "Unassigned" and driver_display is not None:
+                continue
+            elif driver_name != "Unassigned" and driver_display != driver_name:
+                continue
+
+        if drop.external_order_id:
+            order_ref = drop.external_order_id
+        elif drop.order_number:
+            order_ref = f"D-{drop.order_number:05d}"
+        else:
+            order_ref = str(drop.id)[:8].upper()
+
+        orders.append({
+            "drop_id": str(drop.id),
+            "load_id": str(load.id),
+            "order_ref": order_ref,
+            "scheduled_date": str(load.route_date),
+            "window": load.route_window.value,
+            "customer_name": customer.name,
+            "customer_phone": customer.phone_e164,
+            "address_short": f"{address.line1}, {address.city}",
+            "material": load.material_name_snapshot,
+            "qty": load.qty,
+            "unit": load.unit,
+            "status": load.status.value,
+            "driver_name": driver_display,
+        })
+
+    return {"orders": orders}
 
 @router.get("/drops/{drop_id}")
 def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
