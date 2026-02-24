@@ -336,7 +336,7 @@ function NewDropPage() {
                   <input
                     ref={searchRef}
                     type="text"
-                    placeholder="Enter name or phone number\u2026"
+                    placeholder="Enter name or phone number"
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && lookup()}
@@ -377,7 +377,7 @@ function NewDropPage() {
                     <label className="form-label">Phone Number *</label>
                     <input
                       type="tel"
-                      placeholder="(516) 555-0142"
+                      placeholder="(413) 555-0142"
                       value={newCustomerPhone}
                       onChange={e => setNewCustomerPhone(e.target.value)}
                       autoFocus
@@ -386,7 +386,7 @@ function NewDropPage() {
                   <div className="form-group">
                     <label className="form-label">Customer Name</label>
                     <input
-                      placeholder="Customer name (optional)"
+                      placeholder="Customer Name (optional)"
                       value={newCustomerName}
                       onChange={e => setNewCustomerName(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && createCustomer()}
@@ -454,15 +454,15 @@ function NewDropPage() {
                     <div className="nd-addr-row-3">
                       <div className="form-group">
                         <label className="form-label">City *</label>
-                        <input placeholder="East Meadow" value={newAddr.city} onChange={e => setNewAddr({ ...newAddr, city: e.target.value })} />
+                        <input placeholder="Hampden" value={newAddr.city} onChange={e => setNewAddr({ ...newAddr, city: e.target.value })} />
                       </div>
                       <div className="form-group">
                         <label className="form-label">State *</label>
-                        <input placeholder="NY" maxLength={2} value={newAddr.state} onChange={e => setNewAddr({ ...newAddr, state: e.target.value.toUpperCase() })} />
+                        <input placeholder="MA" maxLength={2} value={newAddr.state} onChange={e => setNewAddr({ ...newAddr, state: e.target.value.toUpperCase() })} />
                       </div>
                       <div className="form-group">
                         <label className="form-label">ZIP *</label>
-                        <input placeholder="11554" value={newAddr.postal_code} onChange={e => setNewAddr({ ...newAddr, postal_code: e.target.value })} />
+                        <input placeholder="01036" value={newAddr.postal_code} onChange={e => setNewAddr({ ...newAddr, postal_code: e.target.value })} />
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
