@@ -68,6 +68,13 @@ const STATUS_LABEL: Record<string, string> = {
   assigned: 'Assigned', loaded_leaving: 'En Route', delivered: 'Delivered',
   exception: 'Exception', cancelled: 'Cancelled', new: 'Pending',
 };
+const ALL_STATUSES = [
+  { value: 'assigned', label: 'Assigned' },
+  { value: 'loaded_leaving', label: 'Out for Delivery' },
+  { value: 'delivered', label: 'Delivered' },
+  { value: 'exception', label: 'Exception' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
 
 export default function DispatchSchedulePage() {
   const [mounted, setMounted] = useState(false);
@@ -92,6 +99,7 @@ export default function DispatchSchedulePage() {
   const [assignBusy, setAssignBusy] = useState(false);
   const [assignMsg, setAssignMsg] = useState('');
   const [reassigningLoadId, setReassigningLoadId] = useState<string | null>(null);
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
   const [drivers, setDrivers] = useState<Driver[]>([]);
 
   /* ── Compute visible date range ── */
@@ -271,7 +279,24 @@ export default function DispatchSchedulePage() {
       setError((err as ApiError).message || 'Reassignment failed');
     } finally { setReassigningLoadId(null); }
   };
-
+const updateLoadStatus = async (loadId: string, newStatus: string) => {
+    setUpdatingStatusId(loadId);
+    try {
+      await api(`/dispatch/loads/${loadId}/status`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      // Refresh modal and schedule
+      if (selectedDropId) {
+        const resp = await api(`/dispatch/drops/${selectedDropId}`);
+        setDropDetail(resp);
+      }
+      await fetchSchedule();
+      fetchMonthSummary();
+    } catch (err) {
+      setError((err as ApiError).message || 'Status update failed');
+    } finally { setUpdatingStatusId(null); }
+  };
   /* ── Load toggle ── */
   const toggleLoad = (loadId: string) => {
     setAssignLoadIds(prev => prev.includes(loadId) ? prev.filter(id => id !== loadId) : [...prev, loadId]);
@@ -603,11 +628,8 @@ export default function DispatchSchedulePage() {
                   {/* Loads */}
                   <div className="dm-section">
                     <div className="dm-section-label">Loads ({dropDetail.loads.length})</div>
-                    {dropDetail.loads.map(l => {
+                   {dropDetail.loads.map(l => {
                       const isUnassigned = !l.driver_name;
-                      const dStatus = isUnassigned && l.status === 'assigned' ? 'pending' : l.status;
-                      const pc = dStatus === 'pending' ? 'pill-amber' : (STATUS_PILL[l.status] || 'pill-gray');
-                      const pl = dStatus === 'pending' ? 'Pending' : (STATUS_LABEL[l.status] || l.status);
                       const isTerminal = ['delivered', 'cancelled'].includes(l.status);
                       return (
                         <div key={l.id} className="dm-load-row">
@@ -615,8 +637,18 @@ export default function DispatchSchedulePage() {
                             <span className="dm-load-material">{l.material}</span>
                             <span className="dm-load-qty">{l.qty} {l.unit}{l.qty !== 1 ? 's' : ''}</span>
                           </div>
-                          <div className="dm-load-meta">
-                            <span className={`pill pill-sm ${pc}`}>{pl}</span>
+                          <div className="dm-load-status-row">
+                            <select
+                              className="dm-status-select"
+                              value={l.status}
+                              disabled={updatingStatusId === l.id}
+                              onChange={e => updateLoadStatus(l.id, e.target.value)}
+                            >
+                              {ALL_STATUSES.map(s => (
+                                <option key={s.value} value={s.value}>{s.label}</option>
+                              ))}
+                            </select>
+                            {updatingStatusId === l.id && <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />}
                           </div>
                           <div className="dm-load-driver-row">
                             {isTerminal ? (
@@ -691,6 +723,8 @@ const schedulerStyles = `
   .vt-btn { padding: 6px 16px; border: none; background: transparent; font-family: var(--font-heading); font-size: 13px; font-weight: 600; color: var(--gray-400); cursor: pointer; border-radius: var(--radius-sm); transition: all 0.15s var(--ease-out); }
   .vt-btn.on { background: var(--surface); color: var(--gray-900); box-shadow: var(--shadow-sm); }
   .vt-btn:hover:not(.on) { color: var(--gray-600); }
+  .dm-load-status-row { width: 100%; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+  .dm-status-select { width: auto; min-width: 140px; padding: 4px 8px; font-size: 12px; font-weight: 600; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); cursor: pointer; font-family: inherit; }
 
   .legend-row { display: flex; gap: 18px; padding: 10px 24px; border-bottom: 1px solid var(--border-light); font-size: 12px; color: var(--gray-500); font-weight: 500; font-family: var(--font-heading); }
   .legend-item { display: flex; align-items: center; gap: 6px; }
