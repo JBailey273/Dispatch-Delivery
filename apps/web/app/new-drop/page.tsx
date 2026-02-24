@@ -360,7 +360,7 @@ function NewDropPage() {
                   <input
                     ref={searchRef}
                     type="text"
-                    placeholder="Enter name or phone number\u2026"
+                    placeholder="Enter Name or Phone Number"
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && lookup()}
