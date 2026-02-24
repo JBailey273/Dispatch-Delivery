@@ -163,7 +163,7 @@ export default function DriverPage() {
   const notifyCustomer = async (dropId: string) => {
     setActionLoading(`notify-${dropId}`);
     try {
-      const result = await api(`/driver/drops/${dropId}/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const result = await api(`/driver/drops/${dropId}/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, });
       showToast(result.already_sent ? 'Customer was already notified.' : 'Customer notified — SMS sent!');
       await fetchDrops();
     } catch {
@@ -218,7 +218,7 @@ export default function DriverPage() {
     try {
       const ext = file.name.split('.').pop() || 'jpg';
       const uploadData = await api(`/uploads/presign?ext=${ext}&purpose=${photoTarget.type}`);
-      await fetch(uploadData.upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      await fetch(uploadData.upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type }, });
       await api(`/driver/loads/${photoTarget.loadId}/photo`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }
         body: JSON.stringify({ photo_url: uploadData.public_url, photo_type: photoTarget.type }),
