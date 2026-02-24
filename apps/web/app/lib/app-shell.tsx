@@ -47,6 +47,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <NavLink href="/dispatch-schedule">Schedule</NavLink>
             <NavLink href="/new-drop">New Order</NavLink>
             <NavLink href="/customer-search">Customers</NavLink>
+            <NavLink href="/all-orders">All Orders</NavLink>
           </>
         )}
         {isDriver && (
