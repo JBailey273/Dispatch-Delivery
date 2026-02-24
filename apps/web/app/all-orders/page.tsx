@@ -201,7 +201,7 @@ export default function AllOrdersPage() {
               <label className="ao-filter-label">Customer</label>
               <input
                 type="text"
-                placeholder="Search name, phone, address\u2026"
+                placeholder="Search Name, Phone, Address"
                 value={customerSearch}
                 onChange={e => setCustomerSearch(e.target.value)}
                 className="ao-search-input"
