@@ -220,7 +220,7 @@ export default function DriverPage() {
       const uploadData = await api(`/uploads/presign?ext=${ext}&purpose=${photoTarget.type}`);
       await fetch(uploadData.upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type }, });
       await api(`/driver/loads/${photoTarget.loadId}/photo`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ photo_url: uploadData.public_url, photo_type: photoTarget.type }),
       });
       showToast(photoTarget.type === 'pod' ? 'Delivery photo saved!' : 'Exception photo saved.');
