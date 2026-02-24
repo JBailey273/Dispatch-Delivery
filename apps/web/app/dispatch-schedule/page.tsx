@@ -432,9 +432,9 @@ const updateLoadStatus = async (loadId: string, newStatus: string) => {
                         onClick={() => setSelDate(new Date(day))}
                       >
                         <div className="cap-row">
-                          <div className="cap-label"><span>AM</span><span>{amU}/{amT || '—'}</span></div>
+                          <div className="cap-label"><span>Morning</span><span>{amU}/{amT || '—'}</span></div>
                           <div className="cap-bar"><div className={`cap-fill ${capColor(amU, amT)}`} style={{ width: amT > 0 ? `${Math.round(amU / amT * 100)}%` : '0%' }} /></div>
-                          <div className="cap-label" style={{ marginTop: 4 }}><span>PM</span><span>{pmU}/{pmT || '—'}</span></div>
+                          <div className="cap-label" style={{ marginTop: 4 }}><span>Afternoon</span><span>{pmU}/{pmT || '—'}</span></div>
                           <div className="cap-bar"><div className={`cap-fill ${capColor(pmU, pmT)}`} style={{ width: pmT > 0 ? `${Math.round(pmU / pmT * 100)}%` : '0%' }} /></div>
                         </div>
                         {(monthSummary[k] || []).length > 0 && (
@@ -535,7 +535,7 @@ const updateLoadStatus = async (loadId: string, newStatus: string) => {
               {/* AM Window */}
               <div className="window-section">
                 <div className="window-head">
-                  <div className="window-title">🌅 AM Window (9am–1pm)</div>
+                  <div className="window-title">Morning Window (9am – 1pm)</div>
                   <span style={{ fontSize: 13, fontWeight: 600, color: capColorVar(capColor(amCap.used, amCap.total)) }}>
                     {amCap.used}/{amCap.total} loads
                   </span>
@@ -551,7 +551,7 @@ const updateLoadStatus = async (loadId: string, newStatus: string) => {
               {/* PM Window */}
               <div className="window-section">
                 <div className="window-head">
-                  <div className="window-title">🌤 PM Window (1pm–5pm)</div>
+                  <div className="window-title">Afternoon Window (1pm – 5pm)</div>
                   <span style={{ fontSize: 13, fontWeight: 600, color: capColorVar(capColor(pmCap.used, pmCap.total)) }}>
                     {pmCap.used}/{pmCap.total} loads
                   </span>
