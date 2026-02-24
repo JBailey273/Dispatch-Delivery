@@ -143,8 +143,9 @@ export default function DriverPage() {
     setActionLoading(loadId);
     try {
       await api(`/driver/loads/${loadId}/status`, {
-        method: 'POST',
-        body: JSON.stringify({ status: 'delivered' }),
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ status: 'delivered' }),
       });
       showToast('Delivery confirmed!');
       await fetchDrops();
@@ -162,7 +163,7 @@ export default function DriverPage() {
   const notifyCustomer = async (dropId: string) => {
     setActionLoading(`notify-${dropId}`);
     try {
-      const result = await api(`/driver/drops/${dropId}/notify`, { method: 'POST' });
+      const result = await api(`/driver/drops/${dropId}/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
       showToast(result.already_sent ? 'Customer was already notified.' : 'Customer notified — SMS sent!');
       await fetchDrops();
     } catch {
@@ -177,7 +178,7 @@ export default function DriverPage() {
     setActionLoading(exceptionModal.loadId);
     try {
       await api(`/driver/loads/${exceptionModal.loadId}/status`, {
-        method: 'POST',
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'exception', reason_code: exceptionReason, notes: exceptionNotes || null }),
       });
       showToast('Exception reported.');
@@ -197,7 +198,7 @@ export default function DriverPage() {
     setActionLoading(oosConfirm.loadId);
     try {
       await api(`/driver/loads/${oosConfirm.loadId}/status`, {
-        method: 'POST',
+        method: 'POST', headers: { 'Content-Type': 'application/json' }
         body: JSON.stringify({ status: 'exception', reason_code: 'OUT_OF_STOCK', notes: `Out of stock: ${oosConfirm.material}` }),
       });
       showToast('Returned to dispatch — out of stock.');
@@ -219,7 +220,7 @@ export default function DriverPage() {
       const uploadData = await api(`/uploads/presign?ext=${ext}&purpose=${photoTarget.type}`);
       await fetch(uploadData.upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
       await api(`/driver/loads/${photoTarget.loadId}/photo`, {
-        method: 'POST',
+        method: 'POST', headers: { 'Content-Type': 'application/json' }
         body: JSON.stringify({ photo_url: uploadData.public_url, photo_type: photoTarget.type }),
       });
       showToast(photoTarget.type === 'pod' ? 'Delivery photo saved!' : 'Exception photo saved.');
