@@ -27,13 +27,13 @@ type ExceptionItem = { timestamp: string; load_id: string; notes: string };
 function anomalyMessage(a: Anomaly): string {
   switch (a.type) {
     case 'load_stuck_assigned':
-      return `A delivery on ${fmtShortDate(a.route_date)} (${a.route_window === 'A' ? 'AM' : 'PM'} window) was assigned to a driver but never completed. It may need to be rescheduled or marked as delivered.`;
+      return `A delivery on ${fmtShortDate(a.route_date)} (${a.route_window === 'A' ? 'Morning' : 'Afternoon'} window) was assigned to a driver but never completed. It may need to be rescheduled or marked as delivered.`;
     case 'capacity_overrun':
-      return `The ${a.window === 'A' ? 'AM' : 'PM'} window on ${fmtShortDate(a.service_date)} has more deliveries scheduled (${a.capacity_used}) than its capacity allows (${a.capacity_total}).`;
+      return `The ${a.window === 'A' ? 'Morning' : 'Afternoon'} window on ${fmtShortDate(a.service_date)} has more deliveries scheduled (${a.capacity_used}) than its capacity allows (${a.capacity_total}).`;
     case 'drop_without_loads':
       return `Order scheduled for ${fmtShortDate(a.scheduled_date)} was created but has no delivery loads attached. It may need to be recreated.`;
     case 'expired_hold_not_released':
-      return `A checkout hold for ${fmtShortDate(a.service_date)} (${a.window === 'A' ? 'AM' : 'PM'}) expired without being cleaned up.${a.auto_fixed ? ' This has been automatically resolved.' : ''}`;
+      return `A checkout hold for ${fmtShortDate(a.service_date)} (${a.window === 'A' ? 'Morning' : 'Afternoon'}) expired without being cleaned up.${a.auto_fixed ? ' This has been automatically resolved.' : ''}`;
     default:
       return `System issue detected: ${a.type.replace(/_/g, ' ')}. Please contact support if this persists.`;
   }
@@ -263,7 +263,7 @@ export default function DashboardPage() {
                     return (
                       <div key={w} className="dash-cap-row">
                         <div className="dash-cap-label">
-                          <span style={{ fontWeight: 700 }}>{w === 'A' ? 'AM (9–1)' : 'PM (1–5)'}</span>
+                          <span style={{ fontWeight: 700 }}>{w === 'A' ? 'Morning Delivery (9am - 1pm)' : 'Afternoon Delivery (1pm - 5pm)'}</span>
                           {disabled && <span className="pill pill-red" style={{ fontSize: 10, marginLeft: 6 }}>Blacked Out</span>}
                           <span className="dash-cap-num">{used}/{total}</span>
                         </div>
@@ -337,7 +337,7 @@ export default function DashboardPage() {
                           <div className="dash-delivery-address">{load.address_short || '—'}</div>
                         </div>
                         <div className="dash-delivery-meta">
-                          <span className="dash-delivery-window">{load.window === 'A' ? 'AM' : 'PM'}</span>
+                          <span className="dash-delivery-window">{load.window === 'A' ? 'Morning' : 'Afternoon'}</span>
                           <span className="dash-delivery-status" style={{ color: STATUS_COLORS[load.status] || 'var(--gray-500)' }}>
                             {STATUS_LABELS[load.status] || load.status}
                           </span>
