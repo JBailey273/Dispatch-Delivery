@@ -322,44 +322,39 @@ export default function DriverPage() {
               <div className={`drv-body ${isExpanded ? 'drv-body--open' : ''}`}>
                 <div className="drv-inner">
 
-{/* ① Load Manifest */}
-<div className="drv-manifest">
-  <div className="drv-manifest-hd">
-    <span className="drv-manifest-icon">📋</span>
-    Load Manifest
-  </div>
-  <div className="drv-manifest-body">
-    {drop.loads.map(load => {
-      const isActive = load.status === 'assigned' || load.status === 'loaded_leaving';
-      const lCfg = STATUS_CONFIG[load.status] || STATUS_CONFIG.assigned;
-      return (
-        <div key={load.id} className="drv-manifest-row">
-          <div className="drv-manifest-qty">{load.qty}</div>
-          <div className="drv-manifest-detail">
-            <div className="drv-manifest-material">{load.material}</div>
-            <div className="drv-manifest-unit">{load.unit}{load.qty !== 1 ? 's' : ''}</div>
-          </div>
-          {!isActive && <span className="drv-mat-badge" style={{ color: lCfg.color, background: lCfg.bg }}>{lCfg.label}</span>}
-        </div>
-      );
-    })}
-  </div>
-</div>
+                  {/* ① Load Manifest — full bleed, visually distinct */}
+                  <div className="drv-manifest">
+                    <div className="drv-manifest-hd">📋 LOAD MANIFEST</div>
+                    {drop.loads.map(load => {
+                      const isActive = load.status === 'assigned' || load.status === 'loaded_leaving';
+                      const lCfg = STATUS_CONFIG[load.status] || STATUS_CONFIG.assigned;
+                      return (
+                        <div key={load.id} className="drv-manifest-row">
+                          <div className="drv-manifest-qty">{load.qty}</div>
+                          <div className="drv-manifest-detail">
+                            <div className="drv-manifest-material">{load.material}</div>
+                            <div className="drv-manifest-unit">{load.unit}{load.qty !== 1 ? 's' : ''}</div>
+                          </div>
+                          {!isActive && <span className="drv-manifest-badge" style={{ color: lCfg.color, background: lCfg.bg }}>{lCfg.label}</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
 
                   {/* ② Drop photo */}
                   {drop.drop_photos && drop.drop_photos.length > 0 && (
-                    <>
+                    <div style={{ marginTop: 22 }}>
                       <div className="drv-label">Drop Location</div>
                       <div className="drv-photo-frame" onClick={() => setLightboxUrl(drop.drop_photos[0])}>
                         <img src={drop.drop_photos[0]} alt="Drop location" className="drv-photo-img" />
                         <div className="drv-photo-overlay">Tap to enlarge</div>
                       </div>
-                    </>
+                    </div>
                   )}
 
                   {/* ③ Notes */}
                   {drop.notes && (
-                    <div className="drv-notes">
+                    <div className="drv-notes" style={{ marginTop: 22 }}>
                       <div className="drv-notes-hd">Delivery Notes</div>
                       <div className="drv-notes-body">{drop.notes}</div>
                     </div>
@@ -367,7 +362,7 @@ export default function DriverPage() {
 
                   {/* ④ Navigate */}
                   {drop.address && (
-                    <a href={getGoogleMapsUrl(drop.address)} target="_blank" rel="noopener noreferrer" className="drv-nav">
+                    <a href={getGoogleMapsUrl(drop.address)} target="_blank" rel="noopener noreferrer" className="drv-nav" style={{ marginTop: 22 }}>
                       <div className="drv-nav-icon">🗺️</div>
                       <div className="drv-nav-info">
                         <div className="drv-nav-hint">Tap to Navigate</div>
@@ -379,12 +374,12 @@ export default function DriverPage() {
 
                   {/* ⑤ Notify */}
                   {!isDone && !isException && (
-                    <div style={{ marginTop: 10 }}>
+                    <div style={{ marginTop: 22 }}>
                       {drop.notify_sent ? (
                         <div className="drv-notified">✅ Customer has been notified</div>
                       ) : (
                         <button
-                          className="drv-btn drv-btn--teal"
+                          className="drv-btn drv-btn--amber"
                           disabled={actionLoading === `notify-${drop.drop_id}`}
                           onClick={() => notifyCustomer(drop.drop_id)}
                         >
@@ -600,23 +595,21 @@ const STYLES = `
   .drv-chev--open { transform: rotate(180deg); }
   .drv-body { max-height: 0; overflow: hidden; transition: max-height .35s ease; }
   .drv-body--open { max-height: 3000px; }
-  .drv-inner { padding: 0 18px 20px; }
+  .drv-inner { padding: 0 18px 24px; }
 
   /* Labels */
   .drv-label { font-family: var(--fh); font-size: 12px; font-weight: 700; color: var(--g4); text-transform: uppercase; letter-spacing: .06em; margin: 16px 0 8px; }
 
- /* Load Manifest */
-.drv-manifest { border-radius: var(--rs); overflow: hidden; margin-top: 14px; border: 1.5px solid var(--g2); }
-.drv-manifest-hd { background: var(--grn9); color: #fff; padding: 12px 16px; font-family: var(--fh); font-size: 14px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
-.drv-manifest-icon { font-size: 18px; }
-.drv-manifest-body { background: #fff; }
-.drv-manifest-row { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-bottom: 1px solid var(--g1); }
-.drv-manifest-row:last-child { border-bottom: none; }
-.drv-manifest-qty { font-family: var(--fh); font-size: 28px; font-weight: 800; color: var(--grn7); min-width: 44px; text-align: center; line-height: 1; }
-.drv-manifest-detail { flex: 1; }
-.drv-manifest-material { font-family: var(--fh); font-size: 18px; font-weight: 700; color: var(--g9); }
-.drv-manifest-unit { font-size: 14px; color: var(--g5); font-weight: 500; }
-.drv-mat-badge { padding: 4px 10px; border-radius: 20px; font-family: var(--fh); font-size: 11px; font-weight: 700; flex-shrink: 0; }
+  /* Load Manifest */
+  .drv-manifest { margin: 0 -18px; border-bottom: 1.5px solid var(--g2); }
+  .drv-manifest-hd { background: var(--grn9); color: #fff; padding: 14px 18px; font-family: var(--fh); font-size: 13px; font-weight: 800; letter-spacing: .08em; display: flex; align-items: center; gap: 8px; }
+  .drv-manifest-row { display: flex; align-items: center; gap: 16px; padding: 16px 18px; border-bottom: 1px solid var(--g1); background: #fff; }
+  .drv-manifest-row:last-child { border-bottom: none; }
+  .drv-manifest-qty { font-family: var(--fh); font-size: 32px; font-weight: 800; color: var(--grn7); min-width: 48px; text-align: center; line-height: 1; }
+  .drv-manifest-detail { flex: 1; }
+  .drv-manifest-material { font-family: var(--fh); font-size: 19px; font-weight: 700; color: var(--g9); }
+  .drv-manifest-unit { font-size: 14px; color: var(--g5); font-weight: 500; margin-top: 1px; }
+  .drv-manifest-badge { padding: 4px 10px; border-radius: 20px; font-family: var(--fh); font-size: 11px; font-weight: 700; flex-shrink: 0; }
 
   /* Drop photo */
   .drv-photo-frame { border-radius: var(--rs); overflow: hidden; border: 1.5px solid var(--g2); cursor: pointer; position: relative; }
@@ -624,12 +617,12 @@ const STYLES = `
   .drv-photo-overlay { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, rgba(0,0,0,.55)); color: #fff; font-size: 13px; font-weight: 600; padding: 20px 12px 8px; text-align: center; }
 
   /* Notes */
-  .drv-notes { margin-top: 12px; padding: 14px 16px; background: var(--amb0); border-left: 4px solid var(--amb6); border-radius: 0 var(--rs) var(--rs) 0; }
+  .drv-notes { padding: 14px 16px; background: var(--amb0); border-left: 4px solid var(--amb6); border-radius: 0 var(--rs) var(--rs) 0; }
   .drv-notes-hd { font-family: var(--fh); font-size: 12px; font-weight: 700; color: var(--amb7); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
   .drv-notes-body { font-size: 16px; color: var(--amb7); line-height: 1.45; }
 
   /* Navigate */
-  .drv-nav { display: flex; align-items: center; gap: 14px; width: 100%; padding: 16px; margin-top: 14px; background: var(--teal1); border: 1.5px solid var(--teal6); border-radius: var(--rs); text-decoration: none; color: var(--teal7); cursor: pointer; transition: transform .1s; }
+  .drv-nav { display: flex; align-items: center; gap: 14px; width: 100%; padding: 16px; background: var(--teal1); border: 1.5px solid var(--teal6); border-radius: var(--rs); text-decoration: none; color: var(--teal7); cursor: pointer; transition: transform .1s; }
   .drv-nav:active { transform: scale(.98); }
   .drv-nav-icon { font-size: 28px; flex-shrink: 0; }
   .drv-nav-info { flex: 1; text-align: left; }
@@ -653,12 +646,12 @@ const STYLES = `
   .drv-btn--ghost { background: var(--g1); color: var(--g7); }
 
   /* Actions area */
-  .drv-actions { margin-top: 18px; display: flex; flex-direction: column; gap: 12px; }
+  .drv-actions { margin-top: 24px; display: flex; flex-direction: column; gap: 14px; }
   .drv-act-group { display: flex; flex-direction: column; gap: 6px; }
   .drv-act-label { font-family: var(--fh); font-size: 13px; font-weight: 700; color: var(--g5); }
 
   /* Divider */
-  .drv-sep { display: flex; align-items: center; gap: 12px; margin: 28px 0 14px; }
+  .drv-sep { display: flex; align-items: center; gap: 12px; margin: 32px 0 16px; }
   .drv-sep-line { flex: 1; height: 1px; background: var(--g2); }
   .drv-sep-text { font-family: var(--fh); font-size: 11px; font-weight: 700; color: var(--g4); text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
 
