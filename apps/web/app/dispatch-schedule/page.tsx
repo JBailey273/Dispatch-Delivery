@@ -28,9 +28,14 @@ function fmtDateLong(ds: string) {
 }
 
 type CapWindow = { date: string; window: string; used: number; total: number; remaining_capacity: number; available: boolean; active_holds: number };
-type LoadItem = { id: string; drop_id: string; order_ref: string; status: string; material: string; qty: number; unit: string; customer_name: string; customer_phone: string; address_short: string; driver_name: string; driver_user_id: string | null; historical_flags?: any };
+type LoadItem = { id: string; drop_id: string; order_ref: string; status: string; material: string; qty: number; unit: string; customer_name: string; customer_phone: string; address_short: string; driver_name: string; driver_user_id: string | null; is_priority?: boolean; historical_flags?: any };
 type ScheduleData = {
   date: string;
+  priority: {
+    groups: Record<string, LoadItem[]>;
+    load_count: number;
+    warning: string | null;
+  };
   windows: {
     A: { capacity: { used: number; total: number; remaining_capacity: number }; groups: Record<string, LoadItem[]>; disabled: boolean };
     B: { capacity: { used: number; total: number; remaining_capacity: number }; groups: Record<string, LoadItem[]>; disabled: boolean };
@@ -38,7 +43,8 @@ type ScheduleData = {
 };
 type DropDetailModal = {
   id: string; ref: string; order_number: number | null; external_order_id: string | null; source: string;
-  scheduled_date: string; scheduled_window: string;
+  is_priority: boolean; customer_type: string;
+  scheduled_date: string; scheduled_window: string | null;
   customer_name: string; customer_phone: string; delivery_address: { line1: string; line2?: string | null; city: string; state: string; postal_code: string } | null;
   notes: string | null; required_loads: number;
   loads: { id: string; material: string; qty: number; unit: string; status: string; driver_user_id: string | null; driver_name: string | null }[];
@@ -344,6 +350,23 @@ const updateLoadStatus = async (loadId: string, newStatus: string) => {
     );
   };
 
+/* ── Flatten priority loads ── */
+  const getPriorityLoads = (): { driver: string; load: LoadItem }[] => {
+    if (!schedule) return [];
+    const groups = schedule.priority.groups;
+    const result: { driver: string; load: LoadItem }[] = [];
+    for (const load of (groups['Unassigned'] || [])) {
+      result.push({ driver: 'Unassigned', load });
+    }
+    for (const [driver, loads] of Object.entries(groups)) {
+      if (driver === 'Unassigned') continue;
+      for (const load of loads) {
+        result.push({ driver, load });
+      }
+    }
+    return result;
+  };
+  
   /* ── Flatten loads by window ── */
   const getWindowLoads = (windowCode: 'A' | 'B'): { driver: string; load: LoadItem }[] => {
     if (!schedule) return [];
@@ -368,6 +391,7 @@ const updateLoadStatus = async (loadId: string, newStatus: string) => {
   const dayCap = capData[toKey(selDate)];
   const amCap = schedule?.windows.A.capacity || dayCap?.A || { used: 0, total: 0, remaining_capacity: 0 };
   const pmCap = schedule?.windows.B.capacity || dayCap?.B || { used: 0, total: 0, remaining_capacity: 0 };
+  const priorityLoads = getPriorityLoads();
   const amLoads = getWindowLoads('A');
   const pmLoads = getWindowLoads('B');
 
@@ -440,7 +464,7 @@ const updateLoadStatus = async (loadId: string, newStatus: string) => {
                         {(monthSummary[k] || []).length > 0 && (
                           <div className="wk-drops">
                             {(monthSummary[k] || []).map((d, di) => (
-                              <div key={di} className={`wk-drop-chip ${d.window === 'A' ? 'wk-chip-am' : 'wk-chip-pm'}`}>
+                              <div key={di} className={`wk-drop-chip ${d.window === 'P' ? 'wk-chip-priority' : d.window === 'A' ? 'wk-chip-am' : 'wk-chip-pm'}`}>
                                 <span className="wk-chip-name">{d.customer_name}</span>
                                 <span className="wk-chip-mat">{d.materials}</span>
                               </div>
@@ -481,7 +505,7 @@ const updateLoadStatus = async (loadId: string, newStatus: string) => {
                         {!cell.other && dayDrops.length > 0 && (
                           <div className="mc-drops">
                             {dayDrops.slice(0, 3).map((d, di) => (
-                              <div key={di} className={`mc-drop-chip ${d.window === 'A' ? 'mc-chip-am' : 'mc-chip-pm'}`}>
+                              <div key={di} className={`mc-drop-chip ${d.window === 'P' ? 'mc-chip-priority' : d.window === 'A' ? 'mc-chip-am' : 'mc-chip-pm'}`}>
                                 <span className="mc-chip-name">{d.customer_name}</span>
                               </div>
                             ))}
@@ -520,7 +544,7 @@ const updateLoadStatus = async (loadId: string, newStatus: string) => {
           <div className="detail-header">
             <div className="detail-date">{selDateStr}</div>
             <div className="detail-sub">
-              {amLoads.length + pmLoads.length} load{amLoads.length + pmLoads.length !== 1 ? 's' : ''} · {(amCap.remaining_capacity ?? 0) + (pmCap.remaining_capacity ?? 0)} slots remaining
+              {priorityLoads.length + amLoads.length + pmLoads.length} load{priorityLoads.length + amLoads.length + pmLoads.length !== 1 ? 's' : ''}{priorityLoads.length > 0 ? ` (${priorityLoads.length} priority)` : ''} · {(amCap.remaining_capacity ?? 0) + (pmCap.remaining_capacity ?? 0)} slots remaining
             </div>
             <button className="btn btn-secondary btn-sm" onClick={() => { fetchSchedule(); fetchCapacity(); fetchMonthSummary(); }} style={{ marginTop: 8 }}>
               Refresh
@@ -532,6 +556,21 @@ const updateLoadStatus = async (loadId: string, newStatus: string) => {
 
           {!scheduleLoading && schedule && (
             <>
+              {/* Priority Section */}
+              {priorityLoads.length > 0 && (
+                <div className="window-section priority-section">
+                  <div className="window-head">
+                    <div className="window-title">⚡ Priority Deliveries</div>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--amber-700)' }}>
+                      {priorityLoads.length} load{priorityLoads.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  {schedule?.priority.warning && (
+                    <div className="alert alert-warning" style={{ marginBottom: 12, fontSize: 13 }}>⚠ {schedule.priority.warning}</div>
+                  )}
+                  {priorityLoads.map(({ driver, load }) => renderLoadCard(driver, load))}
+                </div>
+              )}
               {/* AM Window */}
               <div className="window-section">
                 <div className="window-head">
@@ -622,7 +661,10 @@ const updateLoadStatus = async (loadId: string, newStatus: string) => {
                   <div className="dm-section">
                     <div className="dm-section-label">Scheduled</div>
                     <div className="dm-schedule-date">{fmtDateLong(dropDetail.scheduled_date)}</div>
-                    <div className="dm-schedule-window">{dropDetail.scheduled_window === 'A' ? '🌅 AM Window (9am–1pm)' : '🌤 PM Window (1pm–5pm)'}</div>
+                    <div className="dm-schedule-window">
+                      {dropDetail.is_priority && <span className="dm-priority-badge">⚡ PRIORITY</span>}
+                      {dropDetail.scheduled_window === 'A' ? 'Morning Window (9am – 1pm)' : dropDetail.scheduled_window === 'B' ? 'PM Window (1pm – 5pm)' : !dropDetail.is_priority ? '—' : ''}
+                    </div>
                   </div>
 
                   {/* Loads */}
@@ -858,6 +900,12 @@ const schedulerStyles = `
   .dm-load-driver { font-size: 12px; color: var(--gray-500); }
   .pill-sm { font-size: 11px; padding: 2px 8px; }
   .dm-notify-item { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; font-size: 14px; }
+
+/* ── Priority section ── */
+  .priority-section { background: var(--amber-25, #fffbeb); border-left: 4px solid var(--amber-500, #f59e0b); }
+  .wk-chip-priority { background: rgba(245,158,11,0.1); border-left-color: var(--amber-500, #f59e0b); }
+  .mc-chip-priority { background: rgba(245,158,11,0.1); border-left-color: var(--amber-500, #f59e0b); color: var(--gray-700); }
+  .dm-priority-badge { display: inline-block; font-family: var(--font-heading); font-size: 11px; font-weight: 800; padding: 2px 10px; border-radius: 10px; background: var(--amber-100, #fef3c7); color: var(--amber-800, #92400e); text-transform: uppercase; letter-spacing: 0.04em; margin-right: 6px; }
 
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   @keyframes modalIn { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
