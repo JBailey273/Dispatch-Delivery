@@ -322,21 +322,29 @@ export default function DriverPage() {
               <div className={`drv-body ${isExpanded ? 'drv-body--open' : ''}`}>
                 <div className="drv-inner">
 
-                  {/* ① Materials */}
-                  <div className="drv-label">Materials</div>
-                  {drop.loads.map(load => {
-                    const isActive = load.status === 'assigned' || load.status === 'loaded_leaving';
-                    const lCfg = STATUS_CONFIG[load.status] || STATUS_CONFIG.assigned;
-                    return (
-                      <div key={load.id} className="drv-mat">
-                        <div className="drv-mat-info">
-                          <div className="drv-mat-name">{load.material}</div>
-                          <div className="drv-mat-qty">{load.qty} {load.unit}{load.qty !== 1 ? 's' : ''}</div>
-                        </div>
-                        {!isActive && <span className="drv-mat-badge" style={{ color: lCfg.color, background: lCfg.bg }}>{lCfg.label}</span>}
-                      </div>
-                    );
-                  })}
+{/* ① Load Manifest */}
+<div className="drv-manifest">
+  <div className="drv-manifest-hd">
+    <span className="drv-manifest-icon">📋</span>
+    Load Manifest
+  </div>
+  <div className="drv-manifest-body">
+    {drop.loads.map(load => {
+      const isActive = load.status === 'assigned' || load.status === 'loaded_leaving';
+      const lCfg = STATUS_CONFIG[load.status] || STATUS_CONFIG.assigned;
+      return (
+        <div key={load.id} className="drv-manifest-row">
+          <div className="drv-manifest-qty">{load.qty}</div>
+          <div className="drv-manifest-detail">
+            <div className="drv-manifest-material">{load.material}</div>
+            <div className="drv-manifest-unit">{load.unit}{load.qty !== 1 ? 's' : ''}</div>
+          </div>
+          {!isActive && <span className="drv-mat-badge" style={{ color: lCfg.color, background: lCfg.bg }}>{lCfg.label}</span>}
+        </div>
+      );
+    })}
+  </div>
+</div>
 
                   {/* ② Drop photo */}
                   {drop.drop_photos && drop.drop_photos.length > 0 && (
@@ -597,12 +605,18 @@ const STYLES = `
   /* Labels */
   .drv-label { font-family: var(--fh); font-size: 12px; font-weight: 700; color: var(--g4); text-transform: uppercase; letter-spacing: .06em; margin: 16px 0 8px; }
 
-  /* Materials */
-  .drv-mat { display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: var(--grn0); border-radius: var(--rs); margin-bottom: 6px; border-left: 4px solid var(--grn6); }
-  .drv-mat-info { flex: 1; }
-  .drv-mat-name { font-family: var(--fh); font-size: 18px; font-weight: 700; color: var(--g9); }
-  .drv-mat-qty { font-size: 15px; color: var(--g5); font-weight: 500; }
-  .drv-mat-badge { padding: 4px 10px; border-radius: 20px; font-family: var(--fh); font-size: 11px; font-weight: 700; }
+ /* Load Manifest */
+.drv-manifest { border-radius: var(--rs); overflow: hidden; margin-top: 14px; border: 1.5px solid var(--g2); }
+.drv-manifest-hd { background: var(--grn9); color: #fff; padding: 12px 16px; font-family: var(--fh); font-size: 14px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+.drv-manifest-icon { font-size: 18px; }
+.drv-manifest-body { background: #fff; }
+.drv-manifest-row { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-bottom: 1px solid var(--g1); }
+.drv-manifest-row:last-child { border-bottom: none; }
+.drv-manifest-qty { font-family: var(--fh); font-size: 28px; font-weight: 800; color: var(--grn7); min-width: 44px; text-align: center; line-height: 1; }
+.drv-manifest-detail { flex: 1; }
+.drv-manifest-material { font-family: var(--fh); font-size: 18px; font-weight: 700; color: var(--g9); }
+.drv-manifest-unit { font-size: 14px; color: var(--g5); font-weight: 500; }
+.drv-mat-badge { padding: 4px 10px; border-radius: 20px; font-family: var(--fh); font-size: 11px; font-weight: 700; flex-shrink: 0; }
 
   /* Drop photo */
   .drv-photo-frame { border-radius: var(--rs); overflow: hidden; border: 1.5px solid var(--g2); cursor: pointer; position: relative; }
