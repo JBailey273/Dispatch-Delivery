@@ -24,13 +24,57 @@ router = APIRouter(prefix="/dispatch", tags=["dispatch"])
 logger = logging.getLogger("dispatch.ops")
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def _build_order_ref(drop: Drop) -> str:
+    if drop.external_order_id:
+        return drop.external_order_id
+    if drop.order_number:
+        return f"D-{drop.order_number:05d}"
+    return str(drop.id)[:8].upper()
+
+
+def _build_load_dict(load: Load, drop: Drop, driver: User | None, customer: Customer, address: CustomerAddress, history=None) -> dict:
+    driver_display = driver.display_name if driver else "Unassigned"
+    result = {
+        "id": str(load.id),
+        "drop_id": str(drop.id),
+        "order_ref": _build_order_ref(drop),
+        "status": load.status.value,
+        "material": load.material_name_snapshot,
+        "qty": load.qty,
+        "unit": load.unit,
+        "customer_name": customer.name,
+        "customer_phone": customer.phone_e164,
+        "address_short": f"{address.line1}, {address.city}",
+        "driver_name": driver_display,
+        "driver_user_id": str(driver.id) if driver else None,
+        "is_priority": drop.is_priority,
+    }
+    if history:
+        result["historical_flags"] = {
+            "exception_count": history.exception_count,
+            "has_exception_history": history.exception_count > 0,
+            "recent_notes": history.recent_notes,
+        }
+    return result
+
+
+# ── Schedule endpoint ─────────────────────────────────────────────────────────
+
+
 @router.get("/schedule")
 def dispatch_schedule(day: date, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
     tenant = db.execute(select(Tenant).where(Tenant.id == user.tenant_id)).scalar_one()
     default_cap = tenant.capacity_per_window
+
+    # Check for orphaned loads
     orphaned = db.execute(select(Load.id).where(Load.tenant_id == user.tenant_id, Load.route_date == day, ~Load.drop_id.in_(select(Drop.id)))).scalars().all()
     if orphaned:
         logger.error("orphaned_loads_detected", extra={"tenant_id": str(user.tenant_id), "count": len(orphaned)})
+
+    # Capacity and blackouts
     caps = db.execute(select(WindowCapacity).where(WindowCapacity.tenant_id == user.tenant_id, WindowCapacity.service_date == day)).scalars().all()
     cap_map = {c.window_code.value: {"used": c.capacity_used, "total": c.capacity_total, "remaining_capacity": c.capacity_total - c.capacity_used} for c in caps}
     disabled_windows = set(
@@ -45,7 +89,9 @@ def dispatch_schedule(day: date, user: AuthUser = Depends(require_roles(UserRole
         ).scalars().all()
         if code
     )
-    loads = db.execute(
+
+    # Fetch all loads for the day with joins
+    rows = db.execute(
         select(Load, Drop, User, Customer, CustomerAddress)
         .join(Drop, Drop.id == Load.drop_id)
         .outerjoin(User, User.id == Load.driver_user_id)
@@ -54,48 +100,36 @@ def dispatch_schedule(day: date, user: AuthUser = Depends(require_roles(UserRole
         .where(Load.tenant_id == user.tenant_id, Load.route_date == day)
     ).all()
 
-    by_window = {"A": defaultdict(list), "B": defaultdict(list)}
-    for load, drop, driver, customer, address in loads:
+    # Split into priority and windowed
+    priority_groups: dict[str, list] = defaultdict(list)
+    by_window: dict[str, dict[str, list]] = {"A": defaultdict(list), "B": defaultdict(list)}
+
+    for load, drop, driver, customer, address in rows:
         driver_display = driver.display_name if driver else "Unassigned"
         history = get_address_history(db, str(user.tenant_id), str(drop.address_id))
+        load_dict = _build_load_dict(load, drop, driver, customer, address, history)
 
-        # Build order reference
-        if drop.external_order_id:
-            order_ref = drop.external_order_id
-        elif drop.order_number:
-            order_ref = f"D-{drop.order_number:05d}"
+        if drop.is_priority:
+            priority_groups[driver_display].append(load_dict)
         else:
-            order_ref = str(drop.id)[:8].upper()
+            by_window[load.route_window.value][driver_display].append(load_dict)
 
-        addr_short = f"{address.line1}, {address.city}"
-
-        by_window[load.route_window.value][driver_display].append(
-            {
-                "id": str(load.id),
-                "drop_id": str(drop.id),
-                "order_ref": order_ref,
-                "status": load.status.value,
-                "material": load.material_name_snapshot,
-                "qty": load.qty,
-                "unit": load.unit,
-                "customer_name": customer.name,
-                "customer_phone": customer.phone_e164,
-                "address_short": addr_short,
-                "driver_name": driver_display,
-                "driver_user_id": str(driver.id) if driver else None,
-                "historical_flags": {
-                    "exception_count": history.exception_count,
-                    "has_exception_history": history.exception_count > 0,
-                    "recent_notes": history.recent_notes,
-                },
-            }
-        )
+    # Count priority loads for the warning
+    priority_load_count = sum(len(v) for v in priority_groups.values())
+    priority_warning = None
+    if priority_load_count >= 8:
+        priority_warning = f"You have {priority_load_count} priority deliveries scheduled for this day."
 
     return {
         "date": str(day),
+        "priority": {
+            "groups": dict(priority_groups),
+            "load_count": priority_load_count,
+            "warning": priority_warning,
+        },
         "windows": {
-            "A": {"capacity": cap_map.get("A", {"used": 0, "total": default_cap, "remaining_capacity": default_cap}), "groups": by_window["A"], "disabled": "A" in disabled_windows},
-            "B": {"capacity": cap_map.get("B", {"used": 0, "total": default_cap, "remaining_capacity": default_cap}), "groups": by_window["B"], "disabled": "B" in disabled_windows},
+            "A": {"capacity": cap_map.get("A", {"used": 0, "total": default_cap, "remaining_capacity": default_cap}), "groups": dict(by_window["A"]), "disabled": "A" in disabled_windows},
+            "B": {"capacity": cap_map.get("B", {"used": 0, "total": default_cap, "remaining_capacity": default_cap}), "groups": dict(by_window["B"]), "disabled": "B" in disabled_windows},
         },
     }
 
@@ -140,24 +174,19 @@ def month_summary(
 
     days: dict[str, list] = defaultdict(list)
     for drop, customer in drops:
-        if drop.external_order_id:
-            order_ref = drop.external_order_id
-        elif drop.order_number:
-            order_ref = f"D-{drop.order_number:05d}"
-        else:
-            order_ref = str(drop.id)[:8].upper()
-
         mats = materials_map.get(str(drop.id), [])
         days[str(drop.scheduled_date)].append({
             "drop_id": str(drop.id),
-            "order_ref": order_ref,
+            "order_ref": _build_order_ref(drop),
             "customer_name": customer.name,
             "materials": ", ".join(mats) if mats else "",
-            "window": drop.scheduled_window.value,
+            "window": drop.scheduled_window.value if drop.scheduled_window else "P",
             "status": drop.status,
+            "is_priority": drop.is_priority,
         })
 
     return {"days": dict(days)}
+
 
 @router.get("/orders")
 def list_orders(
@@ -196,26 +225,18 @@ def list_orders(
     for load, drop, customer, address, driver in rows:
         driver_display = driver.display_name if driver else None
 
-        # Apply driver_name filter (done in Python because it's a computed field)
         if driver_name:
             if driver_name == "Unassigned" and driver_display is not None:
                 continue
             elif driver_name != "Unassigned" and driver_display != driver_name:
                 continue
 
-        if drop.external_order_id:
-            order_ref = drop.external_order_id
-        elif drop.order_number:
-            order_ref = f"D-{drop.order_number:05d}"
-        else:
-            order_ref = str(drop.id)[:8].upper()
-
         orders.append({
             "drop_id": str(drop.id),
             "load_id": str(load.id),
-            "order_ref": order_ref,
+            "order_ref": _build_order_ref(drop),
             "scheduled_date": str(load.route_date),
-            "window": load.route_window.value,
+            "window": load.route_window.value if load.route_window else "P",
             "customer_name": customer.name,
             "customer_phone": customer.phone_e164,
             "address_short": f"{address.line1}, {address.city}",
@@ -224,9 +245,11 @@ def list_orders(
             "unit": load.unit,
             "status": load.status.value,
             "driver_name": driver_display,
+            "is_priority": drop.is_priority,
         })
 
     return {"orders": orders}
+
 
 @router.get("/drops/{drop_id}")
 def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
@@ -237,7 +260,6 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
     drop, customer = row
 
-    # Delivery address
     address = db.execute(select(CustomerAddress).where(CustomerAddress.id == drop.address_id)).scalar_one_or_none()
     addr_dict = None
     if address:
@@ -246,7 +268,6 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
             "city": address.city, "state": address.state, "postal_code": address.postal_code,
         }
 
-    # Loads with driver info
     load_rows = db.execute(
         select(Load, User).outerjoin(User, User.id == Load.driver_user_id)
         .where(Load.tenant_id == user.tenant_id, Load.drop_id == drop.id)
@@ -264,22 +285,16 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
             "driver_email": driver.email if driver else None,
         })
 
-    # Build display reference
-    if drop.external_order_id:
-        display_ref = drop.external_order_id
-    elif drop.order_number:
-        display_ref = f"D-{drop.order_number:05d}"
-    else:
-        display_ref = str(drop.id)[:8].upper()
-
     return {
         "id": str(drop.id),
-        "ref": display_ref,
+        "ref": _build_order_ref(drop),
         "order_number": drop.order_number,
         "external_order_id": drop.external_order_id,
         "source": drop.source or "manual",
+        "is_priority": drop.is_priority,
+        "customer_type": customer.customer_type.value,
         "scheduled_date": str(drop.scheduled_date),
-        "scheduled_window": drop.scheduled_window.value,
+        "scheduled_window": drop.scheduled_window.value if drop.scheduled_window else None,
         "notify_sent_at": drop.notify_sent_at.isoformat() if drop.notify_sent_at else None,
         "last_reschedule_sms_at": drop.last_reschedule_sms_at.isoformat() if drop.last_reschedule_sms_at else None,
         "customer_name": customer.name,
@@ -300,7 +315,12 @@ def send_delivery_notification(drop_id: str, user: AuthUser = Depends(require_ro
     if not row:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
     drop, customer = row
-    window_label = "9am–1pm" if drop.scheduled_window.value == "A" else "1pm–5pm"
+
+    if drop.is_priority and not drop.scheduled_window:
+        window_label = "priority (early AM)"
+    else:
+        window_label = "9am–1pm" if drop.scheduled_window and drop.scheduled_window.value == "A" else "1pm–5pm"
+
     message = f"Your delivery is scheduled for {drop.scheduled_date.strftime('%A, %B %d')} between {window_label}. Please ensure the delivery area is accessible."
     job = {
         "tenant_id": str(user.tenant_id),
@@ -374,7 +394,6 @@ class AssignIn(BaseModel):
 
 @router.post("/loads/assign")
 def assign_loads(payload: AssignIn, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
-
     schedule_decision = scheduling_gate(db, user.tenant_id)
     if not schedule_decision.allowed:
         raise HTTPException(status_code=402, detail={"code": schedule_decision.code, "message": schedule_decision.message})
@@ -390,6 +409,7 @@ def assign_loads(payload: AssignIn, user: AuthUser = Depends(require_roles(UserR
     db.commit()
     invalidate_suggestion_cache(str(user.tenant_id))
     return {"updated": len(rows)}
+
 
 class DispatchStatusIn(BaseModel):
     status: str
@@ -450,6 +470,7 @@ def dispatcher_update_load_status(
     db.commit()
     return {"load_id": load_id, "old_status": old_status, "new_status": requested.value}
 
+
 class ReassignAllIn(BaseModel):
     day: date
     from_driver_user_id: str
@@ -477,7 +498,6 @@ def reassign_all(payload: ReassignAllIn, user: AuthUser = Depends(require_roles(
 
 @router.post("/drops/{drop_id}/assign")
 def assign_entire_drop(drop_id: str, payload: AssignIn, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
-
     schedule_decision = scheduling_gate(db, user.tenant_id)
     if not schedule_decision.allowed:
         raise HTTPException(status_code=402, detail={"code": schedule_decision.code, "message": schedule_decision.message})
@@ -524,26 +544,14 @@ class SuggestionEventIn(BaseModel):
 
 @router.post("/suggestions/applied")
 def log_suggestion_applied(payload: SuggestionEventIn, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
-    log_event(
-        db,
-        user.tenant_id,
-        "SUGGESTION_APPLIED",
-        "dispatch",
-        {"suggestion_type": payload.suggestion_type, "referenced_entities": payload.referenced_entities},
-    )
+    log_event(db, user.tenant_id, "SUGGESTION_APPLIED", "dispatch", {"suggestion_type": payload.suggestion_type, "referenced_entities": payload.referenced_entities})
     db.commit()
     return {"status": "logged"}
 
 
 @router.post("/suggestions/dismissed")
 def log_suggestion_dismissed(payload: SuggestionEventIn, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
-    log_event(
-        db,
-        user.tenant_id,
-        "SUGGESTION_DISMISSED",
-        "dispatch",
-        {"suggestion_type": payload.suggestion_type, "referenced_entities": payload.referenced_entities},
-    )
+    log_event(db, user.tenant_id, "SUGGESTION_DISMISSED", "dispatch", {"suggestion_type": payload.suggestion_type, "referenced_entities": payload.referenced_entities})
     db.commit()
     return {"status": "logged"}
 
