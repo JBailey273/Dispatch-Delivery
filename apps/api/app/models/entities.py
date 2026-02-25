@@ -131,7 +131,7 @@ class Customer(Base, TenantScopedMixin, TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone_e164: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
     customer_type: Mapped[CustomerType] = mapped_column(
-        Enum(CustomerType, name="customer_type"),
+        Enum(CustomerType, name="customer_type", values_callable=lambda e: [x.value for x in e]),
         nullable=False,
         default=CustomerType.RESIDENTIAL,
     )
