@@ -74,6 +74,7 @@ def driver_drops(
             "notes": drop.notes,
             "notify_sent": drop.notify_sent_at is not None,
             "scheduled_window": drop.scheduled_window.value if drop.scheduled_window else None,
+            "is_priority": drop.is_priority,
             "drop_photos": drop.drop_photos if drop.drop_photos else [],
             "loads": [
                 {
@@ -91,13 +92,14 @@ def driver_drops(
             ],
         })
 
-    # Sort: active deliveries first, then by window, then completed
+    # Sort: priority first, then active deliveries, then by window, then completed
     status_priority = {"assigned": 0, "loaded_leaving": 1, "exception": 3, "delivered": 4, "cancelled": 5}
 
     def drop_sort_key(d: dict) -> tuple:
+        is_priority = 0 if d.get("is_priority") else 1
         statuses = [status_priority.get(l["status"], 2) for l in d["loads"]]
         min_status = min(statuses) if statuses else 99
-        return (min_status, d.get("scheduled_window", "Z"))
+        return (is_priority, min_status, d.get("scheduled_window") or "Z")
 
     result.sort(key=drop_sort_key)
 
