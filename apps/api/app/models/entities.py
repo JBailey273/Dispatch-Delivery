@@ -41,6 +41,7 @@ class WindowCode(str, enum.Enum):
 
 
 class LoadStatus(str, enum.Enum):
+    NEW = "new"
     ASSIGNED = "assigned"
     LOADED_LEAVING = "loaded_leaving"
     EXCEPTION = "exception"
@@ -53,7 +54,15 @@ class ExceptionReasonCode(str, enum.Enum):
     ACCESS_BLOCKED = "access_blocked"
     SAFETY_RISK = "safety_risk"
     DAMAGED_GOODS = "damaged_goods"
+    OUT_OF_STOCK = "OUT_OF_STOCK"
+    WRONG_ADDRESS = "WRONG_ADDRESS"
+    CUSTOMER_REFUSED = "CUSTOMER_REFUSED"
     OTHER = "other"
+
+
+class CustomerType(str, enum.Enum):
+    RESIDENTIAL = "residential"
+    COMMERCIAL = "commercial"
 
 
 class Tenant(Base, TimestampMixin):
@@ -121,6 +130,11 @@ class Customer(Base, TenantScopedMixin, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone_e164: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    customer_type: Mapped[CustomerType] = mapped_column(
+        Enum(CustomerType, name="customer_type"),
+        nullable=False,
+        default=CustomerType.RESIDENTIAL,
+    )
 
     addresses = relationship("CustomerAddress", back_populates="customer")
 
@@ -168,9 +182,10 @@ class Drop(Base, TenantScopedMixin, TimestampMixin):
     order_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     external_order_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source: Mapped[str] = mapped_column(String(60), nullable=False, default="manual")
+    is_priority: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="new")
     scheduled_date: Mapped[date] = mapped_column(Date, nullable=False)
-    scheduled_window: Mapped[WindowCode] = mapped_column(Enum(WindowCode, name="drop_window_code"), nullable=False)
+    scheduled_window: Mapped[WindowCode | None] = mapped_column(Enum(WindowCode, name="drop_window_code"), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     drop_photos: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     split_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -199,6 +214,8 @@ class Load(Base, TenantScopedMixin, TimestampMixin):
     exception_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     route_sequence: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    drop = relationship("Drop", lazy="joined")
+
 
 class OptimizationProposal(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "optimization_proposals"
@@ -215,8 +232,6 @@ class OptimizationProposal(Base, TenantScopedMixin, TimestampMixin):
     before_state: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     after_state: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     application_record: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-
-
 
 
 class CapacityHold(Base, TenantScopedMixin, TimestampMixin):
@@ -320,6 +335,7 @@ class Channel(Base, TenantScopedMixin, TimestampMixin):
     api_key_hash: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     last_called_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
 
 class EventLog(Base, TenantScopedMixin):
     __tablename__ = "event_logs"
