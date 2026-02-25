@@ -139,31 +139,19 @@ export default function DriverPage() {
   // ── Actions ────────────────────────────────────────────────────────────
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => setToast({ msg, type });
 
-  const markDelivered = async (loadId: string) => {
-    setActionLoading(loadId);
-    try {
-      await api(`/driver/loads/${loadId}/status`, {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({ status: 'delivered' }),
-      });
-      showToast('Delivery confirmed!');
-      await fetchDrops();
-    } catch (err: any) {
-      if (err?.detail?.code === 'missing_pod') {
-        showToast('Please take a photo before marking delivered.', 'error');
-      } else {
-        showToast('Failed to update. Try again.', 'error');
-      }
-    } finally {
-      setActionLoading(null);
-    }
+  // "Mark Delivered" opens the camera — photo upload + status change happen together
+  const markDelivered = (loadId: string) => {
+    setPhotoTarget({ loadId, type: 'pod' });
+    setTimeout(() => photoInputRef.current?.click(), 100);
   };
 
   const notifyCustomer = async (dropId: string) => {
     setActionLoading(`notify-${dropId}`);
     try {
-      const result = await api(`/driver/drops/${dropId}/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, });
+      const result = await api(`/driver/drops/${dropId}/notify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
       showToast(result.already_sent ? 'Customer was already notified.' : 'Customer notified — SMS sent!');
       await fetchDrops();
     } catch {
@@ -178,7 +166,8 @@ export default function DriverPage() {
     setActionLoading(exceptionModal.loadId);
     try {
       await api(`/driver/loads/${exceptionModal.loadId}/status`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'exception', reason_code: exceptionReason, notes: exceptionNotes || null }),
       });
       showToast('Exception reported.');
@@ -198,7 +187,8 @@ export default function DriverPage() {
     setActionLoading(oosConfirm.loadId);
     try {
       await api(`/driver/loads/${oosConfirm.loadId}/status`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'exception', reason_code: 'OUT_OF_STOCK', notes: `Out of stock: ${oosConfirm.material}` }),
       });
       showToast('Returned to dispatch — out of stock.');
@@ -211,23 +201,42 @@ export default function DriverPage() {
     }
   };
 
+  // Handles both POD (auto-delivers after photo) and exception photos
   const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!photoTarget || !e.target.files?.[0]) return;
     const file = e.target.files[0];
     setActionLoading(photoTarget.loadId);
     try {
+      // Upload to S3
       const ext = file.name.split('.').pop() || 'jpg';
-      const uploadData = await api(`/uploads/presign?ext=${ext}&purpose=${photoTarget.type}`);
-      await fetch(uploadData.upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type }, });
+      const uploadData = await api(`/uploads/presign?ext=${ext}&purpose=${photoTarget.type}`, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+      await fetch(uploadData.upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+
+      // Attach photo to load
       await api(`/driver/loads/${photoTarget.loadId}/photo`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ photo_url: uploadData.public_url, photo_type: photoTarget.type }),
       });
-      showToast(photoTarget.type === 'pod' ? 'Delivery photo saved!' : 'Exception photo saved.');
+
+      // If POD photo, automatically mark as delivered
+      if (photoTarget.type === 'pod') {
+        await api(`/driver/loads/${photoTarget.loadId}/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'delivered' }),
+        });
+        showToast('Photo saved & delivery confirmed!');
+      } else {
+        showToast('Exception photo saved.');
+      }
+
       setPhotoTarget(null);
       await fetchDrops();
     } catch {
-      showToast('Photo upload failed. Try again.', 'error');
+      showToast('Failed. Try again.', 'error');
     } finally {
       setActionLoading(null);
       if (photoInputRef.current) photoInputRef.current.value = '';
@@ -366,7 +375,11 @@ export default function DriverPage() {
                       {drop.notify_sent ? (
                         <div className="drv-notified">✅ Customer has been notified</div>
                       ) : (
-                        <button className="drv-btn drv-btn--teal" disabled={actionLoading === `notify-${drop.drop_id}`} onClick={() => notifyCustomer(drop.drop_id)}>
+                        <button
+                          className="drv-btn drv-btn--teal"
+                          disabled={actionLoading === `notify-${drop.drop_id}`}
+                          onClick={() => notifyCustomer(drop.drop_id)}
+                        >
                           <span className="drv-btn-ic">📱</span>
                           {actionLoading === `notify-${drop.drop_id}` ? 'Sending…' : 'Notify Customer'}
                         </button>
@@ -374,22 +387,20 @@ export default function DriverPage() {
                     </div>
                   )}
 
-                  {/* ⑥ Primary actions */}
+                  {/* ⑥ Primary action — single "Mark Delivered" button that opens camera */}
                   {activeLoads.length > 0 && (
                     <div className="drv-actions">
                       {activeLoads.map(load => (
                         <div key={`a-${load.id}`} className="drv-act-group">
                           {activeLoads.length > 1 && <div className="drv-act-label">{load.material}</div>}
-                          <div className="drv-row">
-                            <button className="drv-btn drv-btn--outline" disabled={actionLoading === load.id} onClick={() => openCamera(load.id, 'pod')}>
-                              <span className="drv-btn-ic">📸</span>{load.pod_photo_url ? 'Retake Photo' : 'Take Photo'}
-                            </button>
-                            <button className="drv-btn drv-btn--green" disabled={actionLoading === load.id} onClick={() => markDelivered(load.id)}>
-                              <span className="drv-btn-ic">✓</span>{actionLoading === load.id ? 'Saving…' : 'Delivered'}
-                            </button>
-                          </div>
-                          {!load.pod_photo_url && <div className="drv-hint-amber">📷 Taking a delivery photo is recommended</div>}
-                          {load.pod_photo_url && <div className="drv-hint-green">✅ Photo saved</div>}
+                          <button
+                            className="drv-btn drv-btn--green"
+                            disabled={actionLoading === load.id}
+                            onClick={() => markDelivered(load.id)}
+                          >
+                            <span className="drv-btn-ic">📸</span>
+                            {actionLoading === load.id ? 'Saving…' : 'Mark Delivered — Take Photo'}
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -398,14 +409,29 @@ export default function DriverPage() {
                   {/* ⑦ Divider + secondary */}
                   {activeLoads.length > 0 && (
                     <>
-                      <div className="drv-sep"><div className="drv-sep-line" /><span className="drv-sep-text">Other Actions</span><div className="drv-sep-line" /></div>
+                      <div className="drv-sep">
+                        <div className="drv-sep-line" />
+                        <span className="drv-sep-text">Other Actions</span>
+                        <div className="drv-sep-line" />
+                      </div>
                       <div className="drv-secondary">
                         {activeLoads.map(load => (
-                          <button key={`oos-${load.id}`} className="drv-btn-sec drv-btn-sec--amber" disabled={actionLoading === load.id} onClick={() => setOosConfirm({ loadId: load.id, material: load.material })}>
+                          <button
+                            key={`oos-${load.id}`}
+                            className="drv-btn-sec drv-btn-sec--amber"
+                            disabled={actionLoading === load.id}
+                            onClick={() => setOosConfirm({ loadId: load.id, material: load.material })}
+                          >
                             📦 {activeLoads.length > 1 ? `Out of Stock — ${load.material}` : 'Out of Stock — Return to Dispatch'}
                           </button>
                         ))}
-                        <button className="drv-btn-sec drv-btn-sec--red" onClick={() => { const l = activeLoads[0]; if (l) setExceptionModal({ loadId: l.id, dropId: drop.drop_id }); }}>
+                        <button
+                          className="drv-btn-sec drv-btn-sec--red"
+                          onClick={() => {
+                            const l = activeLoads[0];
+                            if (l) setExceptionModal({ loadId: l.id, dropId: drop.drop_id });
+                          }}
+                        >
                           🚨 Report a Problem
                         </button>
                       </div>
@@ -426,7 +452,10 @@ export default function DriverPage() {
       {/* ── Lightbox ── */}
       {lightboxUrl && (
         <div className="drv-overlay drv-overlay--center" onClick={() => setLightboxUrl(null)}>
-          <div className="drv-lb"><img src={lightboxUrl} alt="Drop location" className="drv-lb-img" /><button className="drv-lb-x" onClick={() => setLightboxUrl(null)}>✕</button></div>
+          <div className="drv-lb">
+            <img src={lightboxUrl} alt="Drop location" className="drv-lb-img" />
+            <button className="drv-lb-x" onClick={() => setLightboxUrl(null)}>✕</button>
+          </div>
         </div>
       )}
 
@@ -438,7 +467,11 @@ export default function DriverPage() {
             <div className="drv-modal-h">Out of Stock?</div>
             <div className="drv-modal-p">This will return <strong>{oosConfirm.material}</strong> to dispatch for rescheduling.</div>
             <div className="drv-modal-btns">
-              <button className="drv-btn drv-btn--amber" disabled={actionLoading === oosConfirm.loadId} onClick={submitOutOfStock}>
+              <button
+                className="drv-btn drv-btn--amber"
+                disabled={actionLoading === oosConfirm.loadId}
+                onClick={submitOutOfStock}
+              >
                 {actionLoading === oosConfirm.loadId ? 'Submitting…' : 'Yes — Return to Dispatch'}
               </button>
               <button className="drv-btn drv-btn--ghost" onClick={() => setOosConfirm(null)}>Cancel</button>
@@ -455,21 +488,45 @@ export default function DriverPage() {
             <div className="drv-modal-p" style={{ textAlign: 'left' }}>Select the reason below:</div>
             <div className="drv-reason-grid">
               {Object.entries(EXCEPTION_REASONS).map(([code, { label, icon }]) => (
-                <button key={code} className={`drv-reason ${exceptionReason === code ? 'drv-reason--on' : ''}`} onClick={() => setExceptionReason(code)}>
-                  <span className="drv-reason-ic">{icon}</span><span>{label}</span>
+                <button
+                  key={code}
+                  className={`drv-reason ${exceptionReason === code ? 'drv-reason--on' : ''}`}
+                  onClick={() => setExceptionReason(code)}
+                >
+                  <span className="drv-reason-ic">{icon}</span>
+                  <span>{label}</span>
                 </button>
               ))}
             </div>
             <div className="drv-field-lbl">Additional Details (Optional)</div>
-            <textarea className="drv-ta" placeholder="Describe what happened…" value={exceptionNotes} onChange={e => setExceptionNotes(e.target.value)} />
-            <button className="drv-btn drv-btn--outline" style={{ marginTop: 12 }} onClick={() => openCamera(exceptionModal.loadId, 'exception')}>
-              <span className="drv-btn-ic">📸</span>Take Exception Photo
+            <textarea
+              className="drv-ta"
+              placeholder="Describe what happened…"
+              value={exceptionNotes}
+              onChange={e => setExceptionNotes(e.target.value)}
+            />
+            <button
+              className="drv-btn drv-btn--outline"
+              style={{ marginTop: 12 }}
+              onClick={() => openCamera(exceptionModal.loadId, 'exception')}
+            >
+              <span className="drv-btn-ic">📸</span>
+              Take Exception Photo
             </button>
             <div className="drv-modal-btns">
-              <button className="drv-btn drv-btn--red" disabled={!exceptionReason || actionLoading === exceptionModal.loadId} onClick={submitException}>
+              <button
+                className="drv-btn drv-btn--red"
+                disabled={!exceptionReason || actionLoading === exceptionModal.loadId}
+                onClick={submitException}
+              >
                 {actionLoading === exceptionModal.loadId ? 'Submitting…' : 'Submit Exception Report'}
               </button>
-              <button className="drv-btn drv-btn--ghost" onClick={() => { setExceptionModal(null); setExceptionReason(''); setExceptionNotes(''); }}>Cancel</button>
+              <button
+                className="drv-btn drv-btn--ghost"
+                onClick={() => { setExceptionModal(null); setExceptionReason(''); setExceptionNotes(''); }}
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>
@@ -580,15 +637,11 @@ const STYLES = `
   .drv-btn--red { background: var(--red6); color: #fff; }
   .drv-btn--outline { background: #fff; color: var(--g7); border: 1.5px solid var(--g2); }
   .drv-btn--ghost { background: var(--g1); color: var(--g7); }
-  .drv-row { display: flex; gap: 10px; }
-  .drv-row .drv-btn { flex: 1; }
 
   /* Actions area */
   .drv-actions { margin-top: 18px; display: flex; flex-direction: column; gap: 12px; }
   .drv-act-group { display: flex; flex-direction: column; gap: 6px; }
   .drv-act-label { font-family: var(--fh); font-size: 13px; font-weight: 700; color: var(--g5); }
-  .drv-hint-amber { text-align: center; font-size: 13px; color: var(--amb6); font-weight: 600; margin-top: 2px; }
-  .drv-hint-green { text-align: center; font-size: 13px; color: var(--grn6); font-weight: 600; margin-top: 2px; }
 
   /* Divider */
   .drv-sep { display: flex; align-items: center; gap: 12px; margin: 28px 0 14px; }
