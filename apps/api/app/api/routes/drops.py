@@ -11,10 +11,12 @@ from app.api.deps import AuthUser, db_dep, require_roles
 from app.api.guardrails import CapacityMutationContext, assert_drop_load_invariants, guard_load_editable, mutate_capacity_or_409
 from app.api.services import find_matching_address, log_event, now_utc
 from app.billing.service import evaluate_limit, scheduling_gate
-from app.models.entities import CapacityHold, Customer, CustomerAddress, DeliveryMode, Drop, Load, OperationalBlackout, ProductCatalogItem, UserRole, WindowCapacity, WindowCode
+from app.models.entities import CapacityHold, Customer, CustomerAddress, CustomerType, DeliveryMode, Drop, Load, OperationalBlackout, ProductCatalogItem, UserRole, WindowCapacity, WindowCode
 
 router = APIRouter(prefix="/drops", tags=["drops"])
 logger = logging.getLogger("dispatch.capacity")
+
+PRIORITY_SOFT_CAP = 8  # warn after this many priority drops in a day
 
 
 def next_order_number(db: Session, tenant_id) -> int:
@@ -23,6 +25,20 @@ def next_order_number(db: Session, tenant_id) -> int:
         select(func.coalesce(func.max(Drop.order_number), 0)).where(Drop.tenant_id == tenant_id)
     ).scalar_one()
     return current_max + 1
+
+
+def check_priority_warning(db: Session, tenant_id, scheduled_date: date) -> str | None:
+    """Returns a warning message if priority load count is high, else None."""
+    count = db.execute(
+        select(func.count(Drop.id)).where(
+            Drop.tenant_id == tenant_id,
+            Drop.scheduled_date == scheduled_date,
+            Drop.is_priority == True,  # noqa: E712
+        )
+    ).scalar_one()
+    if count >= PRIORITY_SOFT_CAP:
+        return f"You have {count} priority deliveries scheduled for this day. Consider spreading across multiple days."
+    return None
 
 
 class ItemIn(BaseModel):
@@ -52,7 +68,8 @@ class ManualDropIn(BaseModel):
     address: AddressRef
     notes: str | None = None
     scheduled_date: date
-    scheduled_window: WindowCode
+    scheduled_window: WindowCode | None = None  # None allowed for priority drops
+    is_priority: bool | None = None  # None = auto-detect from customer type
     items: list[ItemIn]
 
 
@@ -129,12 +146,28 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
     schedule_decision = scheduling_gate(db, user.tenant_id)
     if not schedule_decision.allowed:
         raise HTTPException(status_code=402, detail={"code": schedule_decision.code, "message": schedule_decision.message})
+
+    # Resolve customer
     customer = None
     if payload.customer.id:
         customer = db.execute(select(Customer).where(Customer.id == payload.customer.id, Customer.tenant_id == user.tenant_id)).scalar_one_or_none()
     if not customer:
         raise HTTPException(status_code=400, detail={"code": "invalid_customer", "message": "Existing customer id is required for manual drop"})
 
+    # Determine priority: explicit override > auto-detect from customer type
+    if payload.is_priority is not None:
+        is_priority = payload.is_priority
+    else:
+        is_priority = customer.customer_type == CustomerType.COMMERCIAL
+
+    # Validate window: non-priority drops MUST have a window
+    if not is_priority and not payload.scheduled_window:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "window_required", "message": "Non-priority deliveries require a delivery window (A or B)."},
+        )
+
+    # Resolve address
     if payload.address.address_id:
         address = db.execute(
             select(CustomerAddress).where(
@@ -165,6 +198,7 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
         elif not address:
             raise HTTPException(status_code=404, detail={"code": "address_not_found", "message": "No matching address"})
 
+    # Resolve SKUs to catalog items
     skus = [i.sku for i in payload.items]
     catalog = db.execute(select(ProductCatalogItem).where(ProductCatalogItem.tenant_id == user.tenant_id, ProductCatalogItem.sku.in_(skus), ProductCatalogItem.active == True)).scalars().all()  # noqa: E712
     by_sku = {i.sku: i for i in catalog}
@@ -180,25 +214,35 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
             grouped[cat.bulk_group]["unit"] = cat.unit
 
     required_loads = len(grouped.keys())
+
+    # Daily load limit check
     current_today = db.execute(select(func.count(Drop.id)).where(Drop.tenant_id == user.tenant_id, Drop.scheduled_date == payload.scheduled_date)).scalar_one()
     load_limit_decision = evaluate_limit(db, user.tenant_id, "max_daily_loads", int(current_today) + required_loads)
     if not load_limit_decision.allowed:
         raise HTTPException(status_code=402, detail={"code": load_limit_decision.code, "message": load_limit_decision.message, "upgrade_required": load_limit_decision.upgrade_required})
 
     try:
-        reserve_capacity(db, user.tenant_id, payload.scheduled_date, payload.scheduled_window, required_loads)
+        # Priority drops bypass capacity reservation entirely
+        if not is_priority:
+            reserve_capacity(db, user.tenant_id, payload.scheduled_date, payload.scheduled_window, required_loads)
+
         drop = Drop(
             tenant_id=user.tenant_id,
             customer_id=customer.id,
             address_id=address.id,
             order_number=next_order_number(db, user.tenant_id),
             source="manual",
+            is_priority=is_priority,
             scheduled_date=payload.scheduled_date,
-            scheduled_window=payload.scheduled_window,
+            scheduled_window=payload.scheduled_window,  # None for priority drops
             notes=payload.notes,
         )
         db.add(drop)
         db.flush()
+
+        # For priority drops without a window, we still need a route_window on loads.
+        # Use window A as default — it doesn't affect capacity or scheduling.
+        load_window = payload.scheduled_window or WindowCode.A
 
         load_ids = []
         for bulk_group, snap in grouped.items():
@@ -206,7 +250,7 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
                 tenant_id=user.tenant_id,
                 drop_id=drop.id,
                 route_date=payload.scheduled_date,
-                route_window=payload.scheduled_window,
+                route_window=load_window,
                 bulk_group_snapshot=bulk_group,
                 material_name_snapshot=snap["name"],
                 qty=snap["qty"],
@@ -215,21 +259,34 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
             db.add(load)
             db.flush()
             load_ids.append(str(load.id))
+
         address.last_used_at = now_utc()
-        log_event(db, user.tenant_id, "drop.created", "api", {"drop_id": str(drop.id)})
+        log_event(db, user.tenant_id, "drop.created", "api", {"drop_id": str(drop.id), "is_priority": is_priority})
         log_event(db, user.tenant_id, "loads.created", "api", {"drop_id": str(drop.id), "load_ids": load_ids})
-        log_event(db, user.tenant_id, "capacity.consumed", "api", {"date": str(payload.scheduled_date), "window": payload.scheduled_window.value, "units": required_loads})
+        if not is_priority:
+            log_event(db, user.tenant_id, "capacity.consumed", "api", {"date": str(payload.scheduled_date), "window": payload.scheduled_window.value, "units": required_loads})
         db.commit()
     except Exception:
         db.rollback()
         raise
 
-    return {"drop_id": str(drop.id), "order_number": drop.order_number, "load_ids": load_ids, "required_loads": required_loads}
+    # Check for priority soft cap warning
+    priority_warning = check_priority_warning(db, user.tenant_id, payload.scheduled_date) if is_priority else None
+
+    return {
+        "drop_id": str(drop.id),
+        "order_number": drop.order_number,
+        "load_ids": load_ids,
+        "required_loads": required_loads,
+        "is_priority": is_priority,
+        "priority_warning": priority_warning,
+    }
 
 
 class RescheduleIn(BaseModel):
     scheduled_date: date
-    scheduled_window: WindowCode
+    scheduled_window: WindowCode | None = None  # None allowed for priority drops
+    is_priority: bool | None = None  # Can toggle priority during reschedule
     allow_split: bool = False
 
 
@@ -250,7 +307,19 @@ def reschedule_drop(drop_id: str, payload: RescheduleIn, user: AuthUser = Depend
                 "next_step": "Retry with allow_split=false (or omit it) so all loads move together.",
             },
         )
-    if payload.scheduled_date == drop.scheduled_date and payload.scheduled_window == drop.scheduled_window:
+
+    # Determine new priority state
+    new_is_priority = payload.is_priority if payload.is_priority is not None else drop.is_priority
+    new_window = payload.scheduled_window
+
+    # Validate: non-priority must have a window
+    if not new_is_priority and not new_window:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "window_required", "message": "Non-priority deliveries require a delivery window (A or B)."},
+        )
+
+    if payload.scheduled_date == drop.scheduled_date and new_window == drop.scheduled_window and new_is_priority == drop.is_priority:
         raise HTTPException(
             status_code=409,
             detail={
@@ -265,20 +334,36 @@ def reschedule_drop(drop_id: str, payload: RescheduleIn, user: AuthUser = Depend
         guard_load_editable(load, "rescheduled")
 
     load_count = len(loads)
-    old_cap = mutate_capacity_or_409(
-        db,
-        user.tenant_id,
-        drop.scheduled_date,
-        drop.scheduled_window,
-        -int(load_count),
-        CapacityMutationContext(source="api", reason="drop_reschedule_release", reference_id=drop_id),
-    )
-    new_cap = reserve_capacity(db, user.tenant_id, payload.scheduled_date, payload.scheduled_window, int(load_count))
+
+    # Release old capacity (only if the drop was NOT priority before)
+    if not drop.is_priority and drop.scheduled_window:
+        mutate_capacity_or_409(
+            db,
+            user.tenant_id,
+            drop.scheduled_date,
+            drop.scheduled_window,
+            -int(load_count),
+            CapacityMutationContext(source="api", reason="drop_reschedule_release", reference_id=drop_id),
+        )
+
+    # Reserve new capacity (only if the drop is NOT priority after)
+    if not new_is_priority and new_window:
+        reserve_capacity(db, user.tenant_id, payload.scheduled_date, new_window, int(load_count))
+
     drop.scheduled_date = payload.scheduled_date
-    drop.scheduled_window = payload.scheduled_window
+    drop.scheduled_window = new_window
+    drop.is_priority = new_is_priority
+
+    load_window = new_window or WindowCode.A
     for load in loads:
         load.route_date = payload.scheduled_date
-        load.route_window = payload.scheduled_window
-    log_event(db, user.tenant_id, "capacity.rebalanced", "api", {"drop_id": drop_id, "from": str(old_cap.service_date), "to": str(new_cap.service_date)})
+        load.route_window = load_window
+
+    log_event(db, user.tenant_id, "drop.rescheduled", "api", {
+        "drop_id": drop_id,
+        "is_priority": new_is_priority,
+        "new_date": str(payload.scheduled_date),
+        "new_window": new_window.value if new_window else None,
+    })
     db.commit()
-    return {"status": "rescheduled"}
+    return {"status": "rescheduled", "is_priority": new_is_priority}
