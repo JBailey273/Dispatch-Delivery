@@ -322,19 +322,16 @@ export default function DriverPage() {
               <div className={`drv-body ${isExpanded ? 'drv-body--open' : ''}`}>
                 <div className="drv-inner">
 
-                  {/* ① Load Manifest — full bleed, visually distinct */}
+                  {/* ① Load Manifest — centered, qty+unit hero */}
                   <div className="drv-manifest">
                     <div className="drv-manifest-hd">📋 LOAD MANIFEST</div>
-                    {drop.loads.map(load => {
+                    {drop.loads.map((load, idx) => {
                       const isActive = load.status === 'assigned' || load.status === 'loaded_leaving';
                       const lCfg = STATUS_CONFIG[load.status] || STATUS_CONFIG.assigned;
                       return (
-                        <div key={load.id} className="drv-manifest-row">
-                          <div className="drv-manifest-qty">{load.qty}</div>
-                          <div className="drv-manifest-detail">
-                            <div className="drv-manifest-material">{load.material}</div>
-                            <div className="drv-manifest-unit">{load.unit}{load.qty !== 1 ? 's' : ''}</div>
-                          </div>
+                        <div key={load.id} className={`drv-manifest-row ${idx < drop.loads.length - 1 ? 'drv-manifest-row--border' : ''}`}>
+                          <div className="drv-manifest-qty-line">{load.qty} {load.unit}{load.qty !== 1 ? 's' : ''}</div>
+                          <div className="drv-manifest-material">{load.material}</div>
                           {!isActive && <span className="drv-manifest-badge" style={{ color: lCfg.color, background: lCfg.bg }}>{lCfg.label}</span>}
                         </div>
                       );
@@ -603,13 +600,11 @@ const STYLES = `
   /* Load Manifest */
   .drv-manifest { margin: 0 -18px; border-bottom: 1.5px solid var(--g2); }
   .drv-manifest-hd { background: var(--grn9); color: #fff; padding: 14px 18px; font-family: var(--fh); font-size: 13px; font-weight: 800; letter-spacing: .08em; display: flex; align-items: center; gap: 8px; }
-  .drv-manifest-row { display: flex; align-items: center; gap: 16px; padding: 16px 18px; border-bottom: 1px solid var(--g1); background: #fff; }
-  .drv-manifest-row:last-child { border-bottom: none; }
-  .drv-manifest-qty { font-family: var(--fh); font-size: 32px; font-weight: 800; color: var(--grn7); min-width: 48px; text-align: center; line-height: 1; }
-  .drv-manifest-detail { flex: 1; }
-  .drv-manifest-material { font-family: var(--fh); font-size: 19px; font-weight: 700; color: var(--g9); }
-  .drv-manifest-unit { font-size: 14px; color: var(--g5); font-weight: 500; margin-top: 1px; }
-  .drv-manifest-badge { padding: 4px 10px; border-radius: 20px; font-family: var(--fh); font-size: 11px; font-weight: 700; flex-shrink: 0; }
+  .drv-manifest-row { display: flex; flex-direction: column; align-items: center; padding: 20px 18px; background: #fff; text-align: center; }
+  .drv-manifest-row--border { border-bottom: 1px dashed var(--g2); }
+  .drv-manifest-qty-line { font-family: var(--fh); font-size: 34px; font-weight: 800; color: var(--grn7); line-height: 1.1; }
+  .drv-manifest-material { font-family: var(--fh); font-size: 20px; font-weight: 700; color: var(--g9); margin-top: 4px; }
+  .drv-manifest-badge { padding: 4px 12px; border-radius: 20px; font-family: var(--fh); font-size: 12px; font-weight: 700; margin-top: 8px; }
 
   /* Drop photo */
   .drv-photo-frame { border-radius: var(--rs); overflow: hidden; border: 1.5px solid var(--g2); cursor: pointer; position: relative; }
