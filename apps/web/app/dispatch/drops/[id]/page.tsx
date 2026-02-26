@@ -282,7 +282,7 @@ export default function DispatchDropDetailPage() {
                 <div className="dd-hero-name">{fmtDate(drop.scheduled_date)}</div>
                 <div className="dd-hero-window">
                   <span className={`dd-window-badge ${drop.scheduled_window === 'A' ? 'am' : 'pm'}`}>
-                    {drop.scheduled_window === 'A' ? '🌅 AM (9am–1pm)' : '🌤 PM (1pm–5pm)'}
+                    {drop.scheduled_window === 'A' ? 'Morning (9am – 1pm)' : 'Afternoon (1pm – 5pm)'}
                   </span>
                 </div>
                 <div className="dd-hero-loads">{drop.required_loads} load{drop.required_loads !== 1 ? 's' : ''}</div>
