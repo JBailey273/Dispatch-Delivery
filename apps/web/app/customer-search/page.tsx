@@ -1,11 +1,36 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError, api, requireRole } from '../lib/auth';
 
-type CustomerResult = { id: string; name: string; phone_e164: string; customer_type?: string; exact_phone_match?: boolean; last_ordered?: string | null };
-type Address = { id: string; line1: string; line2?: string; city: string; state: string; postal_code: string; is_default?: boolean };
+type CustomerResult = {
+  id: string; name: string; phone_e164: string;
+  customer_type?: string; exact_phone_match?: boolean; last_ordered?: string | null;
+};
+type Address = {
+  id: string; line1: string; line2?: string | null;
+  city: string; state: string; postal_code: string; is_default?: boolean;
+};
+
+type AddrForm = { line1: string; line2: string; city: string; state: string; postal_code: string };
+const emptyAddrForm = (): AddrForm => ({ line1: '', line2: '', city: '', state: '', postal_code: '' });
+
+function fmtPhone(p: string) {
+  const d = p.replace(/\D/g, '');
+  if (d.length === 11 && d[0] === '1') return `(${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
+  return p;
+}
+
+function fmtDate(ds: string) {
+  const d = new Date(ds + 'T12:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function fmtAddrLine(a: Address) {
+  return `${a.line1}${a.line2 ? `, ${a.line2}` : ''}, ${a.city}, ${a.state} ${a.postal_code}`;
+}
 
 export default function CustomerSearchPage() {
   const router = useRouter();
@@ -18,38 +43,61 @@ export default function CustomerSearchPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Expanded customer
+  /* ── Expanded customer ── */
   const [expanded, setExpanded] = useState<string | null>(null);
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [addrLoading, setAddrLoading] = useState(false);
 
-  // Create customer
+  /* ── Customer inline edit ── */
+  const [editingName, setEditingName] = useState<string | null>(null);   // customer id
+  const [editingPhone, setEditingPhone] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [savingField, setSavingField] = useState('');
+
+  /* ── Address edit/add ── */
+  const [editingAddrId, setEditingAddrId] = useState<string | null>(null);  // address id being edited
+  const [editAddrForm, setEditAddrForm] = useState<AddrForm>(emptyAddrForm());
+  const [showAddAddr, setShowAddAddr] = useState(false);
+  const [addAddrForm, setAddAddrForm] = useState<AddrForm>(emptyAddrForm());
+  const [savingAddr, setSavingAddr] = useState(false);
+
+  /* ── Delete confirmations ── */
+  const [confirmDeleteAddr, setConfirmDeleteAddr] = useState<string | null>(null);  // address id
+  const [confirmDeleteCustomer, setConfirmDeleteCustomer] = useState<string | null>(null); // customer id
+  const [deleting, setDeleting] = useState(false);
+
+  /* ── Type toggle ── */
+  const [typeToggling, setTypeToggling] = useState<string | null>(null);
+
+  /* ── Create customer modal ── */
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [newType, setNewType] = useState<'residential' | 'commercial'>('residential');
   const [creating, setCreating] = useState(false);
 
-  // Type toggle loading
-  const [typeToggling, setTypeToggling] = useState<string | null>(null);
-
-  // Load all customers on mount
-  useEffect(() => {
-    api('/customers').then(d => { setAllCustomers(d.results || []); }).catch(err => setError((err as ApiError).message || 'Failed to load customers')).finally(() => setLoading(false));
-  }, []);
-
-  // Live filter
+  /* ── Debounce timer ── */
   const [debounceTimer, setDebounceTimer] = useState<NodeJS.Timeout | null>(null);
 
+  /* Load all on mount */
+  useEffect(() => {
+    api('/customers')
+      .then(d => setAllCustomers(d.results || []))
+      .catch(err => setError((err as ApiError).message || 'Failed to load customers'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const refreshCustomers = async () => {
+    const d = await api('/customers');
+    setAllCustomers(d.results || []);
+  };
+
+  /* Search */
   const handleQueryChange = (val: string) => {
     setQ(val);
     if (debounceTimer) clearTimeout(debounceTimer);
-
-    if (!val.trim()) {
-      setSearchResults(null);
-      return;
-    }
-
+    if (!val.trim()) { setSearchResults(null); return; }
     const timer = setTimeout(async () => {
       setSearchLoading(true);
       try {
@@ -61,20 +109,24 @@ export default function CustomerSearchPage() {
     setDebounceTimer(timer);
   };
 
-  // Determine which list to display
   const displayed = (() => {
     if (searchResults !== null) return searchResults;
     if (!q.trim()) return allCustomers;
     const lower = q.toLowerCase();
     return allCustomers.filter(c =>
-      c.name.toLowerCase().includes(lower) ||
-      c.phone_e164.includes(q)
+      c.name.toLowerCase().includes(lower) || c.phone_e164.includes(q)
     );
   })();
 
+  /* ── Expand / fetch addresses ── */
   const toggleExpand = async (id: string) => {
-    if (expanded === id) { setExpanded(null); return; }
+    if (expanded === id) {
+      setExpanded(null);
+      resetEditState();
+      return;
+    }
     setExpanded(id);
+    resetEditState();
     setAddrLoading(true);
     try {
       const data = await api(`/customers/${id}/addresses`);
@@ -86,53 +138,180 @@ export default function CustomerSearchPage() {
     }
   };
 
+  const resetEditState = () => {
+    setEditingName(null); setEditingPhone(null);
+    setEditingAddrId(null); setShowAddAddr(false);
+    setAddAddrForm(emptyAddrForm()); setEditAddrForm(emptyAddrForm());
+    setConfirmDeleteAddr(null); setConfirmDeleteCustomer(null);
+  };
+
+  /* ── Inline customer edit ── */
+  const startEditName = (c: CustomerResult) => {
+    setEditingName(c.id); setEditName(c.name);
+    setEditingPhone(null);
+  };
+  const startEditPhone = (c: CustomerResult) => {
+    setEditingPhone(c.id); setEditPhone(fmtPhone(c.phone_e164));
+    setEditingName(null);
+  };
+
+  const saveName = async (customerId: string) => {
+    if (!editName.trim()) return;
+    setSavingField('name');
+    try {
+      await api(`/customers/${customerId}/name`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: editName.trim() }),
+      });
+      const update = (list: CustomerResult[]) =>
+        list.map(c => c.id === customerId ? { ...c, name: editName.trim() } : c);
+      setAllCustomers(update);
+      if (searchResults) setSearchResults(update(searchResults));
+      setEditingName(null);
+      setSuccess('Name updated');
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err) {
+      setError((err as ApiError).message || 'Failed to update name');
+    } finally { setSavingField(''); }
+  };
+
+  const savePhone = async (customerId: string) => {
+    setSavingField('phone');
+    try {
+      const data = await api(`/customers/${customerId}/phone`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: editPhone }),
+      });
+      const update = (list: CustomerResult[]) =>
+        list.map(c => c.id === customerId ? { ...c, phone_e164: data.phone_e164 } : c);
+      setAllCustomers(update);
+      if (searchResults) setSearchResults(update(searchResults));
+      setEditingPhone(null);
+      setSuccess('Phone updated');
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err) {
+      setError((err as ApiError).message || 'Failed to update phone');
+    } finally { setSavingField(''); }
+  };
+
   const toggleCustomerType = async (customerId: string, currentType: string) => {
     const newType = currentType === 'commercial' ? 'residential' : 'commercial';
     setTypeToggling(customerId);
     setError('');
     try {
       await api(`/customers/${customerId}/type`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ customer_type: newType }),
       });
-      // Update in both lists
       const update = (list: CustomerResult[]) =>
         list.map(c => c.id === customerId ? { ...c, customer_type: newType } : c);
       setAllCustomers(update);
       if (searchResults) setSearchResults(update(searchResults));
-      setSuccess(`Customer updated to ${newType}`);
+      setSuccess(`Switched to ${newType}`);
       setTimeout(() => setSuccess(''), 2000);
     } catch (err) {
-      setError((err as ApiError).message || 'Failed to update customer type');
-    } finally {
-      setTypeToggling(null);
-    }
+      setError((err as ApiError).message || 'Failed to update type');
+    } finally { setTypeToggling(null); }
   };
 
+  /* ── Address editing ── */
+  const startEditAddr = (a: Address) => {
+    setEditingAddrId(a.id);
+    setEditAddrForm({
+      line1: a.line1 || '', line2: a.line2 || '',
+      city: a.city || '', state: a.state || '', postal_code: a.postal_code || '',
+    });
+    setShowAddAddr(false);
+  };
+
+  const saveEditAddr = async (customerId: string, addrId: string) => {
+    if (!editAddrForm.line1.trim() || !editAddrForm.city.trim() || !editAddrForm.state.trim() || !editAddrForm.postal_code.trim()) {
+      setError('Street, city, state, and ZIP are required.');
+      return;
+    }
+    setSavingAddr(true);
+    try {
+      const updated = await api(`/customers/${customerId}/addresses/${addrId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editAddrForm),
+      });
+      setAddresses(prev => prev.map(a => a.id === addrId ? { ...a, ...updated } : a));
+      setEditingAddrId(null);
+      setSuccess('Address updated');
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err) {
+      setError((err as ApiError).message || 'Failed to update address');
+    } finally { setSavingAddr(false); }
+  };
+
+  const deleteAddr = async (customerId: string, addrId: string) => {
+    setDeleting(true);
+    try {
+      await api(`/customers/${customerId}/addresses/${addrId}`, { method: 'DELETE' });
+      setAddresses(prev => prev.filter(a => a.id !== addrId));
+      setConfirmDeleteAddr(null);
+      setSuccess('Address deleted');
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err) {
+      setError((err as ApiError).message || 'Failed to delete address');
+    } finally { setDeleting(false); }
+  };
+
+  const saveNewAddr = async (customerId: string) => {
+    if (!addAddrForm.line1.trim() || !addAddrForm.city.trim() || !addAddrForm.state.trim() || !addAddrForm.postal_code.trim()) {
+      setError('Street, city, state, and ZIP are required.');
+      return;
+    }
+    setSavingAddr(true);
+    try {
+      const res = await api(`/customers/${customerId}/addresses`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...addAddrForm, is_default: addresses.length === 0 }),
+      });
+      // Refresh the addresses list to get normalized values back from server
+      const data = await api(`/customers/${customerId}/addresses`);
+      setAddresses(data.addresses || []);
+      setShowAddAddr(false);
+      setAddAddrForm(emptyAddrForm());
+      setSuccess('Address added');
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err) {
+      setError((err as ApiError).message || 'Failed to add address');
+    } finally { setSavingAddr(false); }
+  };
+
+  /* ── Delete customer ── */
+  const deleteCustomer = async (customerId: string) => {
+    setDeleting(true);
+    try {
+      await api(`/customers/${customerId}`, { method: 'DELETE' });
+      setAllCustomers(prev => prev.filter(c => c.id !== customerId));
+      if (searchResults) setSearchResults(prev => prev ? prev.filter(c => c.id !== customerId) : null);
+      setExpanded(null);
+      setConfirmDeleteCustomer(null);
+      setSuccess('Customer deleted');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError((err as ApiError).message || 'Failed to delete customer');
+      setConfirmDeleteCustomer(null);
+    } finally { setDeleting(false); }
+  };
+
+  /* ── Create customer ── */
   const createCustomer = async () => {
     if (!newPhone.trim()) return;
-    setCreating(true);
-    setError('');
+    setCreating(true); setError('');
     try {
       await api('/customers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newName || 'Walk-in Customer', phone: newPhone, customer_type: newType }),
       });
-      setShowCreate(false);
-      setNewName('');
-      setNewPhone('');
-      setNewType('residential');
-      const refreshed = await api('/customers');
-      setAllCustomers(refreshed.results || []);
-      setQ('');
-      setSearchResults(null);
+      setShowCreate(false); setNewName(''); setNewPhone(''); setNewType('residential');
+      await refreshCustomers();
+      setQ(''); setSearchResults(null);
     } catch (err) {
       setError((err as ApiError).message || 'Create failed');
-    } finally {
-      setCreating(false);
-    }
+    } finally { setCreating(false); }
   };
 
   if (!requireRole(['dispatcher'])) return <div className="page"><p>Unauthorized</p></div>;
@@ -143,6 +322,8 @@ export default function CustomerSearchPage() {
     <>
       <style>{styles}</style>
       <div className="page cs-page">
+
+        {/* Top bar */}
         <div className="cs-top">
           <div>
             <h1>Customers</h1>
@@ -156,30 +337,37 @@ export default function CustomerSearchPage() {
 
         {/* Search bar */}
         <div className="cs-search-bar card">
-          <span className="cs-search-icon">{'\uD83D\uDD0D'}</span>
+          <span className="cs-search-icon">🔍</span>
           <input
             ref={inputRef}
             className="cs-search-input"
-            placeholder="Filter by name, phone, or address\u2026"
+            placeholder="Filter by name, phone, or address…"
             value={q}
             onChange={e => handleQueryChange(e.target.value)}
             autoFocus
           />
-          {q && <button className="btn btn-ghost btn-sm" onClick={() => { setQ(''); setSearchResults(null); }}>{'\u2715'}</button>}
+          {q && <button className="btn btn-ghost btn-sm" onClick={() => { setQ(''); setSearchResults(null); }}>✕</button>}
           {searchLoading && <div className="spinner" />}
         </div>
 
-        {error && <div className="alert alert-error" style={{ marginBottom: 16 }}><span>{'\u26A0'}</span> {error}</div>}
-        {success && <div className="alert alert-success" style={{ marginBottom: 16 }}><span>{'\u2713'}</span> {success}</div>}
+        {error && (
+          <div className="alert alert-error" style={{ marginBottom: 16 }}>
+            <span>⚠</span> {error}
+            <button style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }} onClick={() => setError('')}>✕</button>
+          </div>
+        )}
+        {success && <div className="alert alert-success" style={{ marginBottom: 16 }}><span>✓</span> {success}</div>}
 
-        {/* Loading */}
-        {loading && <div style={{ textAlign: 'center', padding: 40 }}><div className="spinner spinner-lg" style={{ margin: '0 auto' }} /></div>}
+        {loading && (
+          <div style={{ textAlign: 'center', padding: 40 }}>
+            <div className="spinner spinner-lg" style={{ margin: '0 auto' }} />
+          </div>
+        )}
 
-        {/* Empty state */}
         {!loading && displayed.length === 0 && (
           <div className="card">
             <div className="empty-state">
-              <div className="empty-state-icon">{'\uD83D\uDC64'}</div>
+              <div className="empty-state-icon">👤</div>
               <div className="empty-state-title">{q ? 'No matching customers' : 'No customers yet'}</div>
               <div className="empty-state-desc">{q ? 'Try a different search term or create a new customer.' : 'Create your first customer to get started.'}</div>
               <button className="btn btn-secondary btn-sm" onClick={() => { setShowCreate(true); if (q) setNewPhone(q); }} style={{ marginTop: 8 }}>
@@ -205,17 +393,22 @@ export default function CustomerSearchPage() {
               <tbody>
                 {displayed.map(r => {
                   const isCommercial = r.customer_type === 'commercial';
+                  const isExpanded = expanded === r.id;
                   return (
-                    <> 
-                      <tr key={r.id} onClick={() => toggleExpand(r.id)} style={{ cursor: 'pointer' }}>
+                    <>
+                      <tr key={r.id} onClick={() => toggleExpand(r.id)} style={{ cursor: 'pointer' }} className={isExpanded ? 'cs-row-expanded' : ''}>
                         <td>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             <div className={`cs-avatar${isCommercial ? ' commercial' : ''}`}>
-                              {isCommercial ? '\uD83C\uDFE2' : (r.name?.charAt(0)?.toUpperCase() || '?')}
+                              {isCommercial ? '🏢' : (r.name?.charAt(0)?.toUpperCase() || '?')}
                             </div>
                             <div>
                               <div style={{ fontWeight: 600, color: 'var(--gray-900)' }}>{r.name}</div>
-                              {r.exact_phone_match && <span className="pill pill-green" style={{ fontSize: 10, marginTop: 2 }}><span className="pill-dot" />Exact match</span>}
+                              {r.exact_phone_match && (
+                                <span className="pill pill-green" style={{ fontSize: 10, marginTop: 2 }}>
+                                  <span className="pill-dot" />Exact match
+                                </span>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -226,33 +419,240 @@ export default function CustomerSearchPage() {
                             disabled={typeToggling === r.id}
                             title={`Click to switch to ${isCommercial ? 'residential' : 'commercial'}`}
                           >
-                            {typeToggling === r.id ? '\u2026' : (isCommercial ? 'Commercial' : 'Residential')}
+                            {typeToggling === r.id ? '…' : (isCommercial ? 'Commercial' : 'Residential')}
                           </button>
                         </td>
-                        <td className="cs-phone-col" style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>{r.phone_e164}</td>
-                        <td className="cs-last-col">{r.last_ordered ? <span style={{ fontSize: 13 }}>{r.last_ordered}</span> : <span style={{ color: 'var(--gray-300)', fontSize: 13 }}>{'\u2014'}</span>}</td>
+                        <td className="cs-phone-col" style={{ fontSize: 13 }}>{fmtPhone(r.phone_e164)}</td>
+                        <td className="cs-last-col">
+                          {r.last_ordered
+                            ? <span style={{ fontSize: 13 }}>{fmtDate(r.last_ordered)}</span>
+                            : <span style={{ color: 'var(--gray-300)', fontSize: 13 }}>—</span>}
+                        </td>
                         <td>
-                          <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); router.push(`/new-drop?customerId=${r.id}`); }}>
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={e => { e.stopPropagation(); router.push(`/new-drop?customerId=${r.id}`); }}
+                          >
                             New Order
                           </button>
                         </td>
                       </tr>
-                      {expanded === r.id && (
-                        <tr key={`${r.id}-exp`}>
+
+                      {/* ── Expanded panel ── */}
+                      {isExpanded && (
+                        <tr key={`${r.id}-exp`} className="cs-exp-row">
                           <td colSpan={5} style={{ padding: 0 }}>
                             <div className="cs-expand-panel">
-                              <div className="cs-expand-label">Saved Addresses</div>
-                              {addrLoading && <div className="spinner" style={{ margin: '8px 0' }} />}
-                              {!addrLoading && addresses.length === 0 && <p style={{ color: 'var(--gray-400)', fontSize: 13 }}>No saved addresses yet.</p>}
-                              {!addrLoading && addresses.map(a => (
-                                <div key={a.id} className="cs-addr-row">
-                                  <div style={{ flex: 1 }}>
-                                    <div style={{ fontWeight: 600, fontSize: 14 }}>{a.line1}{a.line2 ? `, ${a.line2}` : ''}</div>
-                                    <div style={{ fontSize: 13, color: 'var(--gray-500)' }}>{a.city}, {a.state} {a.postal_code}</div>
+
+                              {/* Customer info edit */}
+                              <div className="cs-section">
+                                <div className="cs-section-label">Customer Info</div>
+                                <div className="cs-info-grid">
+
+                                  {/* Name */}
+                                  <div className="cs-info-field">
+                                    <div className="cs-field-label">Name</div>
+                                    {editingName === r.id ? (
+                                      <div className="cs-inline-edit">
+                                        <input
+                                          className="cs-inline-input"
+                                          value={editName}
+                                          onChange={e => setEditName(e.target.value)}
+                                          onKeyDown={e => { if (e.key === 'Enter') saveName(r.id); if (e.key === 'Escape') setEditingName(null); }}
+                                          autoFocus
+                                        />
+                                        <button className="btn btn-primary btn-xs" disabled={savingField === 'name'} onClick={() => saveName(r.id)}>
+                                          {savingField === 'name' ? '…' : 'Save'}
+                                        </button>
+                                        <button className="btn btn-ghost btn-xs" onClick={() => setEditingName(null)}>Cancel</button>
+                                      </div>
+                                    ) : (
+                                      <div className="cs-field-value">
+                                        {r.name}
+                                        <button className="cs-edit-btn" onClick={e => { e.stopPropagation(); startEditName(r); }}>Edit</button>
+                                      </div>
+                                    )}
                                   </div>
-                                  {a.is_default && <span className="pill pill-green" style={{ fontSize: 10 }}>Default</span>}
+
+                                  {/* Phone */}
+                                  <div className="cs-info-field">
+                                    <div className="cs-field-label">Phone</div>
+                                    {editingPhone === r.id ? (
+                                      <div className="cs-inline-edit">
+                                        <input
+                                          className="cs-inline-input"
+                                          value={editPhone}
+                                          onChange={e => setEditPhone(e.target.value)}
+                                          onKeyDown={e => { if (e.key === 'Enter') savePhone(r.id); if (e.key === 'Escape') setEditingPhone(null); }}
+                                          autoFocus
+                                          placeholder="(555) 000-0000"
+                                        />
+                                        <button className="btn btn-primary btn-xs" disabled={savingField === 'phone'} onClick={() => savePhone(r.id)}>
+                                          {savingField === 'phone' ? '…' : 'Save'}
+                                        </button>
+                                        <button className="btn btn-ghost btn-xs" onClick={() => setEditingPhone(null)}>Cancel</button>
+                                      </div>
+                                    ) : (
+                                      <div className="cs-field-value">
+                                        {fmtPhone(r.phone_e164)}
+                                        <button className="cs-edit-btn" onClick={e => { e.stopPropagation(); startEditPhone(r); }}>Edit</button>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Last order */}
+                                  <div className="cs-info-field">
+                                    <div className="cs-field-label">Last Order</div>
+                                    <div className="cs-field-value">
+                                      {r.last_ordered ? fmtDate(r.last_ordered) : <span style={{ color: 'var(--gray-400)' }}>No orders yet</span>}
+                                    </div>
+                                  </div>
+
                                 </div>
-                              ))}
+                              </div>
+
+                              {/* Addresses */}
+                              <div className="cs-section">
+                                <div className="cs-section-label">Delivery Addresses</div>
+
+                                {addrLoading && <div className="spinner" style={{ margin: '8px 0' }} />}
+
+                                {!addrLoading && addresses.length === 0 && !showAddAddr && (
+                                  <p style={{ color: 'var(--gray-400)', fontSize: 13, margin: '4px 0 10px' }}>No saved addresses yet.</p>
+                                )}
+
+                                {!addrLoading && addresses.map(a => (
+                                  <div key={a.id} className="cs-addr-card">
+                                    {editingAddrId === a.id ? (
+                                      /* Edit form */
+                                      <div className="cs-addr-form">
+                                        <div className="cs-addr-form-grid">
+                                          <div className="cs-form-field cs-form-full">
+                                            <label>Street</label>
+                                            <input value={editAddrForm.line1} onChange={e => setEditAddrForm(f => ({ ...f, line1: e.target.value }))} placeholder="123 Colony Drive" />
+                                          </div>
+                                          <div className="cs-form-field cs-form-full">
+                                            <label>Apt / Suite (optional)</label>
+                                            <input value={editAddrForm.line2} onChange={e => setEditAddrForm(f => ({ ...f, line2: e.target.value }))} placeholder="Unit 4B" />
+                                          </div>
+                                          <div className="cs-form-field">
+                                            <label>City</label>
+                                            <input value={editAddrForm.city} onChange={e => setEditAddrForm(f => ({ ...f, city: e.target.value }))} placeholder="Hampden" />
+                                          </div>
+                                          <div className="cs-form-field cs-form-short">
+                                            <label>State</label>
+                                            <input value={editAddrForm.state} onChange={e => setEditAddrForm(f => ({ ...f, state: e.target.value }))} placeholder="MA" maxLength={2} />
+                                          </div>
+                                          <div className="cs-form-field cs-form-short">
+                                            <label>ZIP</label>
+                                            <input value={editAddrForm.postal_code} onChange={e => setEditAddrForm(f => ({ ...f, postal_code: e.target.value }))} placeholder="01036" maxLength={10} />
+                                          </div>
+                                        </div>
+                                        <div className="cs-form-actions">
+                                          <button className="btn btn-primary btn-sm" disabled={savingAddr} onClick={() => saveEditAddr(r.id, a.id)}>
+                                            {savingAddr ? 'Saving…' : 'Save Address'}
+                                          </button>
+                                          <button className="btn btn-ghost btn-sm" onClick={() => setEditingAddrId(null)}>Cancel</button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      /* Read view */
+                                      <div className="cs-addr-read">
+                                        <div className="cs-addr-text">
+                                          <div className="cs-addr-line1">{a.line1}{a.line2 ? `, ${a.line2}` : ''}</div>
+                                          <div className="cs-addr-line2">{a.city}, {a.state} {a.postal_code}</div>
+                                        </div>
+                                        <div className="cs-addr-actions">
+                                          {a.is_default && <span className="pill pill-green pill-sm"><span className="pill-dot" />Default</span>}
+                                          <button className="cs-edit-btn" onClick={e => { e.stopPropagation(); startEditAddr(a); }}>Edit</button>
+                                          {confirmDeleteAddr === a.id ? (
+                                            <span className="cs-confirm-delete">
+                                              Delete?
+                                              <button className="cs-confirm-yes" disabled={deleting} onClick={e => { e.stopPropagation(); deleteAddr(r.id, a.id); }}>
+                                                {deleting ? '…' : 'Yes'}
+                                              </button>
+                                              <button className="cs-confirm-no" onClick={e => { e.stopPropagation(); setConfirmDeleteAddr(null); }}>No</button>
+                                            </span>
+                                          ) : (
+                                            <button className="cs-delete-btn" onClick={e => { e.stopPropagation(); setConfirmDeleteAddr(a.id); }}>Delete</button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+
+                                {/* Add address form */}
+                                {showAddAddr ? (
+                                  <div className="cs-addr-card cs-addr-card-new">
+                                    <div className="cs-addr-form">
+                                      <div className="cs-addr-form-grid">
+                                        <div className="cs-form-field cs-form-full">
+                                          <label>Street</label>
+                                          <input value={addAddrForm.line1} onChange={e => setAddAddrForm(f => ({ ...f, line1: e.target.value }))} placeholder="123 Colony Drive" autoFocus />
+                                        </div>
+                                        <div className="cs-form-field cs-form-full">
+                                          <label>Apt / Suite (optional)</label>
+                                          <input value={addAddrForm.line2} onChange={e => setAddAddrForm(f => ({ ...f, line2: e.target.value }))} placeholder="Unit 4B" />
+                                        </div>
+                                        <div className="cs-form-field">
+                                          <label>City</label>
+                                          <input value={addAddrForm.city} onChange={e => setAddAddrForm(f => ({ ...f, city: e.target.value }))} placeholder="Hampden" />
+                                        </div>
+                                        <div className="cs-form-field cs-form-short">
+                                          <label>State</label>
+                                          <input value={addAddrForm.state} onChange={e => setAddAddrForm(f => ({ ...f, state: e.target.value }))} placeholder="MA" maxLength={2} />
+                                        </div>
+                                        <div className="cs-form-field cs-form-short">
+                                          <label>ZIP</label>
+                                          <input value={addAddrForm.postal_code} onChange={e => setAddAddrForm(f => ({ ...f, postal_code: e.target.value }))} placeholder="01036" maxLength={10} />
+                                        </div>
+                                      </div>
+                                      <div className="cs-form-actions">
+                                        <button className="btn btn-primary btn-sm" disabled={savingAddr} onClick={() => saveNewAddr(r.id)}>
+                                          {savingAddr ? 'Saving…' : 'Add Address'}
+                                        </button>
+                                        <button className="btn btn-ghost btn-sm" onClick={() => { setShowAddAddr(false); setAddAddrForm(emptyAddrForm()); }}>Cancel</button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <button
+                                    className="cs-add-addr-btn"
+                                    onClick={e => { e.stopPropagation(); setShowAddAddr(true); setEditingAddrId(null); }}
+                                  >
+                                    + Add Address
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Footer: New Order + Delete Customer */}
+                              <div className="cs-expand-footer">
+                                <button
+                                  className="btn btn-primary btn-sm"
+                                  onClick={e => { e.stopPropagation(); router.push(`/new-drop?customerId=${r.id}`); }}
+                                >
+                                  New Order →
+                                </button>
+
+                                {confirmDeleteCustomer === r.id ? (
+                                  <span className="cs-confirm-delete cs-confirm-destructive">
+                                    <span>Delete <strong>{r.name}</strong>?</span>
+                                    <button className="cs-confirm-yes" disabled={deleting} onClick={e => { e.stopPropagation(); deleteCustomer(r.id); }}>
+                                      {deleting ? 'Deleting…' : 'Yes, delete'}
+                                    </button>
+                                    <button className="cs-confirm-no" onClick={e => { e.stopPropagation(); setConfirmDeleteCustomer(null); }}>Cancel</button>
+                                  </span>
+                                ) : (
+                                  <button
+                                    className="cs-delete-customer-btn"
+                                    onClick={e => { e.stopPropagation(); setConfirmDeleteCustomer(r.id); }}
+                                  >
+                                    Delete Customer
+                                  </button>
+                                )}
+                              </div>
+
                             </div>
                           </td>
                         </tr>
@@ -265,32 +665,38 @@ export default function CustomerSearchPage() {
           </div>
         )}
 
-        {/* Create customer modal */}
+        {/* ── Create customer modal ── */}
         {showCreate && (
           <div className="modal-overlay" onClick={() => setShowCreate(false)}>
             <div className="modal-card" onClick={e => e.stopPropagation()}>
               <div className="modal-header">
                 <h2>New Customer</h2>
-                <button className="btn btn-ghost btn-sm" onClick={() => setShowCreate(false)}>{'\u2715'}</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setShowCreate(false)} style={{ fontSize: 18, padding: '4px 8px' }}>✕</button>
               </div>
               <div className="modal-body">
                 <div className="form-group">
-                  <label className="form-label">Phone Number *</label>
-                  <input type="tel" placeholder="(555) 555-0142" value={newPhone} onChange={e => setNewPhone(e.target.value)} autoFocus />
+                  <label className="form-label">Phone Number <span style={{ color: 'var(--red-500)' }}>*</span></label>
+                  <input
+                    type="tel"
+                    value={newPhone}
+                    onChange={e => setNewPhone(e.target.value)}
+                    placeholder="(555) 000-0000"
+                    autoFocus
+                  />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Name</label>
-                  <input placeholder="Customer name (optional)" value={newName} onChange={e => setNewName(e.target.value)} />
+                  <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Customer name" />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Customer Type</label>
+                  <label className="form-label">Account Type</label>
                   <div className="cs-type-selector">
                     <button
                       className={`cs-type-opt${newType === 'residential' ? ' active' : ''}`}
                       onClick={() => setNewType('residential')}
                       type="button"
                     >
-                      <span className="cs-type-opt-icon">{'\uD83C\uDFE0'}</span>
+                      <span className="cs-type-opt-icon">🏠</span>
                       <span className="cs-type-opt-label">Residential</span>
                       <span className="cs-type-opt-desc">Standard homeowner delivery</span>
                     </button>
@@ -299,9 +705,9 @@ export default function CustomerSearchPage() {
                       onClick={() => setNewType('commercial')}
                       type="button"
                     >
-                      <span className="cs-type-opt-icon">{'\uD83C\uDFE2'}</span>
+                      <span className="cs-type-opt-icon">🏢</span>
                       <span className="cs-type-opt-label">Commercial</span>
-                      <span className="cs-type-opt-desc">Contractor / landscaper — priority delivery</span>
+                      <span className="cs-type-opt-desc">Contractor / landscaper</span>
                     </button>
                   </div>
                 </div>
@@ -309,12 +715,13 @@ export default function CustomerSearchPage() {
               <div className="modal-footer">
                 <button className="btn btn-ghost" onClick={() => setShowCreate(false)}>Cancel</button>
                 <button className="btn btn-primary" onClick={createCustomer} disabled={creating || !newPhone.trim()}>
-                  {creating ? 'Creating\u2026' : 'Create Customer'}
+                  {creating ? 'Creating…' : 'Create Customer'}
                 </button>
               </div>
             </div>
           </div>
         )}
+
       </div>
     </>
   );
@@ -330,16 +737,84 @@ const styles = `
   .cs-search-input { border: none !important; box-shadow: none !important; padding: 6px 4px; font-size: 15px; flex: 1; }
   .cs-search-input:focus { border: none !important; box-shadow: none !important; }
 
+  /* Avatar */
   .cs-avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--green-100); color: var(--green-700); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px; flex-shrink: 0; }
-  .cs-avatar.commercial { background: var(--blue-100, #dbeafe); color: var(--blue-700, #1d4ed8); font-size: 16px; font-weight: normal; }
+  .cs-avatar.commercial { background: var(--blue-100,#dbeafe); color: var(--blue-700,#1d4ed8); font-size: 16px; font-weight: normal; }
 
-  /* Type toggle button in table */
+  /* Type toggle */
   .cs-type-toggle { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; border: 1px solid transparent; cursor: pointer; transition: all 0.15s; font-family: inherit; line-height: 1.4; }
   .cs-type-toggle.residential { background: var(--gray-100); color: var(--gray-600); border-color: var(--gray-200); }
-  .cs-type-toggle.residential:hover { background: var(--blue-50, #eff6ff); color: var(--blue-700, #1d4ed8); border-color: var(--blue-200, #bfdbfe); }
-  .cs-type-toggle.commercial { background: var(--blue-50, #eff6ff); color: var(--blue-700, #1d4ed8); border-color: var(--blue-200, #bfdbfe); }
+  .cs-type-toggle.residential:hover { background: var(--blue-50,#eff6ff); color: var(--blue-700,#1d4ed8); border-color: var(--blue-200,#bfdbfe); }
+  .cs-type-toggle.commercial { background: var(--blue-50,#eff6ff); color: var(--blue-700,#1d4ed8); border-color: var(--blue-200,#bfdbfe); }
   .cs-type-toggle.commercial:hover { background: var(--gray-100); color: var(--gray-600); border-color: var(--gray-200); }
   .cs-type-toggle:disabled { opacity: 0.5; cursor: wait; }
+
+  /* Expanded row */
+  .cs-row-expanded td { background: var(--green-25,#f0fdf4); }
+  .cs-exp-row td { padding: 0 !important; }
+  .cs-expand-panel { border-top: 2px solid var(--green-200,#bbf7d0); background: var(--gray-25,#fafafa); }
+
+  /* Sections inside expand panel */
+  .cs-section { padding: 16px 20px; border-bottom: 1px solid var(--border-light); }
+  .cs-section:last-of-type { border-bottom: none; }
+  .cs-section-label { font-family: var(--font-heading); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--gray-400); margin-bottom: 12px; }
+
+  /* Customer info grid */
+  .cs-info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+  .cs-info-field { display: flex; flex-direction: column; gap: 4px; }
+  .cs-field-label { font-size: 11px; font-weight: 600; color: var(--gray-400); text-transform: uppercase; letter-spacing: 0.05em; }
+  .cs-field-value { font-size: 14px; font-weight: 500; color: var(--gray-800); display: flex; align-items: center; gap: 8px; }
+  .cs-edit-btn { font-size: 11px; font-weight: 600; color: var(--green-600); background: none; border: none; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: all 0.12s; }
+  .cs-edit-btn:hover { background: var(--green-50); }
+
+  /* Inline edit */
+  .cs-inline-edit { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .cs-inline-input { padding: 5px 8px; border: 1px solid var(--green-400); border-radius: var(--radius-sm); font-size: 13px; font-family: inherit; flex: 1; min-width: 120px; }
+  .cs-inline-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(15,133,48,0.15); }
+
+  /* btn-xs */
+  .btn-xs { padding: 4px 10px !important; font-size: 12px !important; }
+
+  /* Address cards */
+  .cs-addr-card { background: var(--surface); border: 1px solid var(--border-light); border-radius: var(--radius-md); margin-bottom: 8px; overflow: hidden; }
+  .cs-addr-card:last-of-type { margin-bottom: 0; }
+  .cs-addr-card-new { border-color: var(--green-300); border-style: dashed; }
+  .cs-addr-read { display: flex; align-items: flex-start; justify-content: space-between; padding: 10px 14px; gap: 12px; }
+  .cs-addr-text { flex: 1; min-width: 0; }
+  .cs-addr-line1 { font-size: 14px; font-weight: 600; color: var(--gray-800); }
+  .cs-addr-line2 { font-size: 12px; color: var(--gray-500); margin-top: 2px; }
+  .cs-addr-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; flex-wrap: wrap; }
+  .cs-delete-btn { font-size: 11px; font-weight: 600; color: var(--red-500); background: none; border: none; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: all 0.12s; }
+  .cs-delete-btn:hover { background: var(--red-50); }
+
+  /* Address form */
+  .cs-addr-form { padding: 14px; }
+  .cs-addr-form-grid { display: grid; grid-template-columns: 1fr 1fr 80px 80px; gap: 8px; align-items: end; }
+  @media (max-width: 600px) { .cs-addr-form-grid { grid-template-columns: 1fr 1fr; } }
+  .cs-form-field { display: flex; flex-direction: column; gap: 4px; }
+  .cs-form-field label { font-size: 11px; font-weight: 600; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.05em; }
+  .cs-form-field input { padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; font-family: inherit; background: var(--surface); }
+  .cs-form-field input:focus { outline: none; border-color: var(--green-400); box-shadow: 0 0 0 2px rgba(15,133,48,0.1); }
+  .cs-form-full { grid-column: 1 / -1; }
+  .cs-form-short { min-width: 0; }
+  .cs-form-actions { display: flex; gap: 8px; margin-top: 10px; }
+
+  /* Confirm delete inline */
+  .cs-confirm-delete { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--gray-600); }
+  .cs-confirm-yes { font-size: 12px; font-weight: 700; color: var(--red-600); background: var(--red-50); border: 1px solid var(--red-200); border-radius: 4px; padding: 2px 8px; cursor: pointer; }
+  .cs-confirm-yes:hover { background: var(--red-100); }
+  .cs-confirm-no { font-size: 12px; color: var(--gray-500); background: none; border: none; cursor: pointer; padding: 2px 6px; }
+  .cs-confirm-destructive { padding: 8px 0; flex-wrap: wrap; row-gap: 4px; }
+  .cs-confirm-destructive span:first-child { font-size: 13px; color: var(--gray-700); }
+
+  /* Add address button */
+  .cs-add-addr-btn { margin-top: 8px; padding: 7px 14px; border: 1.5px dashed var(--border); border-radius: var(--radius-md); background: none; font-family: var(--font-heading); font-size: 12px; font-weight: 600; color: var(--gray-500); cursor: pointer; transition: all 0.15s; width: 100%; text-align: center; }
+  .cs-add-addr-btn:hover { border-color: var(--green-400); color: var(--green-700); background: var(--green-25,#f0fdf4); }
+
+  /* Delete customer */
+  .cs-expand-footer { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; background: var(--surface); border-top: 1px solid var(--border-light); flex-wrap: wrap; gap: 10px; }
+  .cs-delete-customer-btn { font-size: 12px; font-weight: 600; color: var(--gray-400); background: none; border: none; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: all 0.12s; }
+  .cs-delete-customer-btn:hover { color: var(--red-500); background: var(--red-50); }
 
   /* Type selector in create modal */
   .cs-type-selector { display: flex; gap: 10px; }
@@ -353,10 +828,9 @@ const styles = `
   /* Responsive columns */
   @media (max-width: 640px) {
     .cs-phone-col, .cs-last-col { display: none; }
+    .cs-info-grid { grid-template-columns: 1fr; }
+    .cs-type-selector { flex-direction: column; }
+    .cs-addr-read { flex-direction: column; }
+    .cs-addr-actions { justify-content: flex-start; }
   }
-
-  .cs-expand-panel { padding: 16px 20px; background: var(--gray-50); border-top: 1px solid var(--border-light); }
-  .cs-expand-label { font-size: 12px; font-weight: 700; color: var(--gray-400); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
-  .cs-addr-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: var(--radius-md); background: var(--surface); border: 1px solid var(--border-light); margin-bottom: 6px; }
-  .cs-addr-row:last-child { margin-bottom: 0; }
 `;
