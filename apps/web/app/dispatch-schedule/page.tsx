@@ -103,12 +103,9 @@ export default function DispatchSchedulePage() {
   const [slideDropDetail, setSlideDropDetail] = useState<DropDetail | null>(null);
 
   /* ── Driver assignment state ── */
-  const [assignLoadIds, setAssignLoadIds] = useState<string[]>([]);
-  const [assignDriverId, setAssignDriverId] = useState('');
-  const [assignBusy, setAssignBusy] = useState(false);
-  const [assignMsg, setAssignMsg] = useState('');
-  const [reassigningLoadId, setReassigningLoadId] = useState<string | null>(null);
-  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+
+
+
   const [drivers, setDrivers] = useState<Driver[]>([]);
 
   /* ── Compute visible date range ── */
@@ -190,7 +187,7 @@ export default function DispatchSchedulePage() {
   }, [viewMode, visibleRange]);
 
   const fetchSchedule = useCallback(async () => {
-    setScheduleLoading(true); setError(''); setAssignLoadIds([]); setAssignMsg('');
+    setScheduleLoading(true); setError('');
     try {
       const resp = await api(`/dispatch/schedule?day=${toKey(selDate)}`);
       setSchedule(resp);
@@ -232,53 +229,6 @@ export default function DispatchSchedulePage() {
     }
   };
 
-  /* ── Assign loads ── */
-  const handleAssign = async () => {
-    if (!assignLoadIds.length || !assignDriverId) return;
-    setAssignBusy(true); setAssignMsg('');
-    try {
-      await api('/dispatch/loads/assign', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ load_ids: assignLoadIds, driver_user_id: assignDriverId }),
-      });
-      setAssignMsg(`Assigned ${assignLoadIds.length} load(s) successfully.`);
-      setAssignLoadIds([]);
-      await fetchSchedule(); await fetchCapacity(); fetchMonthSummary();
-    } catch (err) {
-      setAssignMsg((err as ApiError).message || 'Assignment failed.');
-    } finally { setAssignBusy(false); }
-  };
-
-  const reassignDriver = async (loadId: string, driverId: string) => {
-    setReassigningLoadId(loadId);
-    try {
-      await api('/dispatch/loads/assign', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ load_ids: [loadId], driver_user_id: driverId || null }),
-      });
-      await fetchSchedule();
-    } catch (err) {
-      setError((err as ApiError).message || 'Reassignment failed');
-    } finally { setReassigningLoadId(null); }
-  };
-
-  const updateLoadStatus = async (loadId: string, newStatus: string) => {
-    setUpdatingStatusId(loadId);
-    try {
-      await api(`/dispatch/loads/${loadId}/status`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
-      });
-      await fetchSchedule(); fetchMonthSummary();
-    } catch (err) {
-      setError((err as ApiError).message || 'Status update failed');
-    } finally { setUpdatingStatusId(null); }
-  };
-
-  const toggleLoad = (loadId: string) => {
-    setAssignLoadIds(prev => prev.includes(loadId) ? prev.filter(id => id !== loadId) : [...prev, loadId]);
-  };
-
   /* ── Flatten loads ── */
   const getPriorityLoads = (): { driver: string; load: LoadItem }[] => {
     if (!schedule) return [];
@@ -304,37 +254,22 @@ export default function DispatchSchedulePage() {
     return result;
   };
 
-  /* ── Render load card ── */
+  /* ── Render load card (read-only — editing via order panel) ── */
   const renderLoadCard = (driver: string, load: LoadItem) => {
     const displayStatus = driver === 'Unassigned' && load.status === 'assigned' ? 'pending' : load.status;
     const pillClass = displayStatus === 'pending' ? 'pill-amber' : (STATUS_PILL[load.status] || 'pill-gray');
     const pillLabel = displayStatus === 'pending' ? 'Pending' : (STATUS_LABEL[load.status] || load.status);
-    const isTerminal = ['delivered', 'cancelled'].includes(load.status);
     return (
       <div key={load.id} className="order-row" onClick={() => openDrop(load.drop_id)}>
-        <label className="order-check" onClick={e => e.stopPropagation()}>
-          <input type="checkbox" checked={assignLoadIds.includes(load.id)} onChange={() => toggleLoad(load.id)} />
-        </label>
         <div className="order-info">
           <div className="order-ref">#{load.order_ref}</div>
           <div className="order-customer">{load.customer_name}</div>
           <div className="order-addr">{load.address_short}</div>
           <div className="order-material">{load.material} x{load.qty} {load.unit}</div>
-          <div className="order-driver-row" onClick={e => e.stopPropagation()}>
-            {isTerminal ? (
-              <span className="order-driver">{load.driver_name || '—'}</span>
-            ) : (
-              <select
-                className="order-driver-select"
-                value={load.driver_user_id || ''}
-                disabled={reassigningLoadId === load.id}
-                onChange={e => { e.stopPropagation(); reassignDriver(load.id, e.target.value); }}
-              >
-                <option value="">⚠️ Unassigned</option>
-                {drivers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
-            )}
-            {reassigningLoadId === load.id && <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />}
+          <div className="order-driver">
+            {load.driver_name
+              ? <span>🚚 {load.driver_name}</span>
+              : <span className="order-unassigned">⚠ Unassigned</span>}
           </div>
         </div>
         <span className={`pill ${pillClass}`}><span className="pill-dot" />{pillLabel}</span>
@@ -554,21 +489,7 @@ export default function DispatchSchedulePage() {
                   : pmLoads.map(({ driver, load }) => renderLoadCard(driver, load))}
               </div>
 
-              {/* Bulk assign */}
-              {assignLoadIds.length > 0 && (
-                <div className="bulk-assign-bar">
-                  <span className="bulk-assign-count">{assignLoadIds.length} selected</span>
-                  <select value={assignDriverId} onChange={e => setAssignDriverId(e.target.value)} className="bulk-assign-select">
-                    <option value="">Assign driver…</option>
-                    {drivers.map(d => <option key={d.id} value={d.id}>{d.name}{d.truck ? ` (${d.truck})` : ''} — {d.email}</option>)}
-                  </select>
-                  <button className="btn btn-primary btn-sm" onClick={handleAssign} disabled={assignBusy || !assignDriverId}>
-                    {assignBusy ? 'Assigning…' : 'Assign'}
-                  </button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setAssignLoadIds([])}>Clear</button>
-                  {assignMsg && <div style={{ fontSize: 13, color: assignMsg.includes('success') ? 'var(--green-700)' : 'var(--red-700)', width: '100%' }}>{assignMsg}</div>}
-                </div>
-              )}
+
             </>
           )}
         </div>
@@ -688,20 +609,14 @@ const schedulerStyles = `
   /* ── Load cards ── */
   .order-row { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: var(--radius-lg); cursor: pointer; transition: all 0.15s var(--ease-out); border: 1px solid var(--border-light); margin-bottom: 6px; background: var(--surface); }
   .order-row:hover { border-color: var(--green-200); box-shadow: var(--shadow-sm); }
-  .order-check { display: flex; align-items: flex-start; padding-top: 2px; cursor: pointer; }
   .order-info { flex: 1; min-width: 0; }
   .order-ref { font-family: var(--font-heading); font-size: 11px; font-weight: 700; color: var(--gray-400); text-transform: uppercase; letter-spacing: 0.05em; }
   .order-customer { font-family: var(--font-heading); font-size: 14px; font-weight: 700; color: var(--gray-900); }
   .order-addr { font-size: 12px; color: var(--gray-500); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .order-material { font-size: 12px; color: var(--gray-600); font-weight: 500; }
-  .order-driver-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
-  .order-driver { font-size: 12px; color: var(--gray-500); }
-  .order-driver-select { font-size: 12px; font-weight: 500; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); cursor: pointer; font-family: inherit; padding: 3px 6px; }
+  .order-driver { font-size: 12px; color: var(--gray-500); margin-top: 4px; }
+  .order-unassigned { font-size: 12px; color: var(--amber-600,#d97706); font-weight: 600; }
 
-  /* ── Bulk assign bar ── */
-  .bulk-assign-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 14px 24px; border-top: 2px solid var(--green-200); background: var(--green-25); }
-  .bulk-assign-count { font-family: var(--font-heading); font-size: 13px; font-weight: 700; color: var(--green-700); }
-  .bulk-assign-select { flex: 1; min-width: 0; padding: 6px 8px; font-size: 13px; font-weight: 500; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); cursor: pointer; font-family: inherit; }
   .dm-status-select { width: auto; min-width: 140px; padding: 4px 8px; font-size: 12px; font-weight: 600; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); cursor: pointer; font-family: inherit; }
 
   /* ── Responsive layout ── */
