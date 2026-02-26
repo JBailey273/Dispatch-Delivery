@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ApiError, api, requireRole } from '../../lib/auth';
+import { ApiError, api, requireRole } from '../../../lib/auth';
 import DropRescheduleSlideOver from '../../../components/DropRescheduleSlideOver';
 import type { SlideOverDropDetail } from '../../../components/DropRescheduleSlideOver';
 
