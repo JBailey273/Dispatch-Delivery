@@ -6,7 +6,7 @@ import { ApiError, api, requireRole } from '../lib/auth';
 
 /* ── Types ── */
 type CatalogItem = { sku: string; name: string; active: boolean; delivery_mode: string; bulk_group: string; unit?: string };
-type CustomerResult = { id: string; name: string; phone_e164: string; last_ordered?: string | null; exact_phone_match?: boolean };
+type CustomerResult = { id: string; name: string; phone_e164: string; customer_type?: string; last_ordered?: string | null; exact_phone_match?: boolean };
 type Address = { id: string; line1: string; line2?: string; city: string; state: string; postal_code: string; is_default?: boolean };
 type CartItem = { sku: string; qty: number };
 type AvailWindow = { date: string; window: string; used: number; total: number; remaining_capacity: number; available: boolean };
@@ -40,16 +40,20 @@ function NewDropPage() {
   const searchRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState('');
 
-  // Customer search — single unified field
+  // Customer search
   const [searchQuery, setSearchQuery] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [newCustomerPhone, setNewCustomerPhone] = useState('');
   const [newCustomerName, setNewCustomerName] = useState('');
+  const [newCustomerType, setNewCustomerType] = useState<'residential' | 'commercial'>('residential');
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
   const [customer, setCustomer] = useState<CustomerResult | null>(null);
   const [searchResults, setSearchResults] = useState<CustomerResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [resultAddresses, setResultAddresses] = useState<Record<string, Address>>({});
+
+  // Priority delivery
+  const [isPriority, setIsPriority] = useState(false);
 
   // Address
   const [addresses, setAddresses] = useState<Address[]>([]);
@@ -91,6 +95,13 @@ function NewDropPage() {
     }).catch(() => null);
   }, [searchParams]);
 
+  /* ── Auto-set priority when customer type changes ── */
+  useEffect(() => {
+    if (customer) {
+      setIsPriority(customer.customer_type === 'commercial');
+    }
+  }, [customer]);
+
   /* ── Computed ── */
   const requiredLoads = useMemo(() => {
     if (!items.length || !catalog.length) return 0;
@@ -131,12 +142,8 @@ function NewDropPage() {
   const getWindowAvail = (dateStr: string, win: string) => availability.find(w => w.date === dateStr && w.window === win);
   const selectedDateAvail = getWindowAvail(selDate, selectedWindow);
 
-  /* ── Window display labels ── */
-  const windowLabel = (win: string) => {
-    return win === 'A' ? 'Morning Delivery (9am \u2013 1pm)' : 'Afternoon Delivery (1pm \u2013 5pm)';
-  };
+  const windowLabel = (win: string) => win === 'A' ? 'Morning Delivery (9am \u2013 1pm)' : 'Afternoon Delivery (1pm \u2013 5pm)';
 
-  /* ── Format date helper ── */
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr + 'T12:00:00');
     const dow = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][d.getDay()];
@@ -144,15 +151,13 @@ function NewDropPage() {
     return `${dow}, ${mon} ${d.getDate()} ${d.getFullYear()}`;
   };
 
-  /* ── Normalize search input: strip formatting if it looks like a phone ── */
   const normalizeSearch = (raw: string): string => {
     const stripped = raw.replace(/[\s()\-+.]/g, '');
-    // If after stripping it's all digits (and at least 7), treat as phone
     if (/^\d{7,}$/.test(stripped)) return stripped;
     return raw.trim();
   };
 
-  /* ── Customer lookup — works for name or phone ── */
+  /* ── Customer lookup ── */
   const lookup = async () => {
     if (!searchQuery.trim()) return;
     setError('');
@@ -162,6 +167,7 @@ function NewDropPage() {
     setAddressId('');
     setShowNewCustomerForm(false);
     setResultAddresses({});
+    setIsPriority(false);
     try {
       const q = normalizeSearch(searchQuery);
       const s = await api(`/customers/search?q=${encodeURIComponent(q)}`);
@@ -169,7 +175,6 @@ function NewDropPage() {
       const sorted = [...results].sort((a, b) => Number(Boolean(b.exact_phone_match)) - Number(Boolean(a.exact_phone_match)));
       setSearchResults(sorted);
       if (sorted.length === 1) selectCustomer(sorted[0]);
-      // Fetch default address for each result to show in the list
       if (sorted.length > 1) {
         sorted.slice(0, 5).forEach(async (r) => {
           try {
@@ -196,13 +201,15 @@ function NewDropPage() {
     setShowNewCustomerForm(true);
     setNewCustomerPhone('');
     setNewCustomerName('');
+    setNewCustomerType('residential');
+    setIsPriority(false);
   };
 
   const createCustomer = async () => {
     if (!newCustomerPhone.trim()) { setError('Phone number is required to create a customer.'); return; }
     setError('');
     try {
-      const c = await api('/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newCustomerName.trim() || 'Walk-in Customer', phone: newCustomerPhone.trim() }) });
+      const c = await api('/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newCustomerName.trim() || 'Walk-in Customer', phone: newCustomerPhone.trim(), customer_type: newCustomerType }) });
       const created = c.customer || c;
       setShowNewCustomerForm(false);
       setSearchQuery('');
@@ -217,6 +224,7 @@ function NewDropPage() {
     setCustomerName(c.name || '');
     setSearchResults([]);
     setShowNewCustomerForm(false);
+    // Priority auto-sets from the useEffect above
     try {
       const ad = await api(`/customers/${c.id}/addresses`);
       const fetched = ad.addresses || [];
@@ -240,6 +248,7 @@ function NewDropPage() {
     setAddressId('');
     setSearchQuery('');
     setShowNewAddr(false);
+    setIsPriority(false);
     setTimeout(() => searchRef.current?.focus(), 50);
   };
 
@@ -257,15 +266,7 @@ function NewDropPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...newAddr, is_default: addresses.length === 0 }),
       });
-      const saved: Address = {
-        id: res.id,
-        line1: newAddr.line1,
-        line2: newAddr.line2,
-        city: newAddr.city,
-        state: newAddr.state,
-        postal_code: newAddr.postal_code,
-        is_default: addresses.length === 0,
-      };
+      const saved: Address = { id: res.id, line1: newAddr.line1, line2: newAddr.line2, city: newAddr.city, state: newAddr.state, postal_code: newAddr.postal_code, is_default: addresses.length === 0 };
       setAddresses(prev => [...prev, saved]);
       setAddressId(saved.id);
       setNewAddr({ line1: '', line2: '', city: '', state: '', postal_code: '' });
@@ -286,7 +287,7 @@ function NewDropPage() {
   const removeItem = (idx: number) => setItems(items.filter((_, i) => i !== idx));
 
   /* ── Submit ── */
-  const canSubmit = customer && addressId && items.length > 0 && selDate;
+  const canSubmit = customer && addressId && items.length > 0 && selDate && (isPriority || selectedWindow);
   const createDrop = async () => {
     if (!customer || !addressId || !items.length) { setError('Complete all sections before creating.'); return; }
     setError('');
@@ -295,10 +296,21 @@ function NewDropPage() {
       if (customerName.trim() && customerName.trim() !== customer.name) {
         await api(`/customers/${customer.id}/name`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: customerName.trim() }) });
       }
+      const payload: any = {
+        customer: { id: customer.id },
+        address: { address_id: addressId },
+        scheduled_date: selDate,
+        items,
+        is_priority: isPriority,
+      };
+      // Only include window for non-priority drops
+      if (!isPriority) {
+        payload.scheduled_window = selectedWindow;
+      }
       const out = await api('/drops/manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customer: { id: customer.id }, address: { address_id: addressId }, scheduled_date: selDate, scheduled_window: selectedWindow, items }),
+        body: JSON.stringify(payload),
       });
       localStorage.setItem(LAST_WINDOW_KEY, selectedWindow);
       localStorage.setItem(`${LAST_ADDRESS_KEY}${customer.id}`, addressId);
@@ -320,14 +332,19 @@ function NewDropPage() {
           <div className="nd-success-icon">{'\u2713'}</div>
           <h2>Order Created</h2>
           <p style={{ color: 'var(--gray-600)', marginTop: 4 }}>
-            Scheduled for {formatDate(selDate)}, {windowLabel(selectedWindow)}
+            {isPriority ? (
+              <>Priority delivery scheduled for {formatDate(selDate)}</>
+            ) : (
+              <>Scheduled for {formatDate(selDate)}, {windowLabel(selectedWindow)}</>
+            )}
           </p>
+          {isPriority && <span className="pill pill-blue" style={{ marginTop: 4, fontSize: 12 }}>{'\u26A1'} Priority</span>}
           <div className="nd-success-detail">
             <div className="nd-success-row"><span>Drop ID</span><span style={{ fontFamily: 'monospace', fontSize: 13 }}>{result.drop_id}</span></div>
             <div className="nd-success-row"><span>Loads</span><span>{result.load_ids?.length || 0}</span></div>
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-            <button className="btn btn-primary" onClick={() => { setResult(null); setCustomer(null); setItems([]); setSearchQuery(''); setSearchResults([]); setAddressId(''); setAddresses([]); setShowNewAddr(false); }}>New Order</button>
+            <button className="btn btn-primary" onClick={() => { setResult(null); setCustomer(null); setItems([]); setSearchQuery(''); setSearchResults([]); setAddressId(''); setAddresses([]); setShowNewAddr(false); setIsPriority(false); }}>New Order</button>
             <button className="btn btn-secondary" onClick={() => router.push('/dispatch-schedule')}>Schedule</button>
           </div>
         </div>
@@ -342,7 +359,7 @@ function NewDropPage() {
         <div className="nd-top">
           <div>
             <h1>New Order</h1>
-            <p style={{ color: 'var(--gray-500)', marginTop: 2 }}>Search by name or phone — pick any available delivery date</p>
+            <p style={{ color: 'var(--gray-500)', marginTop: 2 }}>Search by name or phone {'\u2014'} pick any available delivery date</p>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={() => router.push('/dispatch-schedule')}>Cancel</button>
         </div>
@@ -377,10 +394,14 @@ function NewDropPage() {
                   <div className="nd-results">
                     {searchResults.slice(0, 5).map(r => {
                       const addr = resultAddresses[r.id];
+                      const isComm = r.customer_type === 'commercial';
                       return (
                         <div key={r.id} className="nd-result-row" onClick={() => selectCustomer(r)}>
                           <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 600 }}>{r.name}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontWeight: 600 }}>{r.name}</span>
+                              {isComm && <span className="pill pill-blue" style={{ fontSize: 10 }}>{'\uD83C\uDFE2'} Commercial</span>}
+                            </div>
                             <div className="text-sm" style={{ color: 'var(--gray-500)' }}>{r.phone_e164}</div>
                             {addr && <div className="text-sm" style={{ color: 'var(--gray-400)', marginTop: 2 }}>{addr.line1}, {addr.city}, {addr.state} {addr.postal_code}</div>}
                           </div>
@@ -405,22 +426,22 @@ function NewDropPage() {
                 <div className="nd-row-2">
                   <div className="form-group">
                     <label className="form-label">Phone Number *</label>
-                    <input
-                      type="tel"
-                      placeholder="(516) 555-0142"
-                      value={newCustomerPhone}
-                      onChange={e => setNewCustomerPhone(e.target.value)}
-                      autoFocus
-                    />
+                    <input type="tel" placeholder="(516) 555-0142" value={newCustomerPhone} onChange={e => setNewCustomerPhone(e.target.value)} autoFocus />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Customer Name</label>
-                    <input
-                      placeholder="Customer name (optional)"
-                      value={newCustomerName}
-                      onChange={e => setNewCustomerName(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && createCustomer()}
-                    />
+                    <input placeholder="Customer name (optional)" value={newCustomerName} onChange={e => setNewCustomerName(e.target.value)} />
+                  </div>
+                </div>
+                <div className="form-group" style={{ marginTop: 8 }}>
+                  <label className="form-label">Customer Type</label>
+                  <div className="nd-type-toggle">
+                    <button className={`nd-type-btn${newCustomerType === 'residential' ? ' active' : ''}`} onClick={() => setNewCustomerType('residential')} type="button">
+                      {'\uD83C\uDFE0'} Residential
+                    </button>
+                    <button className={`nd-type-btn${newCustomerType === 'commercial' ? ' active' : ''}`} onClick={() => setNewCustomerType('commercial')} type="button">
+                      {'\uD83C\uDFE2'} Commercial
+                    </button>
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -432,9 +453,14 @@ function NewDropPage() {
 
             {customer && (
               <div className="nd-returning">
-                <div className="nd-returning-avatar">{customer.name?.charAt(0)?.toUpperCase() || '?'}</div>
+                <div className={`nd-returning-avatar${customer.customer_type === 'commercial' ? ' commercial' : ''}`}>
+                  {customer.customer_type === 'commercial' ? '\uD83C\uDFE2' : (customer.name?.charAt(0)?.toUpperCase() || '?')}
+                </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, color: 'var(--gray-900)' }}>{customer.name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontWeight: 700, color: 'var(--gray-900)' }}>{customer.name}</span>
+                    {customer.customer_type === 'commercial' && <span className="pill pill-blue" style={{ fontSize: 10 }}>{'\uD83C\uDFE2'} Commercial</span>}
+                  </div>
                   <div className="text-sm" style={{ color: 'var(--gray-500)' }}>{'\u2713'} {customer.phone_e164}{customer.last_ordered ? ` \u00B7 Last order ${customer.last_ordered}` : ''}</div>
                 </div>
                 {selectedCustomerLastItems.length > 0 && (
@@ -445,6 +471,38 @@ function NewDropPage() {
             )}
           </div>
         </div>
+
+        {/* ═══ PRIORITY TOGGLE ═══ */}
+        {customer && (
+          <div className={`nd-priority-card card${isPriority ? ' priority-active' : ''}`}>
+            <div className="nd-priority-inner">
+              <div className="nd-priority-left">
+                <div className="nd-priority-icon">{isPriority ? '\u26A1' : '\uD83D\uDCE6'}</div>
+                <div>
+                  <div className="nd-priority-title">{isPriority ? 'Priority Delivery' : 'Standard Delivery'}</div>
+                  <div className="nd-priority-desc">
+                    {isPriority
+                      ? 'Bypasses capacity limits \u2022 No window required \u2022 Appears at top of driver schedule'
+                      : 'Scheduled within AM/PM delivery windows \u2022 Subject to capacity limits'}
+                  </div>
+                </div>
+              </div>
+              <label className="nd-priority-switch">
+                <input
+                  type="checkbox"
+                  checked={isPriority}
+                  onChange={e => setIsPriority(e.target.checked)}
+                />
+                <span className="nd-priority-slider"></span>
+              </label>
+            </div>
+            {isPriority && customer.customer_type !== 'commercial' && (
+              <div className="nd-priority-note">
+                {'\u2139\uFE0F'} This is a residential customer. Priority is typically for commercial/contractor accounts but can be manually enabled.
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ═══ ADDRESS ═══ */}
         <div className="nd-card card">
@@ -508,7 +566,7 @@ function NewDropPage() {
 
         {/* ═══ SCHEDULE — MINI CALENDAR ═══ */}
         <div className="nd-card card">
-          <div className="nd-card-head"><span className="nd-card-icon">{'\uD83D\uDCC5'}</span><span className="nd-card-title">Delivery Date</span></div>
+          <div className="nd-card-head"><span className="nd-card-icon">{'\uD83D\uDCC5'}</span><span className="nd-card-title">Delivery Date{isPriority ? '' : ' & Window'}</span></div>
           <div className="nd-card-body">
             <div className="nd-cal-nav">
               <button className="nd-cal-btn" onClick={() => setCalMonth(p => { const nm = p.m - 1; return nm < 0 ? { y: p.y - 1, m: 11 } : { ...p, m: nm }; })}>{'\u2039'}</button>
@@ -532,10 +590,15 @@ function NewDropPage() {
                       onClick={() => !cell.other && !isPast && setSelDate(k)}
                     >
                       <div className="nd-cal-d">{cell.day}</div>
-                      {!cell.other && !isPast && (
+                      {!cell.other && !isPast && !isPriority && (
                         <div className="nd-cal-dots">
                           <div className={`nd-cal-dot ${awA ? capColor(awA.used, awA.total) : 'empty'}`} title="Morning" />
                           <div className={`nd-cal-dot ${awB ? capColor(awB.used, awB.total) : 'empty'}`} title="Afternoon" />
+                        </div>
+                      )}
+                      {!cell.other && !isPast && isPriority && (
+                        <div className="nd-cal-dots">
+                          <div className="nd-cal-dot" style={{ background: 'var(--blue-400, #60a5fa)', width: 7, height: 7 }} title="Priority — no capacity limit" />
                         </div>
                       )}
                     </div>
@@ -544,24 +607,32 @@ function NewDropPage() {
               </div>
             </div>
 
-            {/* Window selector */}
-            <div className="nd-win-row">
-              <div className="nd-win-label">Delivery window for {formatDate(selDate)}:</div>
-              <div className="nd-win-toggle">
-                <button className={`nd-win-btn${selectedWindow === 'A' ? ' active' : ''}`} onClick={() => setSelectedWindow('A')}>
-                  <span className="nd-win-name">Morning Delivery</span>
-                  <span className="nd-win-time">9:00 AM {'\u2013'} 1:00 PM</span>
-                  {(() => { const a = getWindowAvail(selDate, 'A'); return a ? <span className={`nd-win-cap ${capColor(a.used, a.total)}`}>{a.remaining_capacity} slot{a.remaining_capacity !== 1 ? 's' : ''} open</span> : null; })()}
-                </button>
-                <button className={`nd-win-btn${selectedWindow === 'B' ? ' active' : ''}`} onClick={() => setSelectedWindow('B')}>
-                  <span className="nd-win-name">Afternoon Delivery</span>
-                  <span className="nd-win-time">1:00 PM {'\u2013'} 5:00 PM</span>
-                  {(() => { const a = getWindowAvail(selDate, 'B'); return a ? <span className={`nd-win-cap ${capColor(a.used, a.total)}`}>{a.remaining_capacity} slot{a.remaining_capacity !== 1 ? 's' : ''} open</span> : null; })()}
-                </button>
+            {/* Window selector — hidden for priority */}
+            {!isPriority && (
+              <div className="nd-win-row">
+                <div className="nd-win-label">Delivery window for {formatDate(selDate)}:</div>
+                <div className="nd-win-toggle">
+                  <button className={`nd-win-btn${selectedWindow === 'A' ? ' active' : ''}`} onClick={() => setSelectedWindow('A')}>
+                    <span className="nd-win-name">Morning Delivery</span>
+                    <span className="nd-win-time">9:00 AM {'\u2013'} 1:00 PM</span>
+                    {(() => { const a = getWindowAvail(selDate, 'A'); return a ? <span className={`nd-win-cap ${capColor(a.used, a.total)}`}>{a.remaining_capacity} slot{a.remaining_capacity !== 1 ? 's' : ''} open</span> : null; })()}
+                  </button>
+                  <button className={`nd-win-btn${selectedWindow === 'B' ? ' active' : ''}`} onClick={() => setSelectedWindow('B')}>
+                    <span className="nd-win-name">Afternoon Delivery</span>
+                    <span className="nd-win-time">1:00 PM {'\u2013'} 5:00 PM</span>
+                    {(() => { const a = getWindowAvail(selDate, 'B'); return a ? <span className={`nd-win-cap ${capColor(a.used, a.total)}`}>{a.remaining_capacity} slot{a.remaining_capacity !== 1 ? 's' : ''} open</span> : null; })()}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
-            {selectedDateAvail && !selectedDateAvail.available && (
+            {isPriority && (
+              <div className="nd-priority-schedule-note">
+                {'\u26A1'} Priority delivery for <strong>{formatDate(selDate)}</strong> {'\u2014'} no window assignment needed. This delivery will appear at the top of the driver{'\u2019'}s schedule.
+              </div>
+            )}
+
+            {!isPriority && selectedDateAvail && !selectedDateAvail.available && (
               <div className="alert alert-error" style={{ marginTop: 8, fontSize: 13 }}><span>{'\u2715'}</span> Not enough capacity for {requiredLoads} load{requiredLoads !== 1 ? 's' : ''} in this window</div>
             )}
           </div>
@@ -608,6 +679,7 @@ function NewDropPage() {
         <div className="nd-submit-bar">
           <button className="btn btn-ghost" onClick={() => router.push('/dispatch-schedule')}>Cancel</button>
           <div style={{ flex: 1 }} />
+          {isPriority && <span className="pill pill-blue" style={{ fontSize: 12, marginRight: 8 }}>{'\u26A1'} Priority</span>}
           <button className="btn btn-primary btn-lg" onClick={createDrop} disabled={!canSubmit || submitting}>
             {submitting ? 'Creating\u2026' : '\u2713 Confirm & Schedule'}
           </button>
@@ -634,6 +706,12 @@ const pageStyles = `
   /* New customer form */
   .nd-new-customer-form { padding: 16px; background: var(--gray-50); border: 1px solid var(--border-light); border-radius: var(--radius-md); }
 
+  /* New customer type toggle */
+  .nd-type-toggle { display: flex; gap: 6px; }
+  .nd-type-btn { padding: 8px 14px; border: 2px solid var(--border); border-radius: var(--radius-md); background: var(--surface); cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600; color: var(--gray-600); transition: all 0.15s; }
+  .nd-type-btn:hover { border-color: var(--gray-300); }
+  .nd-type-btn.active { border-color: var(--green-400); background: var(--green-50); color: var(--green-700); }
+
   /* Customer results */
   .nd-results { border: 1px solid var(--border-light); border-radius: var(--radius-md); overflow: hidden; margin-top: 12px; }
   .nd-result-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; cursor: pointer; transition: background 0.12s; border-bottom: 1px solid var(--border-light); }
@@ -643,7 +721,35 @@ const pageStyles = `
   /* Returning customer banner */
   .nd-returning { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--green-50); border: 1px solid var(--green-200); border-radius: var(--radius-md); }
   .nd-returning-avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--green-600); color: white; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px; flex-shrink: 0; }
+  .nd-returning-avatar.commercial { background: var(--blue-600, #2563eb); font-size: 18px; font-weight: normal; }
   @media (max-width: 500px) { .nd-returning { flex-wrap: wrap; } }
+
+  /* Priority delivery card */
+  .nd-priority-card { margin-bottom: 16px; transition: all 0.2s; }
+  .nd-priority-card.priority-active { border-color: var(--blue-300, #93c5fd); background: var(--blue-50, #eff6ff); }
+  .nd-priority-inner { display: flex; align-items: center; gap: 14px; padding: 16px 20px; }
+  .nd-priority-left { display: flex; align-items: center; gap: 12px; flex: 1; }
+  .nd-priority-icon { font-size: 24px; flex-shrink: 0; }
+  .nd-priority-title { font-size: 15px; font-weight: 700; color: var(--gray-800); }
+  .nd-priority-card.priority-active .nd-priority-title { color: var(--blue-800, #1e40af); }
+  .nd-priority-desc { font-size: 12px; color: var(--gray-500); margin-top: 2px; line-height: 1.4; }
+  .nd-priority-card.priority-active .nd-priority-desc { color: var(--blue-600, #2563eb); }
+  .nd-priority-note { padding: 10px 20px 14px; font-size: 12px; color: var(--amber-700, #b45309); background: var(--amber-50, #fffbeb); border-top: 1px solid var(--amber-200, #fde68a); }
+  @media (max-width: 500px) { .nd-priority-inner { flex-direction: column; align-items: flex-start; gap: 10px; } }
+
+  /* Priority toggle switch */
+  .nd-priority-switch { position: relative; display: inline-block; width: 48px; height: 26px; flex-shrink: 0; }
+  .nd-priority-switch input { opacity: 0; width: 0; height: 0; }
+  .nd-priority-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: var(--gray-300); border-radius: 26px; transition: 0.2s; }
+  .nd-priority-slider:before { content: ''; position: absolute; height: 20px; width: 20px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.2s; }
+  .nd-priority-switch input:checked + .nd-priority-slider { background: var(--blue-500, #3b82f6); }
+  .nd-priority-switch input:checked + .nd-priority-slider:before { transform: translateX(22px); }
+
+  /* Priority schedule note */
+  .nd-priority-schedule-note { margin-top: 16px; padding: 12px 16px; background: var(--blue-50, #eff6ff); border: 1px solid var(--blue-200, #bfdbfe); border-radius: var(--radius-md); font-size: 13px; color: var(--blue-700, #1d4ed8); line-height: 1.5; }
+
+  /* Blue pill for priority badges */
+  .pill-blue { background: var(--blue-50, #eff6ff); color: var(--blue-700, #1d4ed8); }
 
   /* Address */
   .nd-addr-list { display: flex; flex-direction: column; gap: 8px; }
