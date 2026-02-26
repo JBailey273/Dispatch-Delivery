@@ -27,6 +27,7 @@ type DropItem = {
   notes: string | null;
   notify_sent: boolean;
   scheduled_window: string | null;
+  is_priority?: boolean;
   drop_photos: string[];
   loads: LoadItem[];
 };
@@ -139,7 +140,6 @@ export default function DriverPage() {
   // ── Actions ────────────────────────────────────────────────────────────
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => setToast({ msg, type });
 
-  // "Mark Delivered" opens the camera — photo upload + status change happen together
   const markDelivered = (loadId: string) => {
     setPhotoTarget({ loadId, type: 'pod' });
     setTimeout(() => photoInputRef.current?.click(), 100);
@@ -201,27 +201,23 @@ export default function DriverPage() {
     }
   };
 
-  // Handles both POD (auto-delivers after photo) and exception photos
   const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!photoTarget || !e.target.files?.[0]) return;
     const file = e.target.files[0];
     setActionLoading(photoTarget.loadId);
     try {
-      // Upload to S3
       const ext = file.name.split('.').pop() || 'jpg';
       const uploadData = await api(`/uploads/presign?ext=${ext}&purpose=${photoTarget.type}`, {
         headers: { 'Content-Type': 'application/json' },
       });
       await fetch(uploadData.upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
 
-      // Attach photo to load
       await api(`/driver/loads/${photoTarget.loadId}/photo`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ photo_url: uploadData.public_url, photo_type: photoTarget.type }),
       });
 
-      // If POD photo, automatically mark as delivered
       if (photoTarget.type === 'pod') {
         await api(`/driver/loads/${photoTarget.loadId}/status`, {
           method: 'POST',
@@ -250,6 +246,7 @@ export default function DriverPage() {
 
   const completedCount = drops.filter(d => getDropStatus(d) === 'delivered').length;
   const totalCount = drops.length;
+  const priorityCount = drops.filter(d => d.is_priority && getDropStatus(d) !== 'delivered' && getDropStatus(d) !== 'cancelled').length;
 
   return (
     <>
@@ -268,7 +265,10 @@ export default function DriverPage() {
           {totalCount > 0 && (
             <div className="drv-progress">
               <div className="drv-progress-track"><div className="drv-progress-bar" style={{ width: `${(completedCount / totalCount) * 100}%` }} /></div>
-              <div className="drv-progress-text">{completedCount} of {totalCount} stop{totalCount !== 1 ? 's' : ''} complete</div>
+              <div className="drv-progress-text">
+                {completedCount} of {totalCount} stop{totalCount !== 1 ? 's' : ''} complete
+                {priorityCount > 0 && <span className="drv-priority-count"> · ⚡ {priorityCount} priority</span>}
+              </div>
             </div>
           )}
         </div>
@@ -303,18 +303,32 @@ export default function DriverPage() {
           const cfg = STATUS_CONFIG[dropStatus] || STATUS_CONFIG.assigned;
           const isDone = dropStatus === 'delivered' || dropStatus === 'cancelled';
           const isException = dropStatus === 'exception';
+          const isPriority = drop.is_priority && !isDone;
           const activeLoads = drop.loads.filter(l => l.status === 'assigned' || l.status === 'loaded_leaving');
 
           return (
-            <div key={drop.drop_id} className={`drv-card ${isDone ? 'drv-card--done' : ''} ${isException ? 'drv-card--exc' : ''}`}>
+            <div key={drop.drop_id} className={`drv-card ${isDone ? 'drv-card--done' : ''} ${isException ? 'drv-card--exc' : ''} ${isPriority ? 'drv-card--priority' : ''}`}>
+              {/* Priority banner */}
+              {isPriority && (
+                <div className="drv-priority-strip">⚡ PRIORITY DELIVERY</div>
+              )}
+
               {/* Header */}
               <div className="drv-card-hd" onClick={() => setExpandedDrop(isExpanded ? null : drop.drop_id)}>
-                <div className="drv-dot" style={{ background: cfg.color }} />
+                <div className="drv-dot" style={{ background: isPriority ? '#2563eb' : cfg.color }} />
                 <div className="drv-card-info">
                   <div className="drv-name">{drop.customer_name}</div>
-                  <div className="drv-sub">{drop.loads.length} item{drop.loads.length !== 1 ? 's' : ''}{drop.address ? ` · ${drop.address.city}` : ''}</div>
+                  <div className="drv-sub">
+                    {drop.loads.length} item{drop.loads.length !== 1 ? 's' : ''}
+                    {drop.address ? ` · ${drop.address.city}` : ''}
+                    {drop.is_priority && !isPriority ? ' · Priority ✓' : ''}
+                  </div>
                 </div>
-                <div className="drv-badge" style={{ color: cfg.color, background: cfg.bg }}>{cfg.label}</div>
+                {isPriority ? (
+                  <div className="drv-badge" style={{ color: '#1e40af', background: '#dbeafe' }}>⚡ Priority</div>
+                ) : (
+                  <div className="drv-badge" style={{ color: cfg.color, background: cfg.bg }}>{cfg.label}</div>
+                )}
                 <div className={`drv-chev ${isExpanded ? 'drv-chev--open' : ''}`}>▾</div>
               </div>
 
@@ -322,15 +336,17 @@ export default function DriverPage() {
               <div className={`drv-body ${isExpanded ? 'drv-body--open' : ''}`}>
                 <div className="drv-inner">
 
-                  {/* ① Load Manifest — centered, qty+unit hero */}
+                  {/* ① Load Manifest */}
                   <div className="drv-manifest">
-                    <div className="drv-manifest-hd">📋 LOAD MANIFEST</div>
+                    <div className={`drv-manifest-hd ${isPriority ? 'drv-manifest-hd--priority' : ''}`}>
+                      {isPriority ? '⚡ PRIORITY LOAD' : '📋 LOAD MANIFEST'}
+                    </div>
                     {drop.loads.map((load, idx) => {
                       const isActive = load.status === 'assigned' || load.status === 'loaded_leaving';
                       const lCfg = STATUS_CONFIG[load.status] || STATUS_CONFIG.assigned;
                       return (
                         <div key={load.id} className={`drv-manifest-row ${idx < drop.loads.length - 1 ? 'drv-manifest-row--border' : ''}`}>
-                          <div className="drv-manifest-qty-line">{load.qty} {load.unit}{load.qty !== 1 ? 's' : ''}</div>
+                          <div className={`drv-manifest-qty-line ${isPriority ? 'drv-manifest-qty-line--priority' : ''}`}>{load.qty} {load.unit}{load.qty !== 1 ? 's' : ''}</div>
                           <div className="drv-manifest-material">{load.material}</div>
                           {!isActive && <span className="drv-manifest-badge" style={{ color: lCfg.color, background: lCfg.bg }}>{lCfg.label}</span>}
                         </div>
@@ -387,7 +403,7 @@ export default function DriverPage() {
                     </div>
                   )}
 
-                  {/* ⑥ Primary action — single "Mark Delivered" button that opens camera */}
+                  {/* ⑥ Primary action */}
                   {activeLoads.length > 0 && (
                     <div className="drv-actions">
                       {activeLoads.map(load => (
@@ -550,6 +566,7 @@ const STYLES = `
     --amb7: #b45309; --amb6: #d97706; --amb1: #fef3c7; --amb0: #fffbeb;
     --red7: #b91c1c; --red6: #dc2626; --red1: #fee2e2;
     --teal7: #0f766e; --teal6: #0d9488; --teal1: #ccfbf1;
+    --blu9: #1e3a5f; --blu7: #1d4ed8; --blu6: #2563eb; --blu5: #3b82f6; --blu1: #dbeafe; --blu0: #eff6ff;
     --r: 14px; --rs: 10px;
     --ff: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     --fh: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -568,6 +585,7 @@ const STYLES = `
   .drv-progress-track { background: var(--g2); border-radius: 6px; height: 8px; overflow: hidden; }
   .drv-progress-bar { height: 100%; border-radius: 6px; background: var(--grn5); transition: width 0.5s ease; }
   .drv-progress-text { font-size: 14px; font-weight: 600; color: var(--g5); margin-top: 6px; }
+  .drv-priority-count { color: var(--blu6); }
 
   /* Center states */
   .drv-center { text-align: center; padding: 60px 24px; }
@@ -581,6 +599,7 @@ const STYLES = `
   .drv-card { margin: 10px 14px; background: #fff; border-radius: var(--r); box-shadow: 0 1px 3px rgba(0,0,0,0.04); border: 1.5px solid var(--g2); overflow: hidden; }
   .drv-card--done { opacity: 0.55; border-color: var(--grn6); }
   .drv-card--exc { border-color: var(--red6); }
+  .drv-card--priority { border-color: var(--blu5); box-shadow: 0 2px 8px rgba(37,99,235,0.12); }
   .drv-card-hd { padding: 16px 18px; display: flex; align-items: center; gap: 12px; cursor: pointer; user-select: none; }
   .drv-card-hd:active { background: var(--g0); }
   .drv-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
@@ -594,15 +613,20 @@ const STYLES = `
   .drv-body--open { max-height: 3000px; }
   .drv-inner { padding: 0 18px 24px; }
 
+  /* Priority strip */
+  .drv-priority-strip { background: linear-gradient(135deg, #1e40af, #2563eb); color: #fff; padding: 8px 18px; font-family: var(--fh); font-size: 13px; font-weight: 800; letter-spacing: .08em; text-align: center; }
+
   /* Labels */
   .drv-label { font-family: var(--fh); font-size: 12px; font-weight: 700; color: var(--g4); text-transform: uppercase; letter-spacing: .06em; margin: 16px 0 8px; }
 
   /* Load Manifest */
   .drv-manifest { margin: 0 -18px; border-bottom: 1.5px solid var(--g2); }
   .drv-manifest-hd { background: var(--grn9); color: #fff; padding: 14px 18px; font-family: var(--fh); font-size: 13px; font-weight: 800; letter-spacing: .08em; display: flex; align-items: center; gap: 8px; }
+  .drv-manifest-hd--priority { background: linear-gradient(135deg, #1e3a5f, #1e40af); }
   .drv-manifest-row { display: flex; flex-direction: column; align-items: center; padding: 20px 18px; background: #fff; text-align: center; }
   .drv-manifest-row--border { border-bottom: 1px dashed var(--g2); }
   .drv-manifest-qty-line { font-family: var(--fh); font-size: 34px; font-weight: 800; color: var(--grn7); line-height: 1.1; }
+  .drv-manifest-qty-line--priority { color: var(--blu7); }
   .drv-manifest-material { font-family: var(--fh); font-size: 20px; font-weight: 700; color: var(--g9); margin-top: 4px; }
   .drv-manifest-badge { padding: 4px 12px; border-radius: 20px; font-family: var(--fh); font-size: 12px; font-weight: 700; margin-top: 8px; }
 
