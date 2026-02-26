@@ -108,6 +108,12 @@ export default function DispatchSchedulePage() {
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
   const [drivers, setDrivers] = useState<Driver[]>([]);
 
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [rescheduleWindow, setRescheduleWindow] = useState<'A' | 'B'>('A');
+  const [rescheduleBusy, setRescheduleBusy] = useState(false);
+  const [rescheduleMsg, setRescheduleMsg] = useState('');
+
   /* ── Compute visible date range ── */
   const visibleRange = useMemo(() => {
     if (viewMode === 'week') {
@@ -264,6 +270,40 @@ export default function DispatchSchedulePage() {
       setAssignMsg(e.message || 'Assignment failed.');
     } finally {
       setAssignBusy(false);
+    }
+  };
+
+  const openRescheduleModal = () => {
+    if (!dropDetail) return;
+    setRescheduleDate(dropDetail.scheduled_date || toKey(selDate));
+    setRescheduleWindow(dropDetail.scheduled_window === 'B' ? 'B' : 'A');
+    setRescheduleMsg('');
+    setShowRescheduleModal(true);
+  };
+
+  const submitReschedule = async () => {
+    if (!selectedDropId || !rescheduleDate) {
+      setRescheduleMsg('Please choose a date before rescheduling.');
+      return;
+    }
+    setRescheduleBusy(true);
+    setRescheduleMsg('');
+    try {
+      await api(`/drops/${selectedDropId}/reschedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduled_date: rescheduleDate, scheduled_window: rescheduleWindow }),
+      });
+      const refreshed = await api(`/dispatch/drops/${selectedDropId}`);
+      setDropDetail(refreshed);
+      await fetchSchedule();
+      await fetchCapacity();
+      fetchMonthSummary();
+      setShowRescheduleModal(false);
+    } catch (err) {
+      setRescheduleMsg((err as ApiError).message || 'Reschedule failed');
+    } finally {
+      setRescheduleBusy(false);
     }
   };
 
@@ -735,9 +775,9 @@ const updateLoadStatus = async (loadId: string, newStatus: string) => {
                   </div>
                 </div>
                 <div className="modal-footer">
-                  <Link href={`/dispatch/drops/${selectedDropId}?action=reschedule`} className="btn btn-primary btn-sm" style={{ textDecoration: 'none' }}>
+                  <button className="btn btn-primary btn-sm" onClick={openRescheduleModal}>
                     Reschedule Delivery
-                  </Link>
+                  </button>
                   <Link href={`/dispatch/drops/${selectedDropId}`} className="btn btn-secondary btn-sm" style={{ textDecoration: 'none' }}>
                     View Full Details
                   </Link>
@@ -747,6 +787,43 @@ const updateLoadStatus = async (loadId: string, newStatus: string) => {
             ) : (
               <div style={{ padding: 32, textAlign: 'center' }}><div className="spinner" style={{ margin: '0 auto' }} /></div>
             )}
+          </div>
+        </div>
+      )}
+
+      {showRescheduleModal && selectedDropId && dropDetail && (
+        <div className="modal-overlay" onClick={() => setShowRescheduleModal(false)}>
+          <div className="modal-card reschedule-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 style={{ margin: 0 }}>Reschedule Delivery</h2>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowRescheduleModal(false)} style={{ fontSize: 18, padding: '4px 8px' }}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="dm-section" style={{ borderBottom: 'none', paddingBottom: 0 }}>
+                <div className="dm-section-label">Order</div>
+                <div className="dm-customer-name" style={{ fontSize: 15 }}>#{dropDetail.ref} · {dropDetail.customer_name}</div>
+              </div>
+              <div className="reschedule-fields">
+                <label>
+                  New Date
+                  <input type="date" value={rescheduleDate} min={toKey(today)} onChange={e => setRescheduleDate(e.target.value)} />
+                </label>
+                <label>
+                  Delivery Window
+                  <select value={rescheduleWindow} onChange={e => setRescheduleWindow(e.target.value as 'A' | 'B')}>
+                    <option value="A">Morning (9am – 1pm)</option>
+                    <option value="B">Afternoon (1pm – 5pm)</option>
+                  </select>
+                </label>
+              </div>
+              {rescheduleMsg && <div className="alert alert-danger" style={{ marginTop: 8 }}>{rescheduleMsg}</div>}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowRescheduleModal(false)}>Cancel</button>
+              <button className="btn btn-primary btn-sm" onClick={submitReschedule} disabled={rescheduleBusy || !rescheduleDate}>
+                {rescheduleBusy ? 'Rescheduling…' : 'Save Reschedule'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -872,6 +949,7 @@ const schedulerStyles = `
   /* ── Modal ── */
   .modal-overlay { position: fixed; inset: 0; z-index: 300; background: rgba(23,23,20,0.5); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 24px; animation: fadeIn 0.15s; }
   .modal-card { background: var(--surface); border-radius: var(--radius-2xl); box-shadow: var(--shadow-xl); width: 100%; max-width: 520px; max-height: 80vh; overflow-y: auto; animation: modalIn 0.2s var(--ease-out); }
+  .reschedule-modal { max-width: 460px; }
   .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--border-light); }
   .modal-header h2 { font-family: var(--font-heading); font-size: 18px; font-weight: 800; letter-spacing: -0.02em; }
   .modal-body { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
@@ -903,6 +981,9 @@ const schedulerStyles = `
   .dm-load-driver { font-size: 12px; color: var(--gray-500); }
   .pill-sm { font-size: 11px; padding: 2px 8px; }
   .dm-notify-item { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; font-size: 14px; }
+  .reschedule-fields { display: grid; gap: 12px; margin-top: 10px; }
+  .reschedule-fields label { display: grid; gap: 6px; font-size: 12px; font-weight: 700; color: var(--gray-600); text-transform: uppercase; letter-spacing: 0.04em; }
+  .reschedule-fields input, .reschedule-fields select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); font-size: 14px; font-family: inherit; color: var(--gray-800); background: var(--surface); text-transform: none; letter-spacing: normal; font-weight: 500; }
 
 /* ── Priority section ── */
   .priority-section { background: var(--amber-25, #fffbeb); border-left: 4px solid var(--amber-500, #f59e0b); }
