@@ -15,20 +15,29 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const isLogin = pathname === '/login';
-  if (!mounted || isLogin) return <>{children}</>;
+  useEffect(() => {
+    if (!mounted) return;
+    if (pathname === '/login') return;
 
-  // Read session synchronously every render — no stale state race condition
-  const session = getSession();
-  if (!session) {
-    router.push('/login');
-    return null;
-  }
+    const nextSession = getSession();
+    if (!nextSession) {
+      router.replace('/login');
+      return;
+    }
+
+    setSession(nextSession);
+  }, [mounted, pathname, router]);
+
+  const isLogin = pathname === '/login';
+  if (!mounted) return null;
+  if (isLogin) return <>{children}</>;
+  if (!session) return null;
 
   const isAdmin = session.role === 'admin';
   const isDriver = session.role === 'driver';
