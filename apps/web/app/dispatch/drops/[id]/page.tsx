@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState, useMemo } from 'react';
-import { useParams } from 'next/navigation';
+import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ApiError, api, requireRole } from '../../../lib/auth';
 
@@ -59,6 +59,9 @@ const ALL_STATUSES = [
 
 export default function DispatchDropDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
+  const action = searchParams.get('action');
+  const prefDate = searchParams.get('date');
   const [mounted, setMounted] = useState(false);
   const [drop, setDrop] = useState<DropDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -86,6 +89,8 @@ export default function DispatchDropDetailPage() {
   // Driver reassignment
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [reassigning, setReassigning] = useState<string | null>(null);
+  const [rescheduleAutoOpened, setRescheduleAutoOpened] = useState(false);
+  const rescheduleHeadingRef = useRef<HTMLHeadingElement | null>(null);
 
   const fetchDrop = useCallback(async () => {
     setLoading(true);
@@ -126,6 +131,27 @@ export default function DispatchDropDetailPage() {
   useEffect(() => {
     if (showReschedule) fetchRescCapacity();
   }, [showReschedule, fetchRescCapacity]);
+
+  useEffect(() => {
+    if (action !== 'reschedule' || !drop || showReschedule) return;
+    setRescDriverId('');
+    const isValidPrefDate = prefDate && /^\d{4}-\d{2}-\d{2}$/.test(prefDate);
+    if (isValidPrefDate) {
+      const preferred = new Date(`${prefDate}T12:00:00`);
+      if (!Number.isNaN(preferred.getTime())) {
+        setRescDate(prefDate);
+        setRescCalMonth(new Date(preferred.getFullYear(), preferred.getMonth(), 1));
+      }
+    }
+    setShowReschedule(true);
+    setRescheduleAutoOpened(true);
+  }, [action, drop, prefDate, showReschedule]);
+
+
+  useEffect(() => {
+    if (!showReschedule) return;
+    rescheduleHeadingRef.current?.focus();
+  }, [showReschedule]);
 
   // Calendar grid for reschedule
   const rescCalCells = useMemo(() => {
@@ -256,6 +282,9 @@ export default function DispatchDropDetailPage() {
         </div>
 
         {error && <div className="alert alert-error dd-alert"><span>⚠</span> {error}<button className="dd-alert-close" onClick={() => setError('')}>✕</button></div>}
+        {rescheduleAutoOpened && (
+          <div className="alert alert-info dd-alert"><span>ℹ</span> You&apos;re in reschedule mode.<button className="dd-alert-close" onClick={() => setRescheduleAutoOpened(false)}>✕</button></div>
+        )}
         {success && <div className="alert alert-success dd-alert"><span>✓</span> {success}<button className="dd-alert-close" onClick={() => setSuccess('')}>✕</button></div>}
 
         {loading && <div style={{ textAlign: 'center', padding: 40 }}><div className="spinner spinner-lg" style={{ margin: '0 auto' }} /></div>}
@@ -449,7 +478,7 @@ export default function DispatchDropDetailPage() {
           <div className="modal-overlay" onClick={() => setShowReschedule(false)}>
             <div className="modal-card resc-modal" onClick={e => e.stopPropagation()}>
               <div className="modal-header">
-                <h2>Reschedule Drop #{drop?.ref}</h2>
+                <h2 ref={rescheduleHeadingRef} tabIndex={-1}>Reschedule Drop #{drop?.ref}</h2>
                 <button className="btn btn-ghost btn-sm" onClick={() => setShowReschedule(false)} style={{ fontSize: 18, padding: '4px 8px' }}>✕</button>
               </div>
               <div className="modal-body">

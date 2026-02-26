@@ -735,8 +735,11 @@ const updateLoadStatus = async (loadId: string, newStatus: string) => {
                   </div>
                 </div>
                 <div className="modal-footer">
-                  <Link href={`/dispatch/drops/${selectedDropId}`} className="btn btn-primary btn-sm" style={{ textDecoration: 'none' }}>
-                    Modify Delivery
+                  <Link href={`/dispatch/drops/${selectedDropId}?action=reschedule`} className="btn btn-primary btn-sm" style={{ textDecoration: 'none' }}>
+                    Reschedule Delivery
+                  </Link>
+                  <Link href={`/dispatch/drops/${selectedDropId}`} className="btn btn-secondary btn-sm" style={{ textDecoration: 'none' }}>
+                    View Full Details
                   </Link>
                   <button className="btn btn-ghost btn-sm" onClick={() => { setSelectedDropId(null); setDropDetail(null); }}>Close</button>
                 </div>
