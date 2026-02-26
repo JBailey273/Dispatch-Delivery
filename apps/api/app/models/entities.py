@@ -214,7 +214,7 @@ class Load(Base, TenantScopedMixin, TimestampMixin):
     exception_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     route_sequence: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    drop = relationship("Drop", lazy="joined")
+    drop = relationship("Drop", lazy="select")
 
 
 class OptimizationProposal(Base, TenantScopedMixin, TimestampMixin):
