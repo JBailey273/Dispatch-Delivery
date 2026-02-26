@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
 from app.api.services import find_matching_address, log_event, normalize_us_phone, now_utc
-from app.models.entities import Customer, CustomerAddress, Drop, UserRole
+from app.models.entities import Customer, CustomerAddress, CustomerType, Drop, UserRole
 
 router = APIRouter(prefix="/customers", tags=["customers"])
 
@@ -13,6 +13,7 @@ router = APIRouter(prefix="/customers", tags=["customers"])
 class CustomerIn(BaseModel):
     name: str
     phone: str
+    customer_type: str = "residential"
 
 
 class AddressIn(BaseModel):
@@ -24,6 +25,16 @@ class AddressIn(BaseModel):
     postal_code: str
     country: str = "US"
     is_default: bool = False
+
+
+def _customer_dict(c: Customer, last_ordered=None):
+    return {
+        "id": str(c.id),
+        "name": c.name,
+        "phone_e164": c.phone_e164,
+        "customer_type": c.customer_type.value if c.customer_type else "residential",
+        "last_ordered": str(last_ordered) if last_ordered else None,
+    }
 
 
 @router.get("")
@@ -47,15 +58,7 @@ def list_customers(
     )
     customers = db.execute(stmt).all()
     return {
-        "results": [
-            {
-                "id": str(c.id),
-                "name": c.name,
-                "phone_e164": c.phone_e164,
-                "last_ordered": str(last_ordered) if last_ordered else None,
-            }
-            for c, last_ordered in customers
-        ]
+        "results": [_customer_dict(c, last_ordered) for c, last_ordered in customers]
     }
 
 
@@ -117,11 +120,8 @@ def search_customers(
     return {
         "results": [
             {
-                "id": str(c.id),
-                "name": c.name,
-                "phone_e164": c.phone_e164,
+                **_customer_dict(c, last_ordered),
                 "exact_phone_match": bool(normalized_phone and c.phone_e164 == normalized_phone),
-                "last_ordered": str(last_ordered) if last_ordered else None,
             }
             for c, last_ordered in customers
         ]
@@ -141,13 +141,14 @@ def create_customer(
 
     existing = db.execute(select(Customer).where(Customer.tenant_id == user.tenant_id, Customer.phone_e164 == phone)).scalar_one_or_none()
     if existing:
-        return {"existing": True, "customer": {"id": str(existing.id), "name": existing.name, "phone_e164": existing.phone_e164}}
+        return {"existing": True, "customer": _customer_dict(existing)}
 
-    customer = Customer(tenant_id=user.tenant_id, name=payload.name, phone_e164=phone)
+    ct = CustomerType.COMMERCIAL if payload.customer_type == "commercial" else CustomerType.RESIDENTIAL
+    customer = Customer(tenant_id=user.tenant_id, name=payload.name, phone_e164=phone, customer_type=ct)
     db.add(customer)
     db.commit()
     db.refresh(customer)
-    return {"existing": False, "customer": {"id": str(customer.id), "name": customer.name, "phone_e164": customer.phone_e164}}
+    return {"existing": False, "customer": _customer_dict(customer)}
 
 
 @router.patch("/{customer_id}/name")
@@ -167,6 +168,22 @@ def update_customer_name(customer_id: str, payload: dict, user: AuthUser = Depen
     return {"customer_id": customer_id, "name": new_name, "name_mismatch": mismatch}
 
 
+@router.patch("/{customer_id}/type")
+def update_customer_type(customer_id: str, payload: dict, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+    customer = db.execute(select(Customer).where(Customer.id == customer_id, Customer.tenant_id == user.tenant_id)).scalar_one_or_none()
+    if not customer:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Customer not found"})
+    new_type = payload.get("customer_type", "").strip().lower()
+    if new_type not in ("residential", "commercial"):
+        raise HTTPException(status_code=400, detail={"code": "invalid_type", "message": "Must be 'residential' or 'commercial'"})
+    old_type = customer.customer_type.value if customer.customer_type else "residential"
+    customer.customer_type = CustomerType.COMMERCIAL if new_type == "commercial" else CustomerType.RESIDENTIAL
+    if old_type != new_type:
+        log_event(db, user.tenant_id, "customer.type_changed", "api", {"customer_id": customer_id, "from": old_type, "to": new_type})
+    db.commit()
+    return {"customer_id": customer_id, "customer_type": new_type}
+
+
 @router.get("/{customer_id}")
 def get_customer(customer_id: str, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.DRIVER)), db: Session = Depends(db_dep)):
     customer = db.execute(select(Customer).where(Customer.id == customer_id, Customer.tenant_id == user.tenant_id)).scalar_one_or_none()
@@ -178,10 +195,7 @@ def get_customer(customer_id: str, user: AuthUser = Depends(require_roles(UserRo
     ).scalar_subquery()
     last_ordered = db.execute(select(last_ordered_subquery)).scalar_one_or_none()
     return {
-        "id": str(customer.id),
-        "name": customer.name,
-        "phone_e164": customer.phone_e164,
-        "last_ordered": str(last_ordered) if last_ordered else None,
+        **_customer_dict(customer, last_ordered),
     }
 
 
