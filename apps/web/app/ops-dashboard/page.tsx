@@ -11,9 +11,14 @@ function toKey(d: Date) { return d.toISOString().slice(0, 10); }
 function fmtDate(d: Date) { return `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()} ${d.getFullYear()}`; }
 function capColor(u: number, t: number) { if (t === 0) return 'green'; const p = u / t; return p >= 1 ? 'red' : p >= 0.75 ? 'amber' : 'green'; }
 
-type LoadItem = { id: string; drop_id: string; status: string; material: string; qty: number; unit: string; customer_name?: string; address_short?: string; driver_name?: string; driver_user_id?: string | null; order_ref?: string };
+type LoadItem = { id: string; drop_id: string; status: string; material: string; qty: number; unit: string; customer_name?: string; address_short?: string; driver_name?: string; driver_user_id?: string | null; order_ref?: string; is_priority?: boolean };
 type ScheduleData = {
   date: string;
+  priority: {
+    groups: Record<string, LoadItem[]>;
+    load_count: number;
+    warning?: string | null;
+  };
   windows: {
     A: { capacity: { used: number; total: number; remaining_capacity: number }; groups: Record<string, LoadItem[]>; disabled: boolean };
     B: { capacity: { used: number; total: number; remaining_capacity: number }; groups: Record<string, LoadItem[]>; disabled: boolean };
@@ -140,10 +145,17 @@ export default function DashboardPage() {
   /* ── Derived data ── */
   const todayTP = throughput.find(d => d.date === todayStr);
 
-  // Flatten all loads from schedule into a sorted delivery list
+  // Flatten all loads (priority + windowed) into a sorted delivery list
   const allDeliveries = useMemo(() => {
     if (!schedule) return [];
     const items: (LoadItem & { window: string })[] = [];
+
+    for (const [_driver, loads] of Object.entries(schedule.priority?.groups || {})) {
+      for (const load of loads) {
+        items.push({ ...load, window: 'P' });
+      }
+    }
+
     for (const win of ['A', 'B'] as const) {
       for (const [_driver, loads] of Object.entries(schedule.windows[win].groups)) {
         for (const load of loads) {
@@ -151,11 +163,13 @@ export default function DashboardPage() {
         }
       }
     }
-    // Sort: AM before PM, then by status priority (exceptions first, then new/assigned, then delivered)
+
+    // Sort: Priority first, then AM, then PM; then by status priority.
+    const windowOrder: Record<string, number> = { P: 0, A: 1, B: 2 };
     const statusOrder: Record<string, number> = { EXCEPTION: 0, NEW: 1, ASSIGNED: 2, LOADED_LEAVING: 3, DELIVERED: 4, CANCELLED: 5 };
     items.sort((a, b) => {
-      if (a.window !== b.window) return a.window === 'A' ? -1 : 1;
-      return (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3);
+      if (a.window !== b.window) return (windowOrder[a.window] ?? 3) - (windowOrder[b.window] ?? 3);
+      return (statusOrder[a.status.toUpperCase()] ?? 3) - (statusOrder[b.status.toUpperCase()] ?? 3);
     });
     return items;
   }, [schedule]);
@@ -331,7 +345,7 @@ export default function DashboardPage() {
                     {allDeliveries.map((load) => (
                       <Link
                         key={load.id}
-                        href={`/dispatch-schedule/drop/${load.drop_id}`}
+                        href={`/dispatch/drops/${load.drop_id}`}
                         className="dash-delivery-row"
                       >
                         <div className="dash-delivery-main">
@@ -339,7 +353,9 @@ export default function DashboardPage() {
                           <div className="dash-delivery-address">{load.address_short || '—'}</div>
                         </div>
                         <div className="dash-delivery-meta">
-                          <span className="dash-delivery-window">{load.window === 'A' ? 'Morning' : 'Afternoon'}</span>
+                          <span className="dash-delivery-window">
+                            {load.window === 'P' ? 'Priority' : load.window === 'A' ? 'Morning' : 'Afternoon'}
+                          </span>
                           <span className="dash-delivery-status" style={{ color: STATUS_COLORS[load.status] || 'var(--gray-500)' }}>
                             {STATUS_LABELS[load.status] || load.status}
                           </span>
