@@ -175,6 +175,13 @@ export default function DashboardPage() {
   }, [schedule]);
 
   const totalLoadsToday = allDeliveries.length;
+  const loadToDropMap = useMemo(() => {
+    const mapping: Record<string, string> = {};
+    for (const load of allDeliveries) {
+      mapping[load.id] = load.drop_id;
+    }
+    return mapping;
+  }, [allDeliveries]);
   const unassignedCount = allDeliveries.filter(d => !d.driver_user_id).length;
   const deliveredCount = todayTP?.loads_delivered ?? 0;
   const exceptionCount = todayTP?.loads_exceptioned ?? 0;
@@ -190,6 +197,12 @@ export default function DashboardPage() {
     const id = `${a.type}_${a.load_id || a.drop_id || a.hold_token || a.service_date || ''}`;
     return !dismissedAlerts.has(id);
   });
+
+  const getAnomalyDropHref = useCallback((anomaly: Anomaly) => {
+    if (anomaly.drop_id) return `/dispatch/drops/${anomaly.drop_id}`;
+    if (anomaly.load_id && loadToDropMap[anomaly.load_id]) return `/dispatch/drops/${loadToDropMap[anomaly.load_id]}`;
+    return null;
+  }, [loadToDropMap]);
 
   if (!requireRole(['dispatcher'])) return <div className="page"><p>Unauthorized</p></div>;
 
@@ -227,11 +240,19 @@ export default function DashboardPage() {
             {/* ── Anomaly alerts — plain English, dismissable ── */}
             {visibleAnomalies.map((a, i) => {
               const id = `${a.type}_${a.load_id || a.drop_id || a.hold_token || a.service_date || ''}`;
+              const dropHref = getAnomalyDropHref(a);
               return (
                 <div key={i} className="alert alert-error dash-alert">
                   <span>⚠️</span>
                   <div style={{ flex: 1, fontSize: 14 }}>
-                    {anomalyMessage(a)}
+                    {dropHref ? (
+                      <Link href={dropHref} className="dash-alert-link" title="Open drop details">
+                        {anomalyMessage(a)}
+                        <span className="dash-alert-link-cta">Open drop details →</span>
+                      </Link>
+                    ) : (
+                      anomalyMessage(a)
+                    )}
                   </div>
                   <button className="dash-alert-dismiss" onClick={() => dismissAlert(id)} title="Dismiss">✕</button>
                 </div>
@@ -425,6 +446,9 @@ const dashStyles = `
     flex-shrink: 0;
   }
   .dash-alert-dismiss:hover { opacity: 1; }
+  .dash-alert-link { color: inherit; text-decoration: none; }
+  .dash-alert-link:hover .dash-alert-link-cta { text-decoration: underline; }
+  .dash-alert-link-cta { display: inline-block; margin-left: 8px; font-size: 13px; font-weight: 700; }
 
   /* Stat cards */
   .dash-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
