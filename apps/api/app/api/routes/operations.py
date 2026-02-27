@@ -2,7 +2,7 @@ import csv
 import io
 import re
 from collections import defaultdict
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
@@ -497,13 +497,20 @@ def anomalies(auto_fix: bool = Query(default=True), user: AuthUser = Depends(req
     try:
         tenant = db.execute(select(Tenant).where(Tenant.id == user.tenant_id)).scalar_one()
         tz = ZoneInfo(tenant.timezone)
+        window_ends = {
+            WindowCode.A: datetime.combine(datetime.today(), tenant.windowA_end, tzinfo=tz),
+            WindowCode.B: datetime.combine(datetime.today(), tenant.windowB_end, tzinfo=tz),
+        }
     except Exception:
         tz = timezone.utc
+        window_ends = {
+            WindowCode.A: datetime.combine(datetime.today(), time(13, 0), tzinfo=tz),
+            WindowCode.B: datetime.combine(datetime.today(), time(17, 0), tzinfo=tz),
+        }
     assigned = db.execute(select(Load).where(Load.tenant_id == user.tenant_id, Load.status == LoadStatus.ASSIGNED)).scalars().all()
     for load in assigned:
-        window_end_hour = 17 if load.route_window == WindowCode.B else 13
-        window_end_local = datetime(load.route_date.year, load.route_date.month, load.route_date.day, window_end_hour, 0, 0, tzinfo=tz)
-        if window_end_local < now:
+        window_end = datetime.combine(load.route_date, window_ends[load.route_window].timetz(), tzinfo=tz)
+        if window_end < now:
             anomalies_out.append({"type": "load_stuck_assigned", "load_id": str(load.id), "route_date": str(load.route_date), "route_window": load.route_window.value, "status": load.status.value})
 
     expired_holds = db.execute(
