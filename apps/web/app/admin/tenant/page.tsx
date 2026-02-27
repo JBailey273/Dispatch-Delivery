@@ -80,8 +80,48 @@ export default function TenantSettingsPage() {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Timezone</label>
-                  <input value={form.timezone || ''} onChange={e => setForm({ ...form, timezone: e.target.value })} placeholder="America/Chicago" />
-                  <span className="form-hint">IANA timezone (e.g. America/New_York)</span>
+                  <select value={form.timezone || ''} onChange={e => setForm({ ...form, timezone: e.target.value })}>
+                    <option value="">— Select a timezone —</option>
+                    <optgroup label="United States">
+                      <option value="America/New_York">Eastern Time — New York</option>
+                      <option value="America/Chicago">Central Time — Chicago</option>
+                      <option value="America/Denver">Mountain Time — Denver</option>
+                      <option value="America/Phoenix">Mountain Time (no DST) — Phoenix</option>
+                      <option value="America/Los_Angeles">Pacific Time — Los Angeles</option>
+                      <option value="America/Anchorage">Alaska Time — Anchorage</option>
+                      <option value="Pacific/Honolulu">Hawaii Time — Honolulu</option>
+                    </optgroup>
+                    <optgroup label="Canada">
+                      <option value="America/Toronto">Eastern — Toronto</option>
+                      <option value="America/Winnipeg">Central — Winnipeg</option>
+                      <option value="America/Edmonton">Mountain — Edmonton</option>
+                      <option value="America/Vancouver">Pacific — Vancouver</option>
+                      <option value="America/Halifax">Atlantic — Halifax</option>
+                      <option value="America/St_Johns">Newfoundland — St. John's</option>
+                    </optgroup>
+                    <optgroup label="Europe">
+                      <option value="Europe/London">GMT/BST — London</option>
+                      <option value="Europe/Paris">CET — Paris / Berlin / Rome</option>
+                      <option value="Europe/Helsinki">EET — Helsinki / Athens</option>
+                    </optgroup>
+                    <optgroup label="Australia / Pacific">
+                      <option value="Australia/Sydney">AEDT — Sydney / Melbourne</option>
+                      <option value="Australia/Brisbane">AEST (no DST) — Brisbane</option>
+                      <option value="Australia/Adelaide">ACST — Adelaide</option>
+                      <option value="Australia/Perth">AWST — Perth</option>
+                      <option value="Pacific/Auckland">NZDT — Auckland</option>
+                    </optgroup>
+                    <optgroup label="Other">
+                      <option value="UTC">UTC</option>
+                      <option value="Asia/Dubai">GST — Dubai</option>
+                      <option value="Asia/Singapore">SGT — Singapore</option>
+                      <option value="Asia/Tokyo">JST — Tokyo</option>
+                      <option value="Asia/Kolkata">IST — Kolkata</option>
+                      <option value="America/Sao_Paulo">BRT — São Paulo</option>
+                      <option value="America/Mexico_City">CST — Mexico City</option>
+                    </optgroup>
+                  </select>
+                  <span className="form-hint">Contact support to set a timezone not listed here</span>
                 </div>
               </div>
             </div>
