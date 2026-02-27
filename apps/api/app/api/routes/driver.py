@@ -299,6 +299,10 @@ def update_load_status(
     if requested == LoadStatus.EXCEPTION:
         load.exception_reason_code = payload.reason_code
         load.exception_notes = payload.notes
+        # Auto-flag the parent drop for rescheduling
+        drop = db.execute(select(Drop).where(Drop.id == load.drop_id).with_for_update()).scalar_one_or_none()
+        if drop:
+            drop.needs_reschedule = True
 
     log_event(
         db,
