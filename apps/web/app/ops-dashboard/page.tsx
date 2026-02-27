@@ -199,10 +199,14 @@ export default function DashboardPage() {
   });
 
   const getAnomalyDropHref = useCallback((anomaly: Anomaly) => {
-    if (anomaly.drop_id) return `/dispatch/drops/${anomaly.drop_id}`;
-    if (anomaly.load_id && loadToDropMap[anomaly.load_id]) return `/dispatch/drops/${loadToDropMap[anomaly.load_id]}`;
-    return null;
-  }, [loadToDropMap]);
+      if (anomaly.drop_id) return `/dispatch/drops/${anomaly.drop_id}`;
+      if (anomaly.load_id) {
+        if (loadToDropMap[anomaly.load_id]) return `/dispatch/drops/${loadToDropMap[anomaly.load_id]}`;
+        // For loads from past days not in today's schedule, link to all-orders filtered by date
+        if (anomaly.route_date) return `/all-orders?date=${anomaly.route_date}`;
+      }
+      return null;
+    }, [loadToDropMap]);
 
   if (!requireRole(['dispatcher'])) return <div className="page"><p>Unauthorized</p></div>;
 
