@@ -238,18 +238,32 @@ export default function DriverPage() {
     const file = e.target.files[0];
     setActionLoading(photoTarget.loadId);
     try {
-      const ext = file.name.split('.').pop() || 'jpg';
-      const uploadData = await api(`/uploads/presign?ext=${ext}&purpose=${photoTarget.type}`, {
-        headers: { 'Content-Type': 'application/json' },
-      });
-      await fetch(uploadData.upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      const entityType = photoTarget.type === 'pod' ? 'POD_PHOTO'
+        : photoTarget.type === 'exception' ? 'EXCEPTION_PHOTO'
+        : 'CONDITION_PHOTO';
 
-      await api(`/driver/loads/${photoTarget.loadId}/photo`, {
+      // 1. Get presigned upload URL
+      const presign = await api('/uploads/presign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ photo_url: uploadData.public_url, photo_type: photoTarget.type }),
+        body: JSON.stringify({ entity_type: entityType, entity_id: photoTarget.loadId, content_type: 'image/jpeg' }),
       });
 
+      // 2. Upload directly to R2
+      await fetch(presign.upload_url, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': 'image/jpeg' },
+      });
+
+      // 3. Confirm upload — saves URL to DB
+      await api('/uploads/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entity_type: entityType, entity_id: photoTarget.loadId, object_key: presign.object_key }),
+      });
+
+      // 4. Handle post-upload action per type
       if (photoTarget.type === 'pod') {
         await api(`/driver/loads/${photoTarget.loadId}/status`, {
           method: 'POST',
@@ -257,6 +271,8 @@ export default function DriverPage() {
           body: JSON.stringify({ status: 'delivered' }),
         });
         showToast('Photo saved & delivery confirmed!');
+      } else if (photoTarget.type === 'condition') {
+        showToast('Site condition photo saved.');
       } else {
         showToast('Exception photo saved.');
       }
@@ -264,7 +280,7 @@ export default function DriverPage() {
       setPhotoTarget(null);
       await fetchDrops();
     } catch {
-      showToast('Failed. Try again.', 'error');
+      showToast('Failed to upload photo. Try again.', 'error');
     } finally {
       setActionLoading(null);
       if (photoInputRef.current) photoInputRef.current.value = '';
