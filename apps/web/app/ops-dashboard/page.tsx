@@ -26,7 +26,7 @@ type ScheduleData = {
 };
 type ThroughputDay = { date: string; drops_created: number; loads_created: number; loads_delivered: number; loads_exceptioned: number; loads_cancelled: number };
 type Anomaly = { type: string; [key: string]: any };
-type ExceptionItem = { timestamp: string; load_id: string; notes: string };
+type ExceptionItem = { timestamp: string; load_id: string; drop_id: string | null; customer_name: string | null; reason_code: string | null; notes: string | null };
 
 /* ── Plain-English anomaly messages ── */
 function anomalyMessage(a: Anomaly): string {
@@ -67,6 +67,17 @@ const STATUS_COLORS: Record<string, string> = {
   EXCEPTION: 'var(--red-600)',
   CANCELLED: 'var(--gray-400)',
 };
+const EXCEPTION_LABELS: Record<string, string> = {
+  CUSTOMER_UNAVAILABLE: 'Not Home',
+  ACCESS_BLOCKED: 'Access Blocked',
+  SAFETY_RISK: 'Safety Risk',
+  DAMAGED_GOODS: 'Damaged Material',
+  OUT_OF_STOCK: 'Out of Stock',
+  WRONG_ADDRESS: 'Wrong Address',
+  CUSTOMER_REFUSED: 'Customer Refused',
+  OTHER: 'Other',
+};
+
 
 /* ── Dismissed alerts persistence (sessionStorage for day-only persistence) ── */
 function getDismissedKey(): string {
@@ -402,23 +413,37 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* ── Recent Exceptions ── */}
+{/* ── Recent Exceptions ── */}
             {exceptions.length > 0 && (
               <div className="card">
                 <div className="dash-card-head">Recent Exceptions</div>
-                <div className="dash-card-body">
-                  {exceptions.slice(0, 5).map((e, i) => (
-                    <div key={i} className="dash-exception-row">
-                      <div className="dash-exc-dot" />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 14, fontWeight: 600 }}>Load {e.load_id?.slice(0, 8)}…</div>
-                        {e.notes && <div style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 2 }}>{e.notes}</div>}
+                <div className="dash-card-body" style={{ padding: 0 }}>
+                  {exceptions.slice(0, 5).map((e, i) => {
+                    const label = EXCEPTION_LABELS[e.reason_code || ''] || 'Exception';
+                    const inner = (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 20px', borderBottom: i < Math.min(exceptions.length, 5) - 1 ? '1px solid var(--border-light)' : 'none' }}>
+                        <div className="dash-exc-dot" />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {e.customer_name || 'Unknown Customer'}
+                          </div>
+                          <div style={{ fontSize: 13, color: 'var(--red-600)', fontWeight: 600, marginTop: 1 }}>{label}</div>
+                          {e.notes && <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.notes}</div>}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--gray-400)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                          {new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                        {e.drop_id && <span style={{ fontSize: 13, color: 'var(--gray-400)' }}>›</span>}
                       </div>
-                      <div style={{ fontSize: 12, color: 'var(--gray-400)', whiteSpace: 'nowrap' }}>
-                        {new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                    return e.drop_id ? (
+                      <Link key={i} href={`/dispatch/drops/${e.drop_id}`} style={{ display: 'block', textDecoration: 'none', color: 'inherit' }} className="dash-exc-link">
+                        {inner}
+                      </Link>
+                    ) : (
+                      <div key={i}>{inner}</div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -434,6 +459,7 @@ const dashStyles = `
   .dash-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
   .dash-top h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
   .dash-date { color: var(--gray-500); font-size: 15px; margin-top: 2px; }
+  .dash-exc-link:hover { background: var(--gray-50); }
 
   /* Alerts */
   .dash-alert { margin-bottom: 12px; position: relative; }
