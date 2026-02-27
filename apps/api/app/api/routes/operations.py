@@ -204,11 +204,50 @@ def exceptions_report(start_date: date, end_date: date, include_recent: bool = Q
             .order_by(EventLog.created_at.desc())
             .limit(200)
         ).all()
-        recent_exceptions = [
-            {"timestamp": created.isoformat(), "load_id": (payload or {}).get("load_id"), "notes": (payload or {}).get("exception_notes")}
+        exception_load_ids = [
+            (payload or {}).get("load_id")
             for created, payload in events
             if (payload or {}).get("status") == LoadStatus.EXCEPTION.value
-        ][:20]
+        ]
+        load_drop_map = {}
+        customer_map = {}
+        reason_map = {}
+        if exception_load_ids:
+            load_rows = db.execute(
+                select(Load.id, Load.drop_id, Load.exception_reason_code)
+                .where(Load.tenant_id == user.tenant_id, Load.id.in_([lid for lid in exception_load_ids if lid]))
+            ).all()
+            for lid, did, reason in load_rows:
+                load_drop_map[str(lid)] = str(did)
+                reason_map[str(lid)] = reason.value if reason else None
+            drop_ids = list(load_drop_map.values())
+            if drop_ids:
+                cust_rows = db.execute(
+                    select(Drop.id, Customer.name)
+                    .join(Customer, Customer.id == Drop.customer_id)
+                    .where(Drop.tenant_id == user.tenant_id, Drop.id.in_(drop_ids))
+                ).all()
+                for did, cname in cust_rows:
+                    customer_map[str(did)] = cname
+
+        recent_exceptions = []
+        for created, payload in events:
+            if (payload or {}).get("status") != LoadStatus.EXCEPTION.value:
+                continue
+            load_id = (payload or {}).get("load_id")
+            drop_id = load_drop_map.get(load_id) if load_id else None
+            customer_name = customer_map.get(drop_id) if drop_id else None
+            reason = reason_map.get(load_id) if load_id else None
+            recent_exceptions.append({
+                "timestamp": created.isoformat(),
+                "load_id": load_id,
+                "drop_id": drop_id,
+                "customer_name": customer_name,
+                "reason_code": reason,
+                "notes": (payload or {}).get("exception_notes"),
+            })
+            if len(recent_exceptions) >= 20:
+                break
 
     return {
         "exceptions_per_day": [{"date": str(d), "count": int(c)} for d, c in per_day],
