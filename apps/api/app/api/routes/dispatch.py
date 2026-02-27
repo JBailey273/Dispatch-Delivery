@@ -272,9 +272,7 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
         select(Load, User).outerjoin(User, User.id == Load.driver_user_id)
         .where(Load.tenant_id == user.tenant_id, Load.drop_id == drop.id)
     ).all()
-    loads_out = []
-    for ld, driver in load_rows:
-        loads_out.append({
+    loads_out.append({
             "id": str(ld.id),
             "material": ld.material_name_snapshot,
             "qty": ld.qty,
@@ -283,6 +281,12 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
             "driver_user_id": str(driver.id) if driver else None,
             "driver_name": driver.display_name if driver else None,
             "driver_email": driver.email if driver else None,
+            "pod_photo_url": ld.pod_photo_url,
+            "exception_photo_url": ld.exception_photo_url,
+            "exception_reason_code": ld.exception_reason_code.value if ld.exception_reason_code else None,
+            "exception_notes": ld.exception_notes,
+            "condition_photo_url": ld.condition_photo_url,
+            "condition_notes": ld.condition_notes,
         })
 
     return {
