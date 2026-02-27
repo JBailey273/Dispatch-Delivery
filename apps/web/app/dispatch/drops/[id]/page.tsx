@@ -12,6 +12,12 @@ type Address = { line1: string; line2?: string | null; city: string; state: stri
 type LoadItem = {
   id: string; material: string; qty: number; unit: string;
   status: string; driver_user_id: string | null; driver_name: string | null;
+  pod_photo_url: string | null;
+  exception_photo_url: string | null;
+  exception_reason_code: string | null;
+  exception_notes: string | null;
+  condition_photo_url: string | null;
+  condition_notes: string | null;
 };
 type DropDetail = {
   id: string; ref: string; source: string;
@@ -19,6 +25,7 @@ type DropDetail = {
   customer_name: string; customer_phone: string; delivery_address: Address | null;
   notes: string | null; required_loads: number; loads: LoadItem[];
   notify_sent_at: string | null; last_reschedule_sms_at: string | null;
+  drop_photos: string[];
 };
 
 /* ── Helpers ── */
@@ -48,6 +55,17 @@ const STATUS_PILL: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = {
   assigned: 'Assigned', loaded_leaving: 'En Route', delivered: 'Delivered',
   exception: 'Exception', cancelled: 'Cancelled', new: 'Pending',
+};
+
+const EXCEPTION_LABELS: Record<string, string> = {
+  WRONG_ADDRESS: 'Wrong Address',
+  CUSTOMER_REFUSED: 'Customer Refused',
+  ACCESS_BLOCKED: 'Access Blocked',
+  DAMAGED_GOODS: 'Damaged Material',
+  CUSTOMER_UNAVAILABLE: 'Not Home',
+  SAFETY_RISK: 'Safety Risk',
+  OUT_OF_STOCK: 'Out of Stock',
+  OTHER: 'Other',
 };
 
 function toSlideOverDetail(drop: DropDetail): SlideOverDropDetail {
@@ -84,6 +102,7 @@ function DispatchDropDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showPanel, setShowPanel] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const fetchDrop = useCallback(async () => {
     setLoading(true);
@@ -98,13 +117,78 @@ function DispatchDropDetailPage() {
   useEffect(() => { setMounted(true); }, []);
   useEffect(() => { fetchDrop(); }, [fetchDrop]);
 
-  // Auto-open panel if ?action=reschedule
   useEffect(() => {
     if (searchParams.get('action') === 'reschedule' && drop) setShowPanel(true);
   }, [searchParams, drop]);
 
   if (!requireRole(['dispatcher'])) return <div className="page"><p>Unauthorized</p></div>;
   if (!mounted) return <div style={{ minHeight: '100vh' }} />;
+
+  /* ── Collect all photos across the drop ── */
+  const buildPhotoSections = (drop: DropDetail) => {
+    const sections: { label: string; icon: string; color: string; photos: { url: string; caption: string }[] }[] = [];
+
+    if (drop.drop_photos?.length > 0) {
+      sections.push({
+        label: 'Drop Site',
+        icon: '📍',
+        color: '#1d4ed8',
+        photos: drop.drop_photos.map((url, i) => ({ url, caption: `Site photo ${i + 1}` })),
+      });
+    }
+
+    const conditionPhotos = drop.loads
+      .filter(l => l.condition_photo_url || l.condition_notes)
+      .map(l => ({
+        url: l.condition_photo_url || '',
+        caption: l.condition_notes ? `${l.material}: ${l.condition_notes}` : `${l.material} — condition documented`,
+        notesOnly: !l.condition_photo_url,
+        notes: l.condition_notes,
+      }));
+    if (conditionPhotos.length > 0) {
+      sections.push({
+        label: 'Site Conditions',
+        icon: '📋',
+        color: '#92400e',
+        photos: conditionPhotos.filter(p => !p.notesOnly).map(p => ({ url: p.url, caption: p.caption })),
+        ...(conditionPhotos.some(p => p.notesOnly) ? { notesOnly: conditionPhotos.filter(p => p.notesOnly) } : {}),
+      } as any);
+    }
+
+    const podPhotos = drop.loads
+      .filter(l => l.pod_photo_url)
+      .map(l => ({ url: l.pod_photo_url!, caption: `POD — ${l.material}` }));
+    if (podPhotos.length > 0) {
+      sections.push({ label: 'Proof of Delivery', icon: '✅', color: '#15803d', photos: podPhotos });
+    }
+
+    const exceptionPhotos = drop.loads
+      .filter(l => l.exception_photo_url || l.exception_reason_code)
+      .map(l => ({
+        url: l.exception_photo_url || '',
+        caption: [
+          EXCEPTION_LABELS[l.exception_reason_code || ''] || l.exception_reason_code || 'Exception',
+          l.exception_notes,
+        ].filter(Boolean).join(' — '),
+        notesOnly: !l.exception_photo_url,
+        notes: l.exception_notes,
+        reason: l.exception_reason_code,
+      }));
+    if (exceptionPhotos.length > 0) {
+      sections.push({
+        label: 'Exception',
+        icon: '⚠️',
+        color: '#b91c1c',
+        photos: exceptionPhotos.filter(p => !p.notesOnly).map(p => ({ url: p.url, caption: p.caption })),
+        ...(exceptionPhotos.some(p => p.notesOnly) ? { notesOnly: exceptionPhotos.filter(p => p.notesOnly) } : {}),
+      } as any);
+    }
+
+    return sections;
+  };
+
+  const photoSections = drop ? buildPhotoSections(drop) : [];
+  const hasAnyPhotos = photoSections.length > 0;
 
   return (
     <>
@@ -171,7 +255,7 @@ function DispatchDropDetailPage() {
               </div>
             </div>
 
-            {/* Notification status — read-only */}
+            {/* Notification status */}
             <div className="card dd-section">
               <div className="dd-section-head">Notifications</div>
               <div className="dd-notif-grid">
@@ -190,7 +274,7 @@ function DispatchDropDetailPage() {
               </div>
             </div>
 
-            {/* Loads — read-only */}
+            {/* Loads */}
             <div className="card dd-section">
               <div className="dd-section-head">Loads ({drop.loads.length})</div>
               {drop.loads.length === 0 ? (
@@ -237,10 +321,60 @@ function DispatchDropDetailPage() {
               </div>
             )}
 
+            {/* Photos */}
+            {hasAnyPhotos && (
+              <div className="card dd-section">
+                <div className="dd-section-head">Photos & Documentation</div>
+                <div className="dd-photos-body">
+                  {photoSections.map((section, si) => (
+                    <div key={si} className={`dd-photo-section ${si < photoSections.length - 1 ? 'dd-photo-section--border' : ''}`}>
+                      <div className="dd-photo-section-label" style={{ color: section.color }}>
+                        {section.icon} {section.label}
+                      </div>
+
+                      {/* Photo grid */}
+                      {section.photos.length > 0 && (
+                        <div className="dd-photo-grid">
+                          {section.photos.map((photo, pi) => (
+                            <div key={pi} className="dd-photo-tile" onClick={() => setLightboxUrl(photo.url)}>
+                              <img src={photo.url} alt={photo.caption} className="dd-photo-img" />
+                              <div className="dd-photo-caption">{photo.caption}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Notes-only entries (no photo, just text) */}
+                      {(section as any).notesOnly?.map((item: any, ni: number) => (
+                        <div key={ni} className="dd-photo-note">
+                          <span className="dd-photo-note-icon">📝</span>
+                          <div>
+                            {item.reason && <div className="dd-photo-note-reason">{EXCEPTION_LABELS[item.reason] || item.reason}</div>}
+                            {item.notes && <div className="dd-photo-note-text">{item.notes}</div>}
+                            {!item.reason && !item.notes && <div className="dd-photo-note-text">{item.caption}</div>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="dd-id-footer">Drop ID: <code>{drop.id}</code></div>
           </>
         )}
       </div>
+
+      {/* Lightbox */}
+      {lightboxUrl && (
+        <div className="dd-lightbox-overlay" onClick={() => setLightboxUrl(null)}>
+          <div className="dd-lightbox" onClick={e => e.stopPropagation()}>
+            <img src={lightboxUrl} alt="Photo" className="dd-lightbox-img" />
+            <button className="dd-lightbox-close" onClick={() => setLightboxUrl(null)}>✕</button>
+          </div>
+        </div>
+      )}
 
       {/* Order management panel */}
       {showPanel && drop && (
@@ -304,6 +438,28 @@ const styles = `
   .dd-load-mat { font-weight: 600; color: var(--gray-800); }
   .dd-load-driver { font-size: 13px; color: var(--gray-600); }
   .dd-unassigned { color: var(--amber-600,#d97706); font-weight: 600; font-size: 13px; }
+
+  /* Photos */
+  .dd-photos-body { padding: 8px 0; }
+  .dd-photo-section { padding: 16px 24px; }
+  .dd-photo-section--border { border-bottom: 1px solid var(--border-light); }
+  .dd-photo-section-label { font-family: var(--font-heading); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 12px; }
+  .dd-photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+  .dd-photo-tile { border-radius: 10px; overflow: hidden; border: 1.5px solid var(--border-light); cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }
+  .dd-photo-tile:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+  .dd-photo-img { width: 100%; height: 130px; object-fit: cover; display: block; }
+  .dd-photo-caption { padding: 6px 10px; font-size: 12px; color: var(--gray-500); font-weight: 500; background: var(--gray-50); line-height: 1.3; }
+  .dd-photo-note { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; background: var(--gray-50); border-radius: 8px; margin-top: 8px; }
+  .dd-photo-note-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+  .dd-photo-note-reason { font-family: var(--font-heading); font-size: 13px; font-weight: 700; color: var(--gray-700); margin-bottom: 2px; }
+  .dd-photo-note-text { font-size: 13px; color: var(--gray-600); line-height: 1.4; }
+
+  /* Lightbox */
+  .dd-lightbox-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; animation: dd-fade 0.15s; }
+  @keyframes dd-fade { from { opacity: 0; } to { opacity: 1; } }
+  .dd-lightbox { position: relative; max-width: 90vw; max-height: 90vh; }
+  .dd-lightbox-img { max-width: 90vw; max-height: 85vh; object-fit: contain; border-radius: 12px; display: block; }
+  .dd-lightbox-close { position: absolute; top: -16px; right: -16px; width: 40px; height: 40px; border-radius: 50%; background: #fff; border: none; font-size: 18px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); cursor: pointer; display: flex; align-items: center; justify-content: center; }
 
   .dd-id-footer { font-size: 12px; color: var(--gray-300); margin-top: 24px; margin-bottom: 40px; }
   .dd-id-footer code { font-size: 11px; background: var(--gray-50); padding: 2px 6px; border-radius: 4px; }
