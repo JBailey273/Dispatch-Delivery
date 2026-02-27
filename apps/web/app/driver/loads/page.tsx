@@ -242,28 +242,48 @@ export default function DriverPage() {
         : photoTarget.type === 'exception' ? 'EXCEPTION_PHOTO'
         : 'CONDITION_PHOTO';
 
-      // 1. Get presigned upload URL
-      const presign = await api('/uploads/presign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entity_type: entityType, entity_id: photoTarget.loadId, content_type: 'image/jpeg' }),
-      });
+      // Step 1
+      let presign: any;
+      try {
+        presign = await api('/uploads/presign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ entity_type: entityType, entity_id: photoTarget.loadId, content_type: 'image/jpeg' }),
+        });
+      } catch (err: any) {
+        showToast(`Step 1 failed: ${err?.message || err}`, 'error');
+        return;
+      }
 
-      // 2. Upload directly to R2
-      await fetch(presign.upload_url, {
-        method: 'PUT',
-        body: file,
-        headers: { 'Content-Type': 'image/jpeg' },
-      });
+      // Step 2
+      try {
+        const r2res = await fetch(presign.upload_url, {
+          method: 'PUT',
+          body: file,
+          headers: { 'Content-Type': 'image/jpeg' },
+        });
+        if (!r2res.ok) {
+          showToast(`Step 2 failed: R2 returned ${r2res.status}`, 'error');
+          return;
+        }
+      } catch (err: any) {
+        showToast(`Step 2 network error: ${err?.message || err}`, 'error');
+        return;
+      }
 
-      // 3. Confirm upload — saves URL to DB
-      await api('/uploads/confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entity_type: entityType, entity_id: photoTarget.loadId, object_key: presign.object_key }),
-      });
+      // Step 3
+      try {
+        await api('/uploads/confirm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ entity_type: entityType, entity_id: photoTarget.loadId, object_key: presign.object_key }),
+        });
+      } catch (err: any) {
+        showToast(`Step 3 failed: ${err?.message || err}`, 'error');
+        return;
+      }
 
-      // 4. Handle post-upload action per type
+      // Step 4
       if (photoTarget.type === 'pod') {
         await api(`/driver/loads/${photoTarget.loadId}/status`, {
           method: 'POST',
@@ -279,8 +299,6 @@ export default function DriverPage() {
 
       setPhotoTarget(null);
       await fetchDrops();
-    } catch {
-      showToast('Failed to upload photo. Try again.', 'error');
     } finally {
       setActionLoading(null);
       if (photoInputRef.current) photoInputRef.current.value = '';
