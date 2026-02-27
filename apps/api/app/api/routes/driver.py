@@ -87,6 +87,8 @@ def driver_drops(
                     "exception_photo_url": l.exception_photo_url,
                     "exception_reason_code": l.exception_reason_code.value if l.exception_reason_code else None,
                     "exception_notes": l.exception_notes,
+                    "condition_photo_url": l.condition_photo_url,
+                    "condition_notes": l.condition_notes,
                 }
                 for l in drop_loads
             ],
@@ -337,7 +339,7 @@ def attach_load_photo(
     user: AuthUser = Depends(require_roles(UserRole.DRIVER)),
     db: Session = Depends(db_dep),
 ):
-    """Attach a photo URL to a load (POD or exception photo).
+    """Attach a photo URL to a load (POD, exception, or condition photo).
     The frontend handles the actual upload to the upload service / S3
     and passes the resulting URL here."""
     load = db.execute(
@@ -347,21 +349,46 @@ def attach_load_photo(
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Load not found"})
     if load.driver_user_id != user.user_id:
         raise HTTPException(status_code=403, detail={"code": "load_reassigned", "message": "Load not assigned to driver"})
-
     if payload.photo_type == "pod":
         load.pod_photo_url = payload.photo_url
     elif payload.photo_type == "exception":
         load.exception_photo_url = payload.photo_url
+    elif payload.photo_type == "condition":
+        load.condition_photo_url = payload.photo_url
     else:
-        raise HTTPException(status_code=400, detail={"code": "invalid_type", "message": "photo_type must be 'pod' or 'exception'"})
-
+        raise HTTPException(status_code=400, detail={"code": "invalid_type", "message": "photo_type must be 'pod', 'exception', or 'condition'"})
     log_event(
         db, user.tenant_id, "LOAD_PHOTO_ATTACHED", "driver",
         {"load_id": load_id, "photo_type": payload.photo_type},
     )
-
     db.commit()
     return {
         "pod_photo_url": load.pod_photo_url,
         "exception_photo_url": load.exception_photo_url,
+        "condition_photo_url": load.condition_photo_url,
     }
+
+
+class ConditionNotesIn(BaseModel):
+    notes: str
+
+
+@router.post("/loads/{load_id}/condition-notes")
+def save_condition_notes(
+    load_id: str,
+    payload: ConditionNotesIn,
+    user: AuthUser = Depends(require_roles(UserRole.DRIVER)),
+    db: Session = Depends(db_dep),
+):
+    """Save pre-delivery condition notes for a load."""
+    load = db.execute(
+        select(Load).where(Load.id == load_id, Load.tenant_id == user.tenant_id).with_for_update()
+    ).scalar_one_or_none()
+    if not load:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Load not found"})
+    if load.driver_user_id != user.user_id:
+        raise HTTPException(status_code=403, detail={"code": "not_assigned", "message": "Load not assigned to this driver"})
+    load.condition_notes = payload.notes
+    log_event(db, user.tenant_id, "LOAD_CONDITION_NOTED", "driver", {"load_id": load_id, "notes": payload.notes})
+    db.commit()
+    return {"status": "saved"}
