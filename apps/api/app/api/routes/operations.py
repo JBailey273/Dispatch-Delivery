@@ -493,7 +493,7 @@ def anomalies(auto_fix: bool = Query(default=True), user: AuthUser = Depends(req
     for drop_id, scheduled_date, scheduled_window in drops_with_zero_loads:
         anomalies_out.append({"type": "drop_without_loads", "drop_id": str(drop_id), "scheduled_date": str(scheduled_date), "scheduled_window": scheduled_window.value})
 
-now = now_utc()
+    now = now_utc()
     try:
         tenant = db.execute(select(Tenant).where(Tenant.id == user.tenant_id)).scalar_one()
         tz = ZoneInfo(tenant.timezone)
