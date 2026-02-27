@@ -191,6 +191,7 @@ class Drop(Base, TenantScopedMixin, TimestampMixin):
     split_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     notify_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_reschedule_sms_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    needs_reschedule: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class Load(Base, TenantScopedMixin, TimestampMixin):
@@ -212,6 +213,8 @@ class Load(Base, TenantScopedMixin, TimestampMixin):
     exception_photo_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     exception_reason_code: Mapped[ExceptionReasonCode | None] = mapped_column(Enum(ExceptionReasonCode, name="exception_reason_code"), nullable=True)
     exception_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    condition_photo_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    condition_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     route_sequence: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     drop = relationship("Drop", lazy="select")
