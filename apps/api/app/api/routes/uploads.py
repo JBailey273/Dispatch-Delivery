@@ -98,6 +98,12 @@ def confirm_upload(
         if not load:
             raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Load not found"})
         load.exception_photo_url = _photo_url(payload.object_key)
+    elif payload.entity_type == "CONDITION_PHOTO":
+        load = db.execute(select(Load).where(Load.tenant_id == user.tenant_id, Load.id == payload.entity_id).with_for_update()).scalar_one_or_none()
+        if not load:
+            raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Load not found"})
+        load.condition_photo_url = _photo_url(payload.object_key)
+    else:
     else:
         raise HTTPException(status_code=400, detail={"code": "invalid_entity_type", "message": "Unsupported entity_type"})
 
