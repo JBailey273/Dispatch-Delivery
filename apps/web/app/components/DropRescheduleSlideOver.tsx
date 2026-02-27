@@ -269,8 +269,7 @@ export default function DropRescheduleSlideOver({
     try {
       await api(`/drops/${dropId}/reschedule`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scheduled_date: rescDate, scheduled_window: rescWindow }),
-      });
+        body: JSON.stringify({ scheduled_date: rescDate, scheduled_window: dropDetail.is_priority ? null : rescWindow }),
       setRescSuccess(true);
       onRescheduled();
       await refreshDetail();
