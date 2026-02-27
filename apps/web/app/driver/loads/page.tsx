@@ -396,7 +396,7 @@ export default function DriverPage() {
                               onClick={() => openConditionCamera(drop.loads[0].id)}
                               disabled={!!actionLoading}
                             >
-                              📷 Take Photo
+                              Take Photo
                             </button>
                             <button
                               className="drv-btn drv-btn--outline"
@@ -404,7 +404,7 @@ export default function DriverPage() {
                               onClick={() => { setConditionModal({ loadId: drop.loads[0].id }); setConditionNotes(''); }}
                               disabled={!!actionLoading}
                             >
-                              📝 Add Note
+                              Add Note
                             </button>
                             <button
                               className="drv-btn drv-btn--ghost"
