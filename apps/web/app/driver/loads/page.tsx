@@ -424,7 +424,7 @@ export default function DriverPage() {
                               Add Note
                             </button>
                             <button
-                              className="drv-btn drv-btn--ghost"
+                              className="drv-btn drv-btn--green"
                               style={{ flex: 1, padding: '12px 10px', fontSize: 14 }}
                               onClick={async () => {
                                 try {
