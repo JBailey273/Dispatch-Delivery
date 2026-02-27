@@ -268,11 +268,13 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
             "city": address.city, "state": address.state, "postal_code": address.postal_code,
         }
 
-    load_rows = db.execute(
+load_rows = db.execute(
         select(Load, User).outerjoin(User, User.id == Load.driver_user_id)
         .where(Load.tenant_id == user.tenant_id, Load.drop_id == drop.id)
     ).all()
-    loads_out.append({
+    loads_out = []
+    for ld, driver in load_rows:
+        loads_out.append({
             "id": str(ld.id),
             "material": ld.material_name_snapshot,
             "qty": ld.qty,
@@ -288,8 +290,7 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
             "condition_photo_url": ld.condition_photo_url,
             "condition_notes": ld.condition_notes,
         })
-
-   return {
+    return {
         "id": str(drop.id),
         "ref": _build_order_ref(drop),
         "order_number": drop.order_number,
@@ -309,7 +310,6 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
         "loads": loads_out,
         "drop_photos": drop.drop_photos if drop.drop_photos else [],
     }
-
 
 @router.post("/drops/{drop_id}/send-delivery-notification")
 def send_delivery_notification(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)), db: Session = Depends(db_dep)):
