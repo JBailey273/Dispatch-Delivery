@@ -17,6 +17,8 @@ type LoadItem = {
   exception_photo_url: string | null;
   exception_reason_code: string | null;
   exception_notes: string | null;
+  condition_photo_url: string | null;
+  condition_notes: string | null;
 };
 
 type DropItem = {
@@ -101,7 +103,10 @@ export default function DriverPage() {
 
   const [oosConfirm, setOosConfirm] = useState<{ loadId: string; material: string } | null>(null);
 
-  const [photoTarget, setPhotoTarget] = useState<{ loadId: string; type: 'pod' | 'exception' } | null>(null);
+  const [photoTarget, setPhotoTarget] = useState<{ loadId: string; type: 'pod' | 'exception' | 'condition' } | null>(null);
+  const [conditionModal, setConditionModal] = useState<{ loadId: string } | null>(null);
+  const [conditionNotes, setConditionNotes] = useState('');
+  const [conditionSaving, setConditionSaving] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
@@ -199,6 +204,33 @@ export default function DriverPage() {
     } finally {
       setActionLoading(null);
     }
+  };
+
+   const submitConditionNotes = async () => {
+    if (!conditionModal) return;
+    setConditionSaving(true);
+    try {
+      if (conditionNotes.trim()) {
+        await api(`/driver/loads/${conditionModal.loadId}/condition-notes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes: conditionNotes.trim() }),
+        });
+      }
+      showToast('Conditions documented.');
+      setConditionModal(null);
+      setConditionNotes('');
+      await fetchDrops();
+    } catch {
+      showToast('Failed to save. Try again.', 'error');
+    } finally {
+      setConditionSaving(false);
+    }
+  };
+
+  const openConditionCamera = (loadId: string) => {
+    setPhotoTarget({ loadId, type: 'condition' });
+    setTimeout(() => photoInputRef.current?.click(), 100);
   };
 
   const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -335,7 +367,69 @@ export default function DriverPage() {
               {/* Body */}
               <div className={`drv-body ${isExpanded ? 'drv-body--open' : ''}`}>
                 <div className="drv-inner">
-
+               
+               {/* ① Condition Documentation */}
+                  {drop.loads.some(l => l.status === 'assigned' || l.status === 'loaded_leaving') && (
+                    <div style={{ margin: '0 -18px', borderBottom: '1.5px solid var(--g2)', marginBottom: 0 }}>
+                      {drop.loads.every(l => l.condition_photo_url || l.condition_notes) ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px', background: 'var(--grn0)' }}>
+                          <span style={{ fontSize: 20 }}>✅</span>
+                          <div>
+                            <div style={{ fontFamily: 'var(--fh)', fontSize: 13, fontWeight: 700, color: 'var(--grn7)' }}>Site conditions documented</div>
+                            {drop.loads[0].condition_notes && (
+                              <div style={{ fontSize: 13, color: 'var(--g5)', marginTop: 2 }}>{drop.loads[0].condition_notes}</div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ padding: '14px 18px', background: '#fffbeb', borderBottom: '1.5px solid #fde68a' }}>
+                          <div style={{ fontFamily: 'var(--fh)', fontSize: 12, fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 8 }}>
+                            📋 Document Site Conditions
+                          </div>
+                          <div style={{ fontSize: 14, color: '#78350f', marginBottom: 12, lineHeight: 1.4 }}>
+                            Note any pre-existing damage, hazards, or access issues before delivering.
+                          </div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button
+                              className="drv-btn drv-btn--outline"
+                              style={{ flex: 1, padding: '12px 10px', fontSize: 14 }}
+                              onClick={() => openConditionCamera(drop.loads[0].id)}
+                              disabled={!!actionLoading}
+                            >
+                              📷 Take Photo
+                            </button>
+                            <button
+                              className="drv-btn drv-btn--outline"
+                              style={{ flex: 1, padding: '12px 10px', fontSize: 14 }}
+                              onClick={() => { setConditionModal({ loadId: drop.loads[0].id }); setConditionNotes(''); }}
+                              disabled={!!actionLoading}
+                            >
+                              📝 Add Note
+                            </button>
+                            <button
+                              className="drv-btn drv-btn--ghost"
+                              style={{ flex: 1, padding: '12px 10px', fontSize: 14 }}
+                              onClick={async () => {
+                                try {
+                                  await api(`/driver/loads/${drop.loads[0].id}/condition-notes`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ notes: 'No issues noted.' }),
+                                  });
+                                  showToast('No issues noted.');
+                                  await fetchDrops();
+                                } catch { showToast('Failed. Try again.', 'error'); }
+                              }}
+                              disabled={!!actionLoading}
+                            >
+                              ✓ No Issues
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                   
                   {/* ① Load Manifest */}
                   <div className="drv-manifest">
                     <div className={`drv-manifest-hd ${isPriority ? 'drv-manifest-hd--priority' : ''}`}>
@@ -496,6 +590,31 @@ export default function DriverPage() {
         </div>
       )}
 
+      {/* Condition Notes Modal */}
+              {conditionModal && (
+                <div className="drv-overlay" onClick={() => setConditionModal(null)}>
+                  <div className="drv-modal" onClick={e => e.stopPropagation()}>
+                    <div className="drv-modal-ic">📋</div>
+                    <div className="drv-modal-h">Document Site Conditions</div>
+                    <div className="drv-modal-p">Describe any pre-existing damage, hazards, or access issues at this location.</div>
+                    <textarea
+                      className="drv-ta"
+                      placeholder="e.g. Broken mailbox post, cracked driveway near entrance, low-hanging branch..."
+                      value={conditionNotes}
+                      onChange={e => setConditionNotes(e.target.value)}
+                      rows={4}
+                      autoFocus
+                    />
+                    <div className="drv-modal-btns">
+                      <button className="drv-btn drv-btn--amber" onClick={submitConditionNotes} disabled={conditionSaving || !conditionNotes.trim()}>
+                        {conditionSaving ? 'Saving…' : 'Save Note'}
+                      </button>
+                      <button className="drv-btn drv-btn--outline" onClick={() => setConditionModal(null)}>Cancel</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+      
       {/* ── Exception Modal ── */}
       {exceptionModal && (
         <div className="drv-overlay" onClick={e => { if (e.target === e.currentTarget) { setExceptionModal(null); setExceptionReason(''); setExceptionNotes(''); } }}>
