@@ -493,19 +493,18 @@ def anomalies(auto_fix: bool = Query(default=True), user: AuthUser = Depends(req
     for drop_id, scheduled_date, scheduled_window in drops_with_zero_loads:
         anomalies_out.append({"type": "drop_without_loads", "drop_id": str(drop_id), "scheduled_date": str(scheduled_date), "scheduled_window": scheduled_window.value})
 
-    now = now_utc()
-    tenant = db.execute(select(Tenant).where(Tenant.id == user.tenant_id)).scalar_one()
-        try:
-            tz = ZoneInfo(tenant.timezone)
-        except Exception:
-            tz = timezone.utc
-
-        assigned = db.execute(select(Load).where(Load.tenant_id == user.tenant_id, Load.status == LoadStatus.ASSIGNED)).scalars().all()
-        for load in assigned:
-            window_end_hour = 17 if load.route_window == WindowCode.B else 13
-            window_end_local = datetime(load.route_date.year, load.route_date.month, load.route_date.day, window_end_hour, 0, 0, tzinfo=tz)
-            if window_end_local < now:
-                anomalies_out.append({"type": "load_stuck_assigned", "load_id": str(load.id), "route_date": str(load.route_date), "route_window": load.route_window.value, "status": load.status.value})
+now = now_utc()
+    try:
+        tenant = db.execute(select(Tenant).where(Tenant.id == user.tenant_id)).scalar_one()
+        tz = ZoneInfo(tenant.timezone)
+    except Exception:
+        tz = timezone.utc
+    assigned = db.execute(select(Load).where(Load.tenant_id == user.tenant_id, Load.status == LoadStatus.ASSIGNED)).scalars().all()
+    for load in assigned:
+        window_end_hour = 17 if load.route_window == WindowCode.B else 13
+        window_end_local = datetime(load.route_date.year, load.route_date.month, load.route_date.day, window_end_hour, 0, 0, tzinfo=tz)
+        if window_end_local < now:
+            anomalies_out.append({"type": "load_stuck_assigned", "load_id": str(load.id), "route_date": str(load.route_date), "route_window": load.route_window.value, "status": load.status.value})
 
     expired_holds = db.execute(
         select(CapacityHold)
