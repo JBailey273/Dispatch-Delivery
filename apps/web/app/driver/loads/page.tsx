@@ -479,18 +479,6 @@ export default function DriverPage() {
                     </div>
                   )}
 
-                  {/* ④ Navigate */}
-                  {drop.address && (
-                    <a href={getGoogleMapsUrl(drop.address)} target="_blank" rel="noopener noreferrer" className="drv-nav" style={{ marginTop: 22 }}>
-                      <div className="drv-nav-icon">🗺️</div>
-                      <div className="drv-nav-info">
-                        <div className="drv-nav-hint">Tap to Navigate</div>
-                        <div className="drv-nav-addr">{formatAddress(drop.address)}</div>
-                      </div>
-                      <div className="drv-nav-go">→</div>
-                    </a>
-                  )}
-
                   {/* ⑤ Notify */}
                   {!isDone && !isException && (
                     <div style={{ marginTop: 22 }}>
@@ -508,7 +496,20 @@ export default function DriverPage() {
                       )}
                     </div>
                   )}
+                   
+                  {/* ④ Navigate */}
+                  {drop.address && (
+                    <a href={getGoogleMapsUrl(drop.address)} target="_blank" rel="noopener noreferrer" className="drv-nav" style={{ marginTop: 22 }}>
+                      <div className="drv-nav-icon">🗺️</div>
+                      <div className="drv-nav-info">
+                        <div className="drv-nav-hint">Tap to Navigate</div>
+                        <div className="drv-nav-addr">{formatAddress(drop.address)}</div>
+                      </div>
+                      <div className="drv-nav-go">→</div>
+                    </a>
+                  )}
 
+                  
                   {/* ⑥ Primary action */}
                   {activeLoads.length > 0 && (
                     <div className="drv-actions">
