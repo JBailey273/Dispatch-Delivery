@@ -507,7 +507,10 @@ def anomalies(auto_fix: bool = Query(default=True), user: AuthUser = Depends(req
             WindowCode.A: datetime.combine(datetime.today(), time(13, 0), tzinfo=tz),
             WindowCode.B: datetime.combine(datetime.today(), time(17, 0), tzinfo=tz),
         }
-    assigned = db.execute(select(Load).where(Load.tenant_id == user.tenant_id, Load.status == LoadStatus.ASSIGNED)).scalars().all()
+    assigned = db.execute(
+        select(Load).join(Drop, Drop.id == Load.drop_id)
+        .where(Load.tenant_id == user.tenant_id, Load.status == LoadStatus.ASSIGNED, Drop.is_priority == False)
+    ).scalars().all()
     for load in assigned:
         window_end = datetime.combine(load.route_date, window_ends[load.route_window].timetz(), tzinfo=tz)
         if window_end < now:
