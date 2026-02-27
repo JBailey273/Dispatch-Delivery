@@ -341,7 +341,12 @@ export default function DriverPage() {
         )}
 
         {/* ── Cards ── */}
-        {!loading && drops.map(drop => {
+      {[...drops].sort((a, b) => {
+        const doneA = ['delivered', 'cancelled', 'exception'].includes(getDropStatus(a));
+        const doneB = ['delivered', 'cancelled', 'exception'].includes(getDropStatus(b));
+        if (doneA === doneB) return 0;
+        return doneA ? 1 : -1;
+      }).map(drop => {
           const dropStatus = getDropStatus(drop);
           const isExpanded = expandedDrop === drop.drop_id;
           const cfg = STATUS_CONFIG[dropStatus] || STATUS_CONFIG.assigned;
