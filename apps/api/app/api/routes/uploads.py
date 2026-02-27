@@ -41,7 +41,7 @@ def _storage_client():
 
 
 def _photo_url(object_key: str) -> str:
-    return f"{settings.r2_endpoint_url.rstrip('/')}/{settings.r2_bucket}/{object_key}"
+    return f"{settings.r2_public_url.rstrip('/')}/{object_key}"
 
 
 @router.post("/presign")
@@ -52,7 +52,7 @@ def create_presigned_upload(
 ):
     if payload.content_type != "image/jpeg":
         raise HTTPException(status_code=400, detail={"code": "invalid_content_type", "message": "Only image/jpeg is supported"})
-    if payload.entity_type not in {"DROP_PHOTO", "POD_PHOTO", "EXCEPTION_PHOTO"}:
+    if payload.entity_type not in {"DROP_PHOTO", "POD_PHOTO", "EXCEPTION_PHOTO", "CONDITION_PHOTO"}:
         raise HTTPException(status_code=400, detail={"code": "invalid_entity_type", "message": "Unsupported entity_type"})
 
     if payload.entity_type == "DROP_PHOTO":
