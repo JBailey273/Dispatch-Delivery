@@ -14,19 +14,22 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Update existing lowercase values in the loads table
-    op.execute("UPDATE loads SET exception_reason_code = 'CUSTOMER_UNAVAILABLE' WHERE exception_reason_code = 'customer_unavailable'")
-    op.execute("UPDATE loads SET exception_reason_code = 'ACCESS_BLOCKED' WHERE exception_reason_code = 'access_blocked'")
-    op.execute("UPDATE loads SET exception_reason_code = 'SAFETY_RISK' WHERE exception_reason_code = 'safety_risk'")
-    op.execute("UPDATE loads SET exception_reason_code = 'DAMAGED_GOODS' WHERE exception_reason_code = 'damaged_goods'")
-    op.execute("UPDATE loads SET exception_reason_code = 'OTHER' WHERE exception_reason_code = 'other'")
-
-    # Add the new uppercase values to the enum
+    # Add new uppercase values to the enum first
     op.execute("ALTER TYPE exception_reason_code ADD VALUE IF NOT EXISTS 'CUSTOMER_UNAVAILABLE'")
     op.execute("ALTER TYPE exception_reason_code ADD VALUE IF NOT EXISTS 'ACCESS_BLOCKED'")
     op.execute("ALTER TYPE exception_reason_code ADD VALUE IF NOT EXISTS 'SAFETY_RISK'")
     op.execute("ALTER TYPE exception_reason_code ADD VALUE IF NOT EXISTS 'DAMAGED_GOODS'")
     op.execute("ALTER TYPE exception_reason_code ADD VALUE IF NOT EXISTS 'OTHER'")
+
+    # Commit the enum changes before updating rows
+    op.execute("COMMIT")
+
+    # Now update existing rows, casting to text for comparison
+    op.execute("UPDATE loads SET exception_reason_code = 'CUSTOMER_UNAVAILABLE'::exception_reason_code WHERE exception_reason_code::text = 'customer_unavailable'")
+    op.execute("UPDATE loads SET exception_reason_code = 'ACCESS_BLOCKED'::exception_reason_code WHERE exception_reason_code::text = 'access_blocked'")
+    op.execute("UPDATE loads SET exception_reason_code = 'SAFETY_RISK'::exception_reason_code WHERE exception_reason_code::text = 'safety_risk'")
+    op.execute("UPDATE loads SET exception_reason_code = 'DAMAGED_GOODS'::exception_reason_code WHERE exception_reason_code::text = 'damaged_goods'")
+    op.execute("UPDATE loads SET exception_reason_code = 'OTHER'::exception_reason_code WHERE exception_reason_code::text = 'other'")
 
 
 def downgrade() -> None:
