@@ -268,7 +268,7 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
             "city": address.city, "state": address.state, "postal_code": address.postal_code,
         }
 
-load_rows = db.execute(
+    load_rows = db.execute(
         select(Load, User).outerjoin(User, User.id == Load.driver_user_id)
         .where(Load.tenant_id == user.tenant_id, Load.drop_id == drop.id)
     ).all()
@@ -290,6 +290,7 @@ load_rows = db.execute(
             "condition_photo_url": ld.condition_photo_url,
             "condition_notes": ld.condition_notes,
         })
+
     return {
         "id": str(drop.id),
         "ref": _build_order_ref(drop),
