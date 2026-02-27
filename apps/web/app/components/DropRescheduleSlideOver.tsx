@@ -358,8 +358,8 @@ await api(`/drops/${dropId}/reschedule`, {
               <div className="so-info-date">{fmtDateLong(dropDetail.scheduled_date)}</div>
               <div className="so-info-window">
                 {dropDetail.is_priority ? 'Priority — flexible window'
-                  : dropDetail.scheduled_window === 'A' ? '🌅 Morning (9am – 1pm)'
-                  : '🌤 Afternoon (1pm – 5pm)'}
+                  : dropDetail.scheduled_window === 'A' ? 'Morning Window (9am – 1pm)'
+                  : 'Afternoon Window (1pm – 5pm)'}
               </div>
               <button
                 className="so-resc-trigger"
