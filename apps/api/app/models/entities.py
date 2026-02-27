@@ -50,14 +50,14 @@ class LoadStatus(str, enum.Enum):
 
 
 class ExceptionReasonCode(str, enum.Enum):
-    CUSTOMER_UNAVAILABLE = "customer_unavailable"
-    ACCESS_BLOCKED = "access_blocked"
-    SAFETY_RISK = "safety_risk"
-    DAMAGED_GOODS = "damaged_goods"
+    CUSTOMER_UNAVAILABLE = "CUSTOMER_UNAVAILABLE"
+    ACCESS_BLOCKED = "ACCESS_BLOCKED"
+    SAFETY_RISK = "SAFETY_RISK"
+    DAMAGED_GOODS = "DAMAGED_GOODS"
     OUT_OF_STOCK = "OUT_OF_STOCK"
     WRONG_ADDRESS = "WRONG_ADDRESS"
     CUSTOMER_REFUSED = "CUSTOMER_REFUSED"
-    OTHER = "other"
+    OTHER = "OTHER"
 
 
 class CustomerType(str, enum.Enum):
