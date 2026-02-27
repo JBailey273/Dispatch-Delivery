@@ -289,7 +289,7 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
             "condition_notes": ld.condition_notes,
         })
 
-    return {
+   return {
         "id": str(drop.id),
         "ref": _build_order_ref(drop),
         "order_number": drop.order_number,
@@ -307,6 +307,7 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
         "notes": drop.notes,
         "required_loads": len(loads_out),
         "loads": loads_out,
+        "drop_photos": drop.drop_photos if drop.drop_photos else [],
     }
 
 
