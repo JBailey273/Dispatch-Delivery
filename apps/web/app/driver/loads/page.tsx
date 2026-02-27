@@ -522,9 +522,9 @@ export default function DriverPage() {
                         <div key={`a-${load.id}`} className="drv-act-group">
                           {activeLoads.length > 1 && <div className="drv-act-label">{load.material}</div>}
                           <button
-                            className="drv-btn drv-btn--green"
-                            disabled={actionLoading === load.id}
-                            onClick={() => markDelivered(load.id)}
+                             className="drv-btn drv-btn--green"
+                             disabled={actionLoading === load.id || !drop.loads.every(l => l.condition_photo_url || l.condition_notes)}
+                             onClick={() => markDelivered(load.id)}
                           >
                             <span className="drv-btn-ic">📸</span>
                             {actionLoading === load.id ? 'Saving…' : 'Mark Delivered — Take Photo'}
