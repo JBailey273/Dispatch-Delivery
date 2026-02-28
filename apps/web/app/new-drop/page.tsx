@@ -79,7 +79,7 @@ function NewDropPage() {
   // Submit
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<any>(null);
-  const [drivers, setDrivers] = useState<{ id: string; name: string }[]>([]);
+  const [drivers, setDrivers] = useState<{ id: string; name: string; email: string }[]>([]);
   const [selectedDriverId, setSelectedDriverId] = useState<string>('');
 
   /* ── Load catalog ── */
