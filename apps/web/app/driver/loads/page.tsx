@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { api } from '../../lib/auth';
+import { api, ApiError, clearSession } from '../../lib/auth';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    TYPES
@@ -121,7 +121,13 @@ export default function DriverPage() {
       const data = await api(`/driver/drops?day=${todayStr()}`);
       setDrops(data.drops || []);
       setError('');
-    } catch {
+    } catch (err) {
+      const apiErr = err as ApiError;
+      if (apiErr.code === 'auth_expired' || apiErr.status === 401) {
+        clearSession();
+        window.location.href = '/login';
+        return;
+      }
       setError('Could not load deliveries. Tap Refresh to try again.');
     } finally {
       setLoading(false);
