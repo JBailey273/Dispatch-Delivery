@@ -54,6 +54,7 @@ type DropDetail = {
   notify_sent_at: string | null; last_reschedule_sms_at: string | null;
 };
 type Driver = { id: string; email: string; name: string; truck: string | null };
+type NeedsAttentionItem = { drop_id: string; ref: string; customer_name: string; scheduled_date: string; scheduled_window: string | null; is_priority: boolean };
 
 /* ── Helpers ── */
 function capColor(used: number, total: number): string {
@@ -97,11 +98,12 @@ export default function DispatchSchedulePage() {
   const [schedule, setSchedule] = useState<ScheduleData | null>(null);
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [error, setError] = useState('');
+  const [needsAttention, setNeedsAttention] = useState<NeedsAttentionItem[]>([]);
 
   /* ── Slide-over state ── */
   const [slideDropId, setSlideDropId] = useState<string | null>(null);
   const [slideDropDetail, setSlideDropDetail] = useState<DropDetail | null>(null);
-
+  const [slideStartReschedule, setSlideStartReschedule] = useState(false);
   /* ── Driver assignment state ── */
 
 
@@ -203,10 +205,14 @@ export default function DispatchSchedulePage() {
   useEffect(() => {
     api('/dispatch/drivers').then(d => setDrivers(d.drivers || [])).catch(() => null);
   }, []);
+  useEffect(() => {
+    api('/dispatch/needs-attention').then(r => setNeedsAttention(r.drops || [])).catch(() => null);
+  }, []);
 
   /* ── Open slide-over ── */
-  const openDrop = async (dropId: string) => {
+  const openDrop = async (dropId: string, startOnReschedule = false) => {
     setSlideDropId(dropId);
+    setSlideStartReschedule(startOnReschedule);
     setSlideDropDetail(null);
     try {
       const resp = await api(`/dispatch/drops/${dropId}`);
@@ -494,7 +500,30 @@ export default function DispatchSchedulePage() {
           )}
         </div>
       </div>
-
+      
+{/* ── Needs Attention ── */}
+        {needsAttention.length > 0 && (
+          <div className="na-section">
+            <div className="na-head">
+              <span className="na-icon">🚨</span>
+              <span>Needs Attention</span>
+              <span className="na-count">{needsAttention.length}</span>
+            </div>
+            {needsAttention.map(item => (
+              <div key={item.drop_id} className="na-row" onClick={() => openDrop(item.drop_id, true)}>
+                <div className="na-row-info">
+                  <div className="na-row-name">{item.customer_name}</div>
+                  <div className="na-row-meta">
+                    #{item.ref} · {fmtShortDate(item.scheduled_date)} ·{' '}
+                    {item.is_priority ? '⚡ Priority' : item.scheduled_window === 'A' ? 'Morning' : 'Afternoon'}
+                  </div>
+                </div>
+                <div className="na-row-action">Reschedule →</div>
+              </div>
+            ))}
+          </div>
+        )}
+      
       {/* ── Slide-over ── */}
       {slideDropId && (
         <DropRescheduleSlideOver
@@ -503,6 +532,7 @@ export default function DispatchSchedulePage() {
           onClose={closeDrop}
           onRescheduled={handleRescheduled}
           capData={capData}
+          startOnReschedule={slideStartReschedule}
         />
       )}
     </>
@@ -592,6 +622,18 @@ const schedulerStyles = `
   .mc-cap-label { font-family: var(--font-heading); font-size: 10px; font-weight: 700; color: var(--gray-400); display: flex; justify-content: space-between; letter-spacing: 0.02em; }
   .mc-bar-track { height: 4px; border-radius: 2px; background: var(--gray-100); overflow: hidden; }
   .mc-bar { height: 4px; border-radius: 2px; transition: width 0.3s var(--ease-out); }
+
+  /* ── Needs Attention ── */
+  .na-section { border-bottom: 1px solid var(--border-light); background: #fff7ed; }
+  .na-head { display: flex; align-items: center; gap: 8px; padding: 12px 24px 8px; font-family: var(--font-heading); font-size: 13px; font-weight: 800; color: #92400e; text-transform: uppercase; letter-spacing: 0.05em; }
+  .na-icon { font-size: 15px; }
+  .na-count { margin-left: auto; background: #b45309; color: #fff; border-radius: 10px; font-size: 11px; font-weight: 800; padding: 1px 7px; }
+  .na-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 24px; cursor: pointer; border-top: 1px solid #fde68a; transition: background 0.12s; gap: 12px; }
+  .na-row:hover { background: #fef3c7; }
+  .na-row-info { flex: 1; min-width: 0; }
+  .na-row-name { font-family: var(--font-heading); font-size: 14px; font-weight: 700; color: var(--gray-900); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .na-row-meta { font-size: 12px; color: #92400e; margin-top: 2px; }
+  .na-row-action { font-size: 12px; font-weight: 700; color: #b45309; white-space: nowrap; flex-shrink: 0; }
 
   /* ── Right detail panel ── */
   .detail-panel { width: 420px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--bg-primary); overflow-y: auto; border-left: 1px solid var(--border-light); }
