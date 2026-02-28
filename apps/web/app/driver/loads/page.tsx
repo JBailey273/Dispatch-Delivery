@@ -423,18 +423,8 @@ export default function DriverPage() {
                {/* ① Condition Documentation */}
                   {drop.loads.some(l => l.status === 'assigned' || l.status === 'loaded_leaving') && (
                     <div style={{ margin: '0 -18px', borderBottom: '1.5px solid var(--g2)', marginBottom: 0 }}>
-                      {drop.loads.every(l => l.condition_photo_url || l.condition_notes) ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px', background: 'var(--grn0)' }}>
-                          <span style={{ fontSize: 20 }}>✅</span>
-                          <div>
-                            <div style={{ fontFamily: 'var(--fh)', fontSize: 13, fontWeight: 700, color: 'var(--grn7)' }}>Site conditions documented</div>
-                            {drop.loads[0].condition_notes && (
-                              <div style={{ fontSize: 13, color: 'var(--g5)', marginTop: 2 }}>{drop.loads[0].condition_notes}</div>
-                            )}
-                          </div>
-                        </div>
-                      ) : conditionPhotoTaken === drop.loads[0].id ? (
-                        /* ── Photo captured — optionally add a note ── */
+                      {conditionPhotoTaken === drop.loads[0].id ? (
+                        /* ── Photo captured — optionally add a note before closing ── */
                         <div style={{ padding: '14px 18px', background: '#f0fdf4', borderBottom: '1.5px solid #bbf7d0' }}>
                           <div style={{ fontFamily: 'var(--fh)', fontSize: 12, fontWeight: 700, color: '#15803d', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 8 }}>
                             📸 Photo Saved — Add a Note?
@@ -487,7 +477,19 @@ export default function DriverPage() {
                             ✕
                           </button>
                         </div>
+                      ) : drop.loads.every(l => l.condition_photo_url || l.condition_notes) ? (
+                        /* ── All loads documented ── */
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px', background: 'var(--grn0)' }}>
+                          <span style={{ fontSize: 20 }}>✅</span>
+                          <div>
+                            <div style={{ fontFamily: 'var(--fh)', fontSize: 13, fontWeight: 700, color: 'var(--grn7)' }}>Site conditions documented</div>
+                            {drop.loads[0].condition_notes && (
+                              <div style={{ fontSize: 13, color: 'var(--g5)', marginTop: 2 }}>{drop.loads[0].condition_notes}</div>
+                            )}
+                          </div>
+                        </div>
                       ) : (
+                        /* ── Default — choose how to document ── */
                         <div style={{ padding: '14px 18px', background: '#fffbeb', borderBottom: '1.5px solid #fde68a' }}>
                           <div style={{ fontFamily: 'var(--fh)', fontSize: 12, fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 8 }}>
                             📋 Document Site Conditions
@@ -534,7 +536,7 @@ export default function DriverPage() {
                         </div>
                       )}
                     </div>
-               )}
+                  )}
                   {/* ① Load Manifest */}
                   <div className="drv-manifest">
                     <div className={`drv-manifest-hd ${isPriority ? 'drv-manifest-hd--priority' : ''}`}>
