@@ -329,7 +329,7 @@ function NewDropPage() {
       }
       setResult(out);
     } catch (err) {
-      setError((err as ApiError).message || 'Create drop failed.
+      setError((err as ApiError).message || 'Create drop failed.');
     } finally { setSubmitting(false); }
   };
 
