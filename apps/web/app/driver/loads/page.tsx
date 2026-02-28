@@ -107,6 +107,11 @@ export default function DriverPage() {
   const [conditionModal, setConditionModal] = useState<{ loadId: string } | null>(null);
   const [conditionNotes, setConditionNotes] = useState('');
   const [conditionSaving, setConditionSaving] = useState(false);
+  // After a condition photo uploads, holds the loadId so we can optionally add a note
+  const [conditionPhotoTaken, setConditionPhotoTaken] = useState<string | null>(null);
+  const [conditionPhotoNote, setConditionPhotoNote] = useState('');
+  // After a note-only save, holds the loadId briefly to offer "add photo too?"
+  const [conditionNoteLoadId, setConditionNoteLoadId] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
@@ -217,12 +222,36 @@ export default function DriverPage() {
           body: JSON.stringify({ notes: conditionNotes.trim() }),
         });
       }
-      showToast('Conditions documented.');
+      const savedLoadId = conditionModal.loadId;
       setConditionModal(null);
       setConditionNotes('');
       await fetchDrops();
+      // Offer "add photo too?" briefly after a note-only save
+      setConditionNoteLoadId(savedLoadId);
     } catch {
       showToast('Failed to save. Try again.', 'error');
+    } finally {
+      setConditionSaving(false);
+    }
+  };
+
+  const submitConditionPhotoNote = async () => {
+    if (!conditionPhotoTaken) return;
+    setConditionSaving(true);
+    try {
+      if (conditionPhotoNote.trim()) {
+        await api(`/driver/loads/${conditionPhotoTaken}/condition-notes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes: conditionPhotoNote.trim() }),
+        });
+      }
+      showToast('Site conditions documented.');
+      setConditionPhotoTaken(null);
+      setConditionPhotoNote('');
+      await fetchDrops();
+    } catch {
+      showToast('Failed to save note. Try again.', 'error');
     } finally {
       setConditionSaving(false);
     }
@@ -268,7 +297,13 @@ export default function DriverPage() {
         });
         showToast('Photo saved & delivery confirmed!');
       } else if (photoTarget.type === 'condition') {
-        showToast('Site condition photo saved.');
+        // Don't collapse yet — stay open so driver can optionally add a note
+        const capturedLoadId = photoTarget.loadId;
+        setPhotoTarget(null);
+        await fetchDrops();
+        setConditionPhotoTaken(capturedLoadId);
+        setConditionPhotoNote('');
+        return;
       } else {
         showToast('Exception photo saved.');
       }
@@ -398,6 +433,60 @@ export default function DriverPage() {
                             )}
                           </div>
                         </div>
+                      ) : conditionPhotoTaken === drop.loads[0].id ? (
+                        /* ── Photo captured — optionally add a note ── */
+                        <div style={{ padding: '14px 18px', background: '#f0fdf4', borderBottom: '1.5px solid #bbf7d0' }}>
+                          <div style={{ fontFamily: 'var(--fh)', fontSize: 12, fontWeight: 700, color: '#15803d', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 8 }}>
+                            📸 Photo Saved — Add a Note?
+                          </div>
+                          <div style={{ fontSize: 14, color: '#166534', marginBottom: 12, lineHeight: 1.4 }}>
+                            Describe the condition in more detail, or tap Done to finish.
+                          </div>
+                          <textarea
+                            style={{
+                              width: '100%', boxSizing: 'border-box', padding: '12px 14px',
+                              fontSize: 15, lineHeight: 1.5, border: '1.5px solid #86efac',
+                              borderRadius: 10, background: '#fff', color: '#1a1a1a',
+                              fontFamily: 'var(--ff)', resize: 'none', marginBottom: 10,
+                              WebkitAppearance: 'none',
+                            }}
+                            placeholder="e.g. Cracked driveway near the entrance, low-hanging branch over gate…"
+                            value={conditionPhotoNote}
+                            onChange={e => setConditionPhotoNote(e.target.value)}
+                            rows={3}
+                            autoFocus
+                          />
+                          <button
+                            className="drv-btn drv-btn--green"
+                            style={{ width: '100%', padding: '14px', fontSize: 15 }}
+                            onClick={submitConditionPhotoNote}
+                            disabled={conditionSaving}
+                          >
+                            {conditionSaving ? 'Saving…' : 'Done'}
+                          </button>
+                        </div>
+                      ) : conditionNoteLoadId === drop.loads[0].id ? (
+                        /* ── Note saved — offer to add a photo too ── */
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px', background: 'var(--grn0)' }}>
+                          <span style={{ fontSize: 20 }}>✅</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontFamily: 'var(--fh)', fontSize: 13, fontWeight: 700, color: 'var(--grn7)' }}>Note saved</div>
+                            <div style={{ fontSize: 13, color: 'var(--g5)', marginTop: 2 }}>Want to add a photo too?</div>
+                          </div>
+                          <button
+                            className="drv-btn drv-btn--outline"
+                            style={{ fontSize: 13, padding: '8px 14px', whiteSpace: 'nowrap' }}
+                            onClick={() => { setConditionNoteLoadId(null); openConditionCamera(drop.loads[0].id); }}
+                          >
+                            📸 Add Photo
+                          </button>
+                          <button
+                            style={{ background: 'none', border: 'none', fontSize: 18, color: 'var(--g4)', padding: '4px 6px', cursor: 'pointer' }}
+                            onClick={() => setConditionNoteLoadId(null)}
+                          >
+                            ✕
+                          </button>
+                        </div>
                       ) : (
                         <div style={{ padding: '14px 18px', background: '#fffbeb', borderBottom: '1.5px solid #fde68a' }}>
                           <div style={{ fontFamily: 'var(--fh)', fontSize: 12, fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 8 }}>
@@ -413,7 +502,7 @@ export default function DriverPage() {
                               onClick={() => openConditionCamera(drop.loads[0].id)}
                               disabled={!!actionLoading}
                             >
-                              Take Photo
+                              📸 Take Photo
                             </button>
                             <button
                               className="drv-btn drv-btn--outline"
@@ -421,7 +510,7 @@ export default function DriverPage() {
                               onClick={() => { setConditionModal({ loadId: drop.loads[0].id }); setConditionNotes(''); }}
                               disabled={!!actionLoading}
                             >
-                              Add Note
+                              📝 Add Note
                             </button>
                             <button
                               className="drv-btn drv-btn--green"
@@ -444,8 +533,6 @@ export default function DriverPage() {
                           </div>
                         </div>
                       )}
-                    </div>
-                  )}
                    
                   {/* ① Load Manifest */}
                   <div className="drv-manifest">
