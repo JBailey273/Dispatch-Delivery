@@ -353,6 +353,7 @@ def reschedule_drop(drop_id: str, payload: RescheduleIn, user: AuthUser = Depend
     drop.scheduled_date = payload.scheduled_date
     drop.scheduled_window = new_window
     drop.is_priority = new_is_priority
+    drop.needs_reschedule = False
 
     load_window = new_window or WindowCode.A
     for load in loads:
