@@ -133,6 +133,28 @@ def dispatch_schedule(day: date, user: AuthUser = Depends(require_roles(UserRole
         },
     }
 
+@router.get("/needs-attention")
+def needs_attention(user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+    rows = db.execute(
+        select(Drop, Customer)
+        .join(Customer, Customer.id == Drop.customer_id)
+        .where(
+            Drop.tenant_id == user.tenant_id,
+            Drop.needs_reschedule == True,
+        )
+        .order_by(Drop.scheduled_date.asc())
+    ).all()
+    out = []
+    for drop, customer in rows:
+        out.append({
+            "drop_id": str(drop.id),
+            "ref": _build_order_ref(drop),
+            "customer_name": customer.name,
+            "scheduled_date": str(drop.scheduled_date),
+            "scheduled_window": drop.scheduled_window.value if drop.scheduled_window else None,
+            "is_priority": drop.is_priority,
+        })
+    return {"drops": out}
 
 @router.get("/drivers")
 def list_drivers(user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
