@@ -140,10 +140,12 @@ export default function DropRescheduleSlideOver({
 
   /* Self-fetch capacity */
   const [internalCapData, setInternalCapData] = useState<Record<string, { A: CapWindow | null; B: CapWindow | null }>>({});
-  const capData = externalCapData ?? internalCapData;
+  const capData = { ...externalCapData, ...internalCapData };
 
   const fetchCapForMonth = useCallback(async (monthStart: Date) => {
-    if (externalCapData) return;
+    const firstDayOfMonth = new Date(monthStart.getFullYear(), monthStart.getMonth(), 1);
+    const firstKey = toKey(firstDayOfMonth);
+    if (internalCapData[firstKey]) return;
     try {
       const y = monthStart.getFullYear(), m = monthStart.getMonth();
       const daysCount = new Date(y, m + 1, 0).getDate();
@@ -158,7 +160,7 @@ export default function DropRescheduleSlideOver({
       }
       setInternalCapData(prev => ({ ...prev, ...map }));
     } catch { /* silent */ }
-  }, [externalCapData]);
+  }, [internalCapData]);
 
   /* Drivers list */
   const [drivers, setDrivers] = useState<Driver[]>([]);
