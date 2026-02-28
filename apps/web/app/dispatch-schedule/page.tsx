@@ -468,7 +468,7 @@ export default function DispatchSchedulePage() {
                       {item.is_priority ? '⚡ Priority' : item.scheduled_window === 'A' ? 'Morning' : 'Afternoon'}
                     </div>
                   </div>
-                  <div className="na-row-action">Reschedule →</div>
+                  <div className="na-row-action">View Exception →</div>
                 </div>
               ))}
             </div>
