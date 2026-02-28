@@ -79,11 +79,14 @@ function NewDropPage() {
   // Submit
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [drivers, setDrivers] = useState<{ id: string; display_name: string }[]>([]);
+  const [selectedDriverId, setSelectedDriverId] = useState<string>('');
 
   /* ── Load catalog ── */
   useEffect(() => {
     searchRef.current?.focus();
     api('/product-catalog').then(d => setCatalog(d.items || [])).catch(() => null);
+    api('/dispatch/drivers').then(d => setDrivers(d.drivers || [])).catch(() => null);
   }, []);
 
   /* ── Preload customer from URL param ── */
@@ -315,9 +318,18 @@ function NewDropPage() {
       localStorage.setItem(LAST_WINDOW_KEY, selectedWindow);
       localStorage.setItem(`${LAST_ADDRESS_KEY}${customer.id}`, addressId);
       localStorage.setItem(`${LAST_ITEMS_KEY}${customer.id}`, JSON.stringify(items));
+      if (selectedDriverId && out.drop_id) {
+        try {
+          await api(`/dispatch/drops/${out.drop_id}/assign`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ driver_user_id: selectedDriverId }),
+          });
+        } catch { /* non-fatal — order still created, dispatcher can assign in scheduler */ }
+      }
       setResult(out);
     } catch (err) {
-      setError((err as ApiError).message || 'Create drop failed.');
+      setError((err as ApiError).message || 'Create drop failed.
     } finally { setSubmitting(false); }
   };
 
@@ -675,6 +687,71 @@ function NewDropPage() {
           </div>
         </div>
 
+{/* ═══ DRIVER ASSIGNMENT (optional) ═══ */}
+        {selDate && (
+          <div className="nd-card card">
+            <div className="nd-card-head">
+              <span className="nd-card-icon">🚚</span>
+              <span className="nd-card-title">Driver Assignment</span>
+              <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--gray-400)', fontWeight: 500 }}>Optional</span>
+            </div>
+            <div className="nd-card-body">
+              {drivers.length === 0 ? (
+                <p style={{ color: 'var(--gray-400)', fontSize: 14, margin: 0 }}>No drivers available</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDriverId('')}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '12px 14px', borderRadius: 10, cursor: 'pointer',
+                      border: `2px solid ${selectedDriverId === '' ? 'var(--green-600)' : 'var(--gray-200)'}`,
+                      background: selectedDriverId === '' ? 'var(--green-50)' : '#fff',
+                      textAlign: 'left', width: '100%',
+                    }}
+                  >
+                    <span style={{ fontSize: 20 }}>📋</span>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--gray-800)' }}>Unassigned</div>
+                      <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>Assign later in the scheduler</div>
+                    </div>
+                    {selectedDriverId === '' && <span style={{ marginLeft: 'auto', color: 'var(--green-600)', fontWeight: 700 }}>✓</span>}
+                  </button>
+                  {drivers.map(d => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      onClick={() => setSelectedDriverId(d.id)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '12px 14px', borderRadius: 10, cursor: 'pointer',
+                        border: `2px solid ${selectedDriverId === d.id ? 'var(--green-600)' : 'var(--gray-200)'}`,
+                        background: selectedDriverId === d.id ? 'var(--green-50)' : '#fff',
+                        textAlign: 'left', width: '100%',
+                      }}
+                    >
+                      <div style={{
+                        width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+                        background: selectedDriverId === d.id ? 'var(--green-600)' : 'var(--gray-200)',
+                        color: selectedDriverId === d.id ? '#fff' : 'var(--gray-600)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontWeight: 700, fontSize: 15, fontFamily: 'var(--font-heading)',
+                      }}>
+                        {d.display_name.charAt(0).toUpperCase()}
+                      </div>
+                      <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--gray-800)' }}>{d.display_name}</div>
+                      {selectedDriverId === d.id && <span style={{ marginLeft: 'auto', color: 'var(--green-600)', fontWeight: 700 }}>✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ═══ SUBMIT BAR ═══ */}
+        
         {/* ═══ SUBMIT BAR ═══ */}
         <div className="nd-submit-bar">
           <button className="btn btn-ghost" onClick={() => router.push('/dispatch-schedule')}>Cancel</button>
