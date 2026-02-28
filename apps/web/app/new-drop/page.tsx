@@ -79,7 +79,7 @@ function NewDropPage() {
   // Submit
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<any>(null);
-  const [drivers, setDrivers] = useState<{ id: string; display_name: string }[]>([]);
+  const [drivers, setDrivers] = useState<{ id: string; name: string }[]>([]);
   const [selectedDriverId, setSelectedDriverId] = useState<string>('');
 
   /* ── Load catalog ── */
@@ -738,9 +738,9 @@ function NewDropPage() {
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         fontWeight: 700, fontSize: 15, fontFamily: 'var(--font-heading)',
                       }}>
-                        {d.display_name.charAt(0).toUpperCase()}
+                        {(d.name || d.email).charAt(0).toUpperCase()}
                       </div>
-                      <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--gray-800)' }}>{d.display_name}</div>
+                      <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--gray-800)' }}>{d.name}</div>
                       {selectedDriverId === d.id && <span style={{ marginLeft: 'auto', color: 'var(--green-600)', fontWeight: 700 }}>✓</span>}
                     </button>
                   ))}
