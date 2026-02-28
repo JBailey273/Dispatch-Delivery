@@ -533,7 +533,8 @@ export default function DriverPage() {
                           </div>
                         </div>
                       )}
-                   
+                    </div>
+               )}
                   {/* ① Load Manifest */}
                   <div className="drv-manifest">
                     <div className={`drv-manifest-hd ${isPriority ? 'drv-manifest-hd--priority' : ''}`}>
