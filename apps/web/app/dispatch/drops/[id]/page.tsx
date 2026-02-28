@@ -79,6 +79,12 @@ function toSlideOverDetail(drop: DropDetail): SlideOverDropDetail {
     loads: drop.loads.map(l => ({
       id: l.id, material: l.material, qty: l.qty, unit: l.unit,
       status: l.status, driver_user_id: l.driver_user_id, driver_name: l.driver_name,
+      exception_reason_code: l.exception_reason_code,
+      exception_notes: l.exception_notes,
+      exception_photo_url: l.exception_photo_url,
+      condition_photo_url: l.condition_photo_url,
+      condition_notes: l.condition_notes,
+      pod_photo_url: l.pod_photo_url,
     })),
     notify_sent_at: drop.notify_sent_at,
     last_reschedule_sms_at: drop.last_reschedule_sms_at,
