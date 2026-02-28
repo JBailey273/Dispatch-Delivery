@@ -460,7 +460,7 @@ export default function DispatchSchedulePage() {
                 <span className="na-count">{needsAttention.length}</span>
               </div>
               {needsAttention.map(item => (
-                <div key={item.drop_id} className="na-row" onClick={() => openDrop(item.drop_id, true)}>
+                <div key={item.drop_id} className="na-row" onClick={() => openDrop(item.drop_id, false)}>
                   <div className="na-row-info">
                     <div className="na-row-name">{item.customer_name}</div>
                     <div className="na-row-meta">
