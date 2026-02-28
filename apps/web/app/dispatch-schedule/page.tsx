@@ -229,7 +229,7 @@ export default function DispatchSchedulePage() {
     await fetchSchedule();
     await fetchCapacity();
     fetchMonthSummary();
-    // Refresh drop detail so success screen shows correct data
+    api('/dispatch/needs-attention').then(r => setNeedsAttention(r.drops || [])).catch(() => null);
     if (slideDropId) {
       try {
         const resp = await api(`/dispatch/drops/${slideDropId}`);
@@ -451,6 +451,31 @@ export default function DispatchSchedulePage() {
 
           {error && <div className="alert alert-error" style={{ margin: '12px 16px', fontSize: 13 }}>{error}</div>}
 
+          {/* ── Needs Attention ── */}
+          {needsAttention.length > 0 && (
+            <div className="na-section">
+              <div className="na-head">
+                <span className="na-icon">🚨</span>
+                <span>Needs Attention</span>
+                <span className="na-count">{needsAttention.length}</span>
+              </div>
+              {needsAttention.map(item => (
+                <div key={item.drop_id} className="na-row" onClick={() => openDrop(item.drop_id, true)}>
+                  <div className="na-row-info">
+                    <div className="na-row-name">{item.customer_name}</div>
+                    <div className="na-row-meta">
+                      #{item.ref} · {fmtShortDate(item.scheduled_date)} ·{' '}
+                      {item.is_priority ? '⚡ Priority' : item.scheduled_window === 'A' ? 'Morning' : 'Afternoon'}
+                    </div>
+                  </div>
+                  <div className="na-row-action">Reschedule →</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {scheduleLoading ? (
+
           {scheduleLoading ? (
             <div style={{ padding: 40, textAlign: 'center' }}><div className="spinner" style={{ margin: '0 auto' }} /></div>
           ) : (
@@ -503,30 +528,7 @@ export default function DispatchSchedulePage() {
           )}
         </div>
       </div>
-      
-{/* ── Needs Attention ── */}
-        {needsAttention.length > 0 && (
-          <div className="na-section">
-            <div className="na-head">
-              <span className="na-icon">🚨</span>
-              <span>Needs Attention</span>
-              <span className="na-count">{needsAttention.length}</span>
-            </div>
-            {needsAttention.map(item => (
-              <div key={item.drop_id} className="na-row" onClick={() => openDrop(item.drop_id, true)}>
-                <div className="na-row-info">
-                  <div className="na-row-name">{item.customer_name}</div>
-                  <div className="na-row-meta">
-                    #{item.ref} · {fmtShortDate(item.scheduled_date)} ·{' '}
-                    {item.is_priority ? '⚡ Priority' : item.scheduled_window === 'A' ? 'Morning' : 'Afternoon'}
-                  </div>
-                </div>
-                <div className="na-row-action">Reschedule →</div>
-              </div>
-            ))}
-          </div>
-        )}
-      
+            
       {/* ── Slide-over ── */}
       {slideDropId && (
         <DropRescheduleSlideOver
