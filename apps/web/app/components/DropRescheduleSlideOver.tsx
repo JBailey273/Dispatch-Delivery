@@ -28,6 +28,17 @@ function fmtDateShort(ds: string) {
   return `${SHORT_MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
 
+const EXCEPTION_LABELS: Record<string, string> = {
+  WRONG_ADDRESS: 'Wrong Address',
+  CUSTOMER_REFUSED: 'Customer Refused',
+  ACCESS_BLOCKED: 'Access Blocked',
+  DAMAGED_GOODS: 'Damaged Material',
+  CUSTOMER_UNAVAILABLE: 'Customer Not Home',
+  SAFETY_RISK: 'Safety Risk',
+  OUT_OF_STOCK: 'Out of Stock',
+  OTHER: 'Other',
+};
+
 /* ══════════════════════════════════════════
    TYPES
    ══════════════════════════════════════════ */
@@ -53,8 +64,19 @@ export type SlideOverDropDetail = {
   notes?: string | null;
   required_loads: number;
   loads: {
-    id: string; material: string; qty: number; unit: string;
-    status: string; driver_user_id: string | null; driver_name: string | null;
+    id: string;
+    material: string;
+    qty: number;
+    unit: string;
+    status: string;
+    driver_user_id: string | null;
+    driver_name: string | null;
+    exception_reason_code?: string | null;
+    exception_notes?: string | null;
+    exception_photo_url?: string | null;
+    condition_photo_url?: string | null;
+    condition_notes?: string | null;
+    pod_photo_url?: string | null;
   }[];
   notify_sent_at?: string | null;
   last_reschedule_sms_at?: string | null;
@@ -64,11 +86,11 @@ type Driver = { id: string; name: string; email: string; truck?: string | null }
 type PanelView = 'main' | 'reschedule';
 
 const STATUS_OPTIONS = [
-  { value: 'assigned',       label: 'Assigned',        pill: 'pill-gray'  },
-  { value: 'loaded_leaving', label: 'Out for Delivery', pill: 'pill-blue'  },
-  { value: 'delivered',      label: 'Delivered',        pill: 'pill-green' },
-  { value: 'exception',      label: 'Exception',        pill: 'pill-red'   },
-  { value: 'cancelled',      label: 'Cancelled',        pill: 'pill-red'   },
+  { value: 'assigned',       label: 'Assigned',         pill: 'pill-gray'  },
+  { value: 'loaded_leaving', label: 'Out for Delivery',  pill: 'pill-blue'  },
+  { value: 'delivered',      label: 'Delivered',         pill: 'pill-green' },
+  { value: 'exception',      label: 'Exception',         pill: 'pill-red'   },
+  { value: 'cancelled',      label: 'Cancelled',         pill: 'pill-red'   },
 ];
 
 function statusPill(s: string) { return STATUS_OPTIONS.find(o => o.value === s)?.pill ?? 'pill-gray'; }
@@ -84,9 +106,7 @@ interface OrderPanelProps {
   dropDetail: SlideOverDropDetail | null;
   capData?: Record<string, { A: CapWindow | null; B: CapWindow | null }>;
   onClose: () => void;
-  /** Called after any change that should refresh the parent (reschedule, driver, status) */
   onRescheduled: () => void;
-  /** When true, open directly on the reschedule calendar */
   startOnReschedule?: boolean;
 }
 
@@ -103,7 +123,7 @@ export default function DropRescheduleSlideOver({
 }: OrderPanelProps) {
   const today = useMemo(() => new Date(), []);
 
-  /* Self-fetch detail if parent didn't supply */
+  /* Self-fetch detail */
   const [internalDetail, setInternalDetail] = useState<SlideOverDropDetail | null>(null);
   const dropDetail = externalDetail ?? internalDetail;
 
@@ -118,7 +138,7 @@ export default function DropRescheduleSlideOver({
     if (!externalDetail) refreshDetail();
   }, [dropId, externalDetail, refreshDetail]);
 
-  /* Self-fetch capacity if not supplied */
+  /* Self-fetch capacity */
   const [internalCapData, setInternalCapData] = useState<Record<string, { A: CapWindow | null; B: CapWindow | null }>>({});
   const capData = externalCapData ?? internalCapData;
 
@@ -149,11 +169,14 @@ export default function DropRescheduleSlideOver({
   /* Panel view */
   const [view, setView] = useState<PanelView>(startOnReschedule ? 'reschedule' : 'main');
 
-  /* ── Load accordion ── */
-  const [expandedLoadId, setExpandedLoadId] = useState<string | null>(null);
+  /* ── Load editing ── */
+  const [editingLoadId, setEditingLoadId] = useState<string | null>(null);
   const [loadEdits, setLoadEdits] = useState<Record<string, { driverId: string; status: string }>>({});
   const [savingLoadId, setSavingLoadId] = useState<string | null>(null);
   const [loadMsg, setLoadMsg] = useState<Record<string, string>>({});
+
+  /* Lightbox for exception photos */
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!dropDetail) return;
@@ -164,113 +187,112 @@ export default function DropRescheduleSlideOver({
     if (Object.keys(init).length) setLoadEdits(prev => ({ ...prev, ...init }));
   }, [dropDetail?.loads.map(l => l.id).join(',')]);
 
-  const toggleLoad = (id: string) =>
-    setExpandedLoadId(prev => prev === id ? null : id);
-
   const saveLoad = async (loadId: string) => {
     const edit = loadEdits[loadId];
     if (!edit) return;
     setSavingLoadId(loadId);
-    setLoadMsg(prev => ({ ...prev, [loadId]: '' }));
     try {
       await api('/dispatch/loads/assign', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ load_ids: [loadId], driver_user_id: edit.driverId || null }),
       });
-      await api(`/dispatch/loads/${loadId}/status`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: edit.status }),
-      });
+      if (edit.status) {
+        await api(`/dispatch/loads/${loadId}/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: edit.status }),
+        });
+      }
       setLoadMsg(prev => ({ ...prev, [loadId]: 'saved' }));
-      setExpandedLoadId(null);
-      await refreshDetail();
+      setEditingLoadId(null);
       onRescheduled();
-      setTimeout(() => setLoadMsg(prev => ({ ...prev, [loadId]: '' })), 2500);
+      await refreshDetail();
     } catch (err) {
       setLoadMsg(prev => ({ ...prev, [loadId]: (err as ApiError).message || 'Save failed' }));
     } finally { setSavingLoadId(null); }
   };
 
-  /* ── SMS / notifications ── */
-  const [smsText, setSmsText] = useState(DEFAULT_SMS);
+  /* ── Reschedule state ── */
+  const [rescDate, setRescDate] = useState('');
+  const [rescWindow, setRescWindow] = useState<'A' | 'B'>('A');
+  const [rescheduling, setRescheduling] = useState(false);
+  const [rescMsg, setRescMsg] = useState('');
+  const [rescSuccess, setRescSuccess] = useState(false);
+  const [calMonth, setCalMonth] = useState(() => {
+    const d = new Date(); d.setDate(1); return d;
+  });
+
+  useEffect(() => {
+    if (dropDetail && !rescDate) {
+      setRescDate(dropDetail.scheduled_date);
+      setRescWindow((dropDetail.scheduled_window as 'A' | 'B') || 'A');
+    }
+  }, [dropDetail?.scheduled_date]);
+
+  useEffect(() => {
+    fetchCapForMonth(calMonth);
+  }, [calMonth, fetchCapForMonth]);
+
+  /* ── Notification/SMS ── */
+  const [notifLoading, setNotifLoading] = useState(false);
+  const [notifMsg, setNotifMsg] = useState('');
   const [smsEditing, setSmsEditing] = useState(false);
+  const [smsText, setSmsText] = useState(DEFAULT_SMS);
   const [smsSending, setSmsSending] = useState(false);
   const [smsMsg, setSmsMsg] = useState('');
-  const [notifySending, setNotifySending] = useState(false);
-  const [notifyMsg, setNotifyMsg] = useState('');
+
+  const sendNotification = async () => {
+    setNotifLoading(true); setNotifMsg('');
+    try {
+      const r = await api(`/dispatch/drops/${dropId}/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      setNotifMsg(r.already_sent ? 'Already sent' : 'sent');
+      await refreshDetail();
+    } catch (err) { setNotifMsg((err as ApiError).message || 'Failed'); }
+    finally { setNotifLoading(false); }
+  };
 
   const sendSms = async () => {
     setSmsSending(true); setSmsMsg('');
     try {
       await api(`/dispatch/drops/${dropId}/send-reschedule-sms`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: smsText }),
       });
       setSmsMsg('sent'); setSmsEditing(false);
       await refreshDetail();
-    } catch (err) {
-      setSmsMsg((err as ApiError).message || 'Failed to send');
-    } finally { setSmsSending(false); }
+    } catch (err) { setSmsMsg((err as ApiError).message || 'Failed'); }
+    finally { setSmsSending(false); }
   };
 
-  const sendDeliveryNotification = async () => {
-    setNotifySending(true); setNotifyMsg('');
-    try {
-      await api(`/dispatch/drops/${dropId}/send-delivery-notification`, { method: 'POST' });
-      setNotifyMsg('sent');
-      await refreshDetail();
-    } catch (err) {
-      setNotifyMsg((err as ApiError).message || 'Failed to send');
-    } finally { setNotifySending(false); }
-  };
-
-  /* ── Reschedule ── */
-  const [rescCalMonth, setRescCalMonth] = useState(() => {
-    const base = dropDetail?.scheduled_date
-      ? new Date(dropDetail.scheduled_date + 'T12:00:00') : new Date();
-    return new Date(base.getFullYear(), base.getMonth(), 1);
-  });
-  const [rescDate, setRescDate] = useState(dropDetail?.scheduled_date || toKey(today));
-  const [rescWindow, setRescWindow] = useState<'A' | 'B'>(
-    dropDetail?.scheduled_window === 'B' ? 'B' : 'A'
-  );
-  const [rescheduling, setRescheduling] = useState(false);
-  const [rescMsg, setRescMsg] = useState('');
-  const [rescSuccess, setRescSuccess] = useState(false);
-
-  useEffect(() => {
-    if (!dropDetail) return;
-    const base = new Date(dropDetail.scheduled_date + 'T12:00:00');
-    setRescCalMonth(new Date(base.getFullYear(), base.getMonth(), 1));
-    setRescDate(dropDetail.scheduled_date);
-    setRescWindow(dropDetail.scheduled_window === 'B' ? 'B' : 'A');
-  }, [dropDetail?.id]);
-
-  useEffect(() => { fetchCapForMonth(rescCalMonth); }, [rescCalMonth, fetchCapForMonth]);
-
+  /* ── Calendar cells ── */
   const calCells = useMemo(() => {
-    const y = rescCalMonth.getFullYear(), m = rescCalMonth.getMonth();
-    const firstDay = new Date(y, m, 1).getDay();
+    const y = calMonth.getFullYear(), m = calMonth.getMonth();
     const dim = new Date(y, m + 1, 0).getDate();
+    const dow = new Date(y, m, 1).getDay();
+    const prevDim = new Date(y, m, 0).getDate();
     const cells: { date: Date; other: boolean }[] = [];
-    for (let i = firstDay - 1; i >= 0; i--) cells.push({ date: new Date(y, m, -i), other: true });
+    for (let i = dow - 1; i >= 0; i--) cells.push({ date: new Date(y, m - 1, prevDim - i), other: true });
     for (let i = 1; i <= dim; i++) cells.push({ date: new Date(y, m, i), other: false });
-    while (cells.length % 7 !== 0) {
-      const last = cells[cells.length - 1].date;
-      const nd = new Date(last); nd.setDate(nd.getDate() + 1);
-      cells.push({ date: nd, other: true });
-    }
+    while (cells.length % 7 !== 0) cells.push({ date: new Date(y, m + 1, cells.length - dim - dow + 1), other: true });
     return cells;
-  }, [rescCalMonth]);
+  }, [calMonth]);
 
-  const submitReschedule = async () => {
-    if (!rescDate) { setRescMsg('Please select a date.'); return; }
+  const headingText = `${FULL_MONTHS[calMonth.getMonth()]} ${calMonth.getFullYear()}`;
+
+  const doReschedule = async () => {
+    if (!rescDate) return;
     setRescheduling(true); setRescMsg('');
     try {
-await api(`/drops/${dropId}/reschedule`, {
-  method: 'POST', headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ scheduled_date: rescDate, scheduled_window: dropDetail?.is_priority ? null : rescWindow }),
-});    
+      await api(`/drops/${dropId}/reschedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scheduled_date: rescDate,
+          scheduled_window: dropDetail?.is_priority ? null : rescWindow,
+        }),
+      });
       setRescSuccess(true);
       onRescheduled();
       await refreshDetail();
@@ -292,12 +314,22 @@ await api(`/drops/${dropId}/reschedule`, {
     return () => window.removeEventListener('keydown', h);
   }, [onClose]);
 
+  /* ── Derived: exception loads ── */
+  const exceptionLoads = dropDetail?.loads.filter(l => l.status === 'exception') ?? [];
+  const hasExceptions = exceptionLoads.length > 0;
+
   /* ══════════════════════════════════════════
      RENDER
      ══════════════════════════════════════════ */
   return (
     <>
       <style>{panelStyles}</style>
+      {lightboxUrl && (
+        <div className="so-lightbox" onClick={() => setLightboxUrl(null)}>
+          <img src={lightboxUrl} alt="Exception photo" className="so-lightbox-img" />
+          <button className="so-lightbox-close">✕</button>
+        </div>
+      )}
       <div className="so-backdrop" onClick={onClose} />
       <div className="so-panel" role="dialog" aria-modal="true">
 
@@ -338,6 +370,55 @@ await api(`/drops/${dropId}/reschedule`, {
               </div>
             )}
 
+            {/* ── Exception Alert ── */}
+            {hasExceptions && (
+              <div className="so-exception-alert">
+                <div className="so-exception-alert-head">
+                  <span className="so-exception-alert-icon">⚠️</span>
+                  <span className="so-exception-alert-title">
+                    Exception Reported{exceptionLoads.length > 1 ? ` (${exceptionLoads.length} loads)` : ''}
+                  </span>
+                </div>
+                {exceptionLoads.map(l => (
+                  <div key={l.id} className="so-exception-detail">
+                    <div className="so-exception-material">{l.material} × {l.qty} {l.unit}</div>
+                    {l.exception_reason_code && (
+                      <div className="so-exception-reason">
+                        <span className="so-exception-reason-label">Reason:</span>
+                        {EXCEPTION_LABELS[l.exception_reason_code] || l.exception_reason_code}
+                      </div>
+                    )}
+                    {l.exception_notes && (
+                      <div className="so-exception-notes">
+                        <span className="so-exception-reason-label">Driver notes:</span>
+                        {l.exception_notes}
+                      </div>
+                    )}
+                    {l.driver_name && (
+                      <div className="so-exception-driver">🚚 Reported by {l.driver_name}</div>
+                    )}
+                    {l.exception_photo_url && (
+                      <div className="so-exception-photo-row">
+                        <img
+                          src={l.exception_photo_url}
+                          alt="Exception photo"
+                          className="so-exception-thumb"
+                          onClick={() => setLightboxUrl(l.exception_photo_url!)}
+                        />
+                        <span className="so-exception-photo-hint">Tap to enlarge</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <button
+                  className="so-reschedule-cta"
+                  onClick={() => { setView('reschedule'); setRescMsg(''); setRescSuccess(false); }}
+                >
+                  📅 Reschedule This Delivery
+                </button>
+              </div>
+            )}
+
             {/* Customer */}
             <div className="so-card">
               <div className="so-card-label">Customer</div>
@@ -361,12 +442,14 @@ await api(`/drops/${dropId}/reschedule`, {
                   : dropDetail.scheduled_window === 'A' ? 'Morning Window (9am – 1pm)'
                   : 'Afternoon Window (1pm – 5pm)'}
               </div>
-              <button
-                className="so-resc-trigger"
-                onClick={() => { setView('reschedule'); setRescMsg(''); setRescSuccess(false); }}
-              >
-                📅 Reschedule
-              </button>
+              {!hasExceptions && (
+                <button
+                  className="so-resc-trigger"
+                  onClick={() => { setView('reschedule'); setRescMsg(''); setRescSuccess(false); }}
+                >
+                  📅 Reschedule
+                </button>
+              )}
             </div>
 
             {/* Loads */}
@@ -375,17 +458,16 @@ await api(`/drops/${dropId}/reschedule`, {
                 Loads ({dropDetail.loads.length})
               </div>
               {dropDetail.loads.map(load => {
-                const isExpanded = expandedLoadId === load.id;
+                const isEditing = editingLoadId === load.id;
                 const edit = loadEdits[load.id] ?? { driverId: load.driver_user_id ?? '', status: load.status };
                 const isTerminal = ['delivered', 'cancelled'].includes(load.status);
+                const isException = load.status === 'exception';
                 const msg = loadMsg[load.id];
+
                 return (
-                  <div key={load.id} className={`so-load${isExpanded ? ' expanded' : ''}`}>
-                    <div
-                      className="so-load-summary"
-                      onClick={() => !isTerminal && toggleLoad(load.id)}
-                      style={{ cursor: isTerminal ? 'default' : 'pointer' }}
-                    >
+                  <div key={load.id} className={`so-load${isEditing ? ' editing' : ''}${isException ? ' so-load-exception' : ''}`}>
+                    {/* Read-only summary row */}
+                    <div className="so-load-summary">
                       <div className="so-load-left">
                         <div className="so-load-mat">{load.material} × {load.qty} {load.unit}</div>
                         <div className="so-load-driver-name">
@@ -400,12 +482,18 @@ await api(`/drops/${dropId}/reschedule`, {
                           <span className="pill-dot" />{statusLabel(load.status)}
                         </span>
                         {!isTerminal && (
-                          <span className={`so-load-chevron${isExpanded ? ' open' : ''}`}>›</span>
+                          <button
+                            className="so-edit-btn"
+                            onClick={() => setEditingLoadId(isEditing ? null : load.id)}
+                          >
+                            {isEditing ? 'Cancel' : 'Edit'}
+                          </button>
                         )}
                       </div>
                     </div>
 
-                    {isExpanded && (
+                    {/* Editable section */}
+                    {isEditing && (
                       <div className="so-load-editor">
                         <div className="so-field">
                           <label className="so-field-label">Driver</label>
@@ -444,27 +532,14 @@ await api(`/drops/${dropId}/reschedule`, {
 
                         {msg && msg !== 'saved' && <div className="so-load-err">{msg}</div>}
 
-                        <div className="so-load-editor-actions">
-                          <button
-                            className="btn btn-primary btn-sm"
-                            disabled={savingLoadId === load.id}
-                            onClick={() => saveLoad(load.id)}
-                          >
-                            {savingLoadId === load.id ? 'Saving…' : 'Save Changes'}
-                          </button>
-                          <button
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => {
-                              setExpandedLoadId(null);
-                              setLoadEdits(prev => ({
-                                ...prev,
-                                [load.id]: { driverId: load.driver_user_id ?? '', status: load.status },
-                              }));
-                            }}
-                          >
-                            Cancel
-                          </button>
-                        </div>
+                        <button
+                          className="btn btn-primary"
+                          style={{ width: '100%', marginTop: 4 }}
+                          disabled={savingLoadId === load.id}
+                          onClick={() => saveLoad(load.id)}
+                        >
+                          {savingLoadId === load.id ? 'Saving…' : 'Save Changes'}
+                        </button>
                       </div>
                     )}
                   </div>
@@ -476,62 +551,59 @@ await api(`/drops/${dropId}/reschedule`, {
             <div className="so-card">
               <div className="so-card-label">Notifications</div>
 
-              {/* Delivery notification */}
               <div className="so-notif-row">
                 <div className="so-notif-info">
                   <div className="so-notif-title">Delivery notification</div>
                   <div className="so-notif-sub">
                     {dropDetail.notify_sent_at
-                      ? `Sent ${new Date(dropDetail.notify_sent_at).toLocaleString()}`
+                      ? `Sent ${new Date(dropDetail.notify_sent_at).toLocaleDateString()}`
                       : 'Not yet sent'}
                   </div>
                 </div>
-                <button className="btn btn-secondary btn-sm" disabled={notifySending} onClick={sendDeliveryNotification}>
-                  {notifySending ? 'Sending…' : '📱 Send'}
+                <button className="btn btn-secondary btn-sm" onClick={sendNotification} disabled={notifLoading}>
+                  {notifLoading ? 'Sending…' : '📱 Send'}
                 </button>
               </div>
-              {notifyMsg === 'sent' && <div className="so-notif-success">✓ Notification sent</div>}
-              {notifyMsg && notifyMsg !== 'sent' && <div className="so-notif-err">{notifyMsg}</div>}
+              {notifMsg && notifMsg !== 'sent' && <div className="so-notif-err">{notifMsg}</div>}
+              {notifMsg === 'sent' && <div className="so-notif-success">✓ Notification sent</div>}
 
-              {/* Reschedule SMS */}
-              <div className="so-notif-row" style={{ marginTop: 12 }}>
-                <div className="so-notif-info">
-                  <div className="so-notif-title">Reschedule SMS</div>
-                  <div className="so-notif-sub">
-                    {dropDetail.last_reschedule_sms_at
-                      ? `Sent ${new Date(dropDetail.last_reschedule_sms_at).toLocaleString()}`
-                      : 'Not yet sent'}
+              <div style={{ borderTop: '1px solid var(--border-light)', marginTop: 10, paddingTop: 10 }}>
+                <div className="so-notif-row">
+                  <div className="so-notif-info">
+                    <div className="so-notif-title">Reschedule SMS</div>
+                    <div className="so-notif-sub">
+                      {dropDetail.last_reschedule_sms_at
+                        ? `Sent ${new Date(dropDetail.last_reschedule_sms_at).toLocaleDateString()}`
+                        : 'Not yet sent'}
+                    </div>
                   </div>
+                  {!smsEditing && (
+                    <button className="btn btn-secondary btn-sm" onClick={() => setSmsEditing(true)}>
+                      📱 Send
+                    </button>
+                  )}
                 </div>
-                {!smsEditing && (
-                  <button className="btn btn-secondary btn-sm" onClick={() => { setSmsEditing(true); setSmsMsg(''); }}>
-                    📱 Send
-                  </button>
+                {smsEditing && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                    <textarea
+                      className="so-sms-textarea"
+                      value={smsText}
+                      onChange={e => setSmsText(e.target.value)}
+                      rows={3}
+                    />
+                    {smsMsg && smsMsg !== 'sent' && <div className="so-notif-err">{smsMsg}</div>}
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn btn-primary btn-sm" onClick={sendSms} disabled={smsSending}>
+                        {smsSending ? 'Sending…' : 'Send SMS'}
+                      </button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => { setSmsEditing(false); setSmsText(DEFAULT_SMS); setSmsMsg(''); }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
                 )}
+                {smsMsg === 'sent' && <div className="so-notif-success">✓ SMS sent</div>}
               </div>
-
-              {smsEditing && (
-                <div className="so-sms-composer">
-                  <textarea
-                    className="so-sms-textarea"
-                    value={smsText}
-                    rows={3}
-                    onChange={e => setSmsText(e.target.value)}
-                    placeholder="Message…"
-                  />
-                  <div className="so-sms-char">{smsText.length} chars · sending to {fmtPhone(dropDetail.customer_phone)}</div>
-                  {smsMsg && smsMsg !== 'sent' && <div className="so-notif-err">{smsMsg}</div>}
-                  <div className="so-sms-actions">
-                    <button className="btn btn-primary btn-sm" disabled={smsSending || !smsText.trim()} onClick={sendSms}>
-                      {smsSending ? 'Sending…' : 'Send SMS'}
-                    </button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => { setSmsEditing(false); setSmsText(DEFAULT_SMS); setSmsMsg(''); }}>
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-              {smsMsg === 'sent' && <div className="so-notif-success">✓ SMS sent</div>}
             </div>
 
             {/* Notes */}
@@ -561,7 +633,7 @@ await api(`/drops/${dropId}/reschedule`, {
                 <div className="so-success-title">Rescheduled!</div>
                 <div className="so-success-sub">
                   {dropDetail.customer_name} moved to {fmtDateLong(rescDate)},{' '}
-                  {rescWindow === 'A' ? 'Morning' : 'Afternoon'}
+                  {dropDetail.is_priority ? 'Priority' : rescWindow === 'A' ? 'Morning' : 'Afternoon'}
                 </div>
                 <div className="so-success-actions">
                   {!startOnReschedule && (
@@ -581,19 +653,20 @@ await api(`/drops/${dropId}/reschedule`, {
                   </span>
                 </div>
 
-                <div className="so-cal">
+                {/* Calendar */}
+                <div className="so-cal-card">
                   <div className="so-cal-nav">
-                    <button className="so-cal-nav-btn" onClick={() => setRescCalMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}>‹</button>
-                    <span className="so-cal-heading">{FULL_MONTHS[rescCalMonth.getMonth()]} {rescCalMonth.getFullYear()}</span>
-                    <button className="so-cal-nav-btn" onClick={() => setRescCalMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))}>›</button>
+                    <button className="so-cal-nav-btn" onClick={() => setCalMonth(m => { const n = new Date(m); n.setMonth(n.getMonth() - 1); return n; })}>‹</button>
+                    <span className="so-cal-heading">{headingText}</span>
+                    <button className="so-cal-nav-btn" onClick={() => setCalMonth(m => { const n = new Date(m); n.setMonth(n.getMonth() + 1); return n; })}>›</button>
                   </div>
                   <div className="so-cal-dow-row">
-                    {['S','M','T','W','T','F','S'].map((d, i) => <div key={i} className="so-cal-dow">{d}</div>)}
+                    {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => <div key={d} className="so-cal-dow">{d}</div>)}
                   </div>
                   <div className="so-cal-grid">
                     {calCells.map((cell, i) => {
                       const k = toKey(cell.date);
-                      const isPast = cell.date < new Date(toKey(today) + 'T00:00:00');
+                      const isPast = !cell.other && cell.date < today && !sameDay(cell.date, today);
                       const isSelected = k === rescDate;
                       const isOriginal = k === dropDetail.scheduled_date;
                       const dc = capData[k];
@@ -641,7 +714,7 @@ await api(`/drops/${dropId}/reschedule`, {
                             <span className="so-win-time">{w === 'A' ? '9am – 1pm' : '1pm – 5pm'}</span>
                             {cap != null && (
                               <span className={`so-win-cap ${(cap.remaining_capacity ?? 0) > 0 ? 'avail' : 'full'}`}>
-                                {cap.remaining_capacity ?? 0} slots left
+                                {cap.remaining_capacity ?? 0} slot{cap.remaining_capacity !== 1 ? 's' : ''} left
                               </span>
                             )}
                           </button>
@@ -651,26 +724,14 @@ await api(`/drops/${dropId}/reschedule`, {
                   </div>
                 )}
 
-                {rescDate && dropDetail.is_priority && (
-                  <div className="so-window-pick">
-                    <div className="so-window-pick-date">{fmtDateLong(rescDate)}</div>
-                    <div className="so-priority-note">⚡ Priority delivery — no window required</div>
-                  </div>
-                )}
+                {rescMsg && <div className="alert alert-error" style={{ fontSize: 13 }}>{rescMsg}</div>}
 
-                {windowCap && windowCap.remaining_capacity < dropDetail.required_loads && (
-                  <div className="so-cap-warn alert-warning">
-                    ⚠ Only {windowCap.remaining_capacity} slot{windowCap.remaining_capacity !== 1 ? 's' : ''} available — this order needs {dropDetail.required_loads}
-                  </div>
-                )}
-                {rescMsg && (
-                  <div className="so-cap-warn" style={{ background: 'var(--red-50)', border: '1px solid var(--red-200)', color: 'var(--red-700)', padding: '10px 14px', borderRadius: 'var(--radius-md)', fontSize: 13 }}>
-                    {rescMsg}
-                  </div>
-                )}
-
-                <div className="so-actions">
-                  <button className="btn btn-primary" disabled={rescheduling || !rescDate || isSameAsOriginal} onClick={submitReschedule}>
+                <div className="so-resc-actions">
+                  <button
+                    className="btn btn-primary"
+                    onClick={doReschedule}
+                    disabled={rescheduling || !rescDate || isSameAsOriginal}
+                  >
                     {rescheduling ? 'Saving…' : isSameAsOriginal ? 'No Change Made' : `Move to ${fmtDateShort(rescDate)}`}
                   </button>
                   <button className="btn btn-ghost" onClick={startOnReschedule ? onClose : () => setView('main')}>
@@ -706,6 +767,25 @@ const panelStyles = `
   .so-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
   .so-loading { flex: 1; display: flex; align-items: center; justify-content: center; }
 
+  /* ── Exception Alert ── */
+  .so-exception-alert { background: #fff1f2; border: 2px solid #f43f5e; border-radius: var(--radius-lg); overflow: hidden; }
+  .so-exception-alert-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px 8px; background: #ffe4e6; border-bottom: 1px solid #fecdd3; }
+  .so-exception-alert-icon { font-size: 16px; }
+  .so-exception-alert-title { font-family: var(--font-heading); font-size: 13px; font-weight: 800; color: #be123c; text-transform: uppercase; letter-spacing: 0.04em; }
+  .so-exception-detail { padding: 12px 14px; border-bottom: 1px solid #fecdd3; display: flex; flex-direction: column; gap: 6px; }
+  .so-exception-detail:last-of-type { border-bottom: none; }
+  .so-exception-material { font-family: var(--font-heading); font-size: 13px; font-weight: 700; color: var(--gray-900); }
+  .so-exception-reason { font-size: 13px; color: #be123c; font-weight: 600; }
+  .so-exception-notes { font-size: 13px; color: var(--gray-700); line-height: 1.45; }
+  .so-exception-reason-label { font-weight: 700; margin-right: 4px; }
+  .so-exception-driver { font-size: 12px; color: var(--gray-500); }
+  .so-exception-photo-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+  .so-exception-thumb { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid #fecdd3; cursor: pointer; transition: opacity 0.15s; }
+  .so-exception-thumb:hover { opacity: 0.85; }
+  .so-exception-photo-hint { font-size: 11px; color: var(--gray-400); }
+  .so-reschedule-cta { width: calc(100% - 28px); margin: 0 14px 14px; padding: 11px; border-radius: var(--radius-md); border: none; background: #e11d48; color: #fff; font-family: var(--font-heading); font-size: 14px; font-weight: 700; cursor: pointer; transition: background 0.15s; }
+  .so-reschedule-cta:hover { background: #be123c; }
+
   /* Cards */
   .so-card { background: var(--surface); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 14px 16px; display: flex; flex-direction: column; gap: 5px; }
   .so-card-flush { padding: 0; overflow: hidden; }
@@ -725,20 +805,21 @@ const panelStyles = `
   .so-resc-trigger { align-self: flex-start; margin-top: 6px; padding: 6px 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); font-family: var(--font-heading); font-size: 12px; font-weight: 600; color: var(--gray-700); cursor: pointer; transition: all 0.15s; }
   .so-resc-trigger:hover { background: var(--gray-50); border-color: var(--green-300); color: var(--green-700); }
 
-  /* Load accordion */
+  /* Load rows */
   .so-load { border-bottom: 1px solid var(--border-light); }
   .so-load:last-child { border-bottom: none; }
-  .so-load-summary { display: flex; align-items: center; justify-content: space-between; padding: 11px 16px; transition: background 0.12s; gap: 10px; }
-  .so-load-summary:hover { background: var(--gray-25,#fafafa); }
-  .so-load.expanded .so-load-summary { background: var(--green-25,#f0fdf4); }
+  .so-load-exception .so-load-summary { background: #fff1f2; }
+  .so-load-summary { display: flex; align-items: center; justify-content: space-between; padding: 11px 16px; gap: 10px; }
   .so-load-left { flex: 1; min-width: 0; }
   .so-load-mat { font-family: var(--font-heading); font-size: 13px; font-weight: 700; color: var(--gray-900); }
   .so-load-driver-name { font-size: 12px; color: var(--gray-500); margin-top: 2px; }
   .so-unassigned { color: var(--amber-600,#d97706); font-weight: 600; }
   .so-load-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
   .so-load-saved { font-family: var(--font-heading); font-size: 12px; font-weight: 700; color: var(--green-600); }
-  .so-load-chevron { font-size: 18px; color: var(--gray-400); transition: transform 0.2s; display: inline-block; line-height: 1; }
-  .so-load-chevron.open { transform: rotate(90deg); }
+  .so-edit-btn { padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); font-family: var(--font-heading); font-size: 11px; font-weight: 600; color: var(--gray-600); cursor: pointer; transition: all 0.12s; white-space: nowrap; }
+  .so-edit-btn:hover { border-color: var(--green-300); color: var(--green-700); background: var(--green-50); }
+
+  /* Load editor */
   .so-load-editor { padding: 14px 16px 16px; background: var(--gray-25,#fafafa); border-top: 1px solid var(--border-light); display: flex; flex-direction: column; gap: 14px; }
   .so-field { display: flex; flex-direction: column; gap: 6px; }
   .so-field-label { font-family: var(--font-heading); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gray-500); }
@@ -748,82 +829,76 @@ const panelStyles = `
   .so-status-btn:hover { border-color: var(--green-300); color: var(--green-700); }
   .so-status-btn.active { border-color: var(--green-500); background: var(--green-600); color: #fff; }
   .so-load-err { font-size: 12px; color: var(--red-600); }
-  .so-load-editor-actions { display: flex; gap: 8px; }
 
   /* Notifications */
   .so-notif-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
   .so-notif-info { flex: 1; min-width: 0; }
   .so-notif-title { font-family: var(--font-heading); font-size: 13px; font-weight: 700; color: var(--gray-800); }
   .so-notif-sub { font-size: 12px; color: var(--gray-400); margin-top: 2px; }
-  .so-notif-success { font-size: 12px; color: var(--green-600); font-weight: 600; margin-top: 6px; }
+  .so-notif-success { font-size: 12px; color: var(--green-600); font-weight: 600; margin-top: 4px; }
   .so-notif-err { font-size: 12px; color: var(--red-600); margin-top: 4px; }
-  .so-sms-composer { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding: 12px; background: var(--gray-25,#fafafa); border: 1px solid var(--border-light); border-radius: var(--radius-md); }
-  .so-sms-textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-md); font-size: 13px; font-family: inherit; color: var(--gray-800); resize: vertical; background: var(--surface); box-sizing: border-box; }
-  .so-sms-char { font-size: 11px; color: var(--gray-400); }
-  .so-sms-actions { display: flex; gap: 8px; }
+  .so-sms-textarea { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); font-size: 13px; font-family: inherit; color: var(--gray-800); resize: vertical; box-sizing: border-box; }
 
-  .so-notes-text { font-size: 14px; color: var(--gray-600); line-height: 1.5; }
+  /* Notes */
+  .so-notes-text { font-size: 13px; color: var(--gray-700); line-height: 1.5; font-style: italic; }
 
-  .so-full-link { display: flex; align-items: center; justify-content: center; padding: 12px; border: 1px solid var(--border-light); border-radius: var(--radius-lg); font-family: var(--font-heading); font-size: 13px; font-weight: 600; color: var(--gray-600); background: var(--surface); transition: all 0.15s; }
-  .so-full-link:hover { border-color: var(--green-300); color: var(--green-700); background: var(--green-25,#f0fdf4); }
+  /* Footer link */
+  .so-full-link { display: block; text-align: center; font-family: var(--font-heading); font-size: 13px; font-weight: 600; color: var(--gray-400); padding: 8px; transition: color 0.15s; }
+  .so-full-link:hover { color: var(--green-600); }
 
   /* Reschedule view */
-  .so-actions { display: flex; flex-direction: column; gap: 8px; padding-top: 4px; }
-  .so-actions .btn { width: 100%; justify-content: center; padding: 12px; font-size: 15px; }
-  .so-resc-current { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px; border-radius: var(--radius-md); background: var(--gray-50); border: 1px solid var(--border-light); font-size: 13px; }
+  .so-resc-current { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: var(--gray-50); border: 1px solid var(--border-light); border-radius: var(--radius-md); font-size: 13px; }
   .so-resc-current-label { font-weight: 600; color: var(--gray-500); }
-  .so-resc-current-val { font-family: var(--font-heading); font-weight: 700; color: var(--gray-700); }
-  .so-cal { background: var(--surface); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 14px; }
-  .so-cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-  .so-cal-nav-btn { width: 30px; height: 30px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); cursor: pointer; font-size: 16px; color: var(--gray-600); display: flex; align-items: center; justify-content: center; transition: all 0.15s; font-family: inherit; }
-  .so-cal-nav-btn:hover { background: var(--gray-50); color: var(--gray-900); }
-  .so-cal-heading { font-family: var(--font-heading); font-size: 14px; font-weight: 800; color: var(--gray-900); }
-  .so-cal-dow-row { display: grid; grid-template-columns: repeat(7,1fr); margin-bottom: 3px; }
-  .so-cal-dow { text-align: center; font-family: var(--font-heading); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gray-400); padding: 3px 0; }
-  .so-cal-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 2px; }
-  .so-cal-cell { display: flex; flex-direction: column; align-items: center; padding: 5px 2px; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.12s; min-height: 40px; gap: 2px; border: 1px solid transparent; }
-  .so-cal-cell:hover:not(.other):not(.past) { background: var(--gray-50); border-color: var(--border-light); }
-  .so-cal-cell.other { opacity: 0.2; cursor: default; pointer-events: none; }
-  .so-cal-cell.past:not(.other) { opacity: 0.35; cursor: default; pointer-events: none; }
-  .so-cal-cell.today { background: var(--green-25,#f0fdf4); }
-  .so-cal-cell.original { background: var(--amber-25,#fffbeb); border-color: var(--amber-300,#fcd34d); }
-  .so-cal-cell.selected { background: var(--green-600); border-color: var(--green-700); }
-  .so-cal-cell.selected .so-cal-num { color: #fff; font-weight: 800; }
-  .so-cal-num { font-family: var(--font-heading); font-size: 12px; font-weight: 600; color: var(--gray-700); line-height: 1; }
-  .so-cal-dots { display: flex; gap: 2px; }
-  .so-cal-dot { width: 5px; height: 5px; border-radius: 50%; display: inline-block; }
+  .so-resc-current-val { font-family: var(--font-heading); font-weight: 700; color: var(--gray-800); }
+  .so-cal-card { background: var(--surface); border: 1px solid var(--border-light); border-radius: var(--radius-lg); overflow: hidden; }
+  .so-cal-nav { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border-light); }
+  .so-cal-nav-btn { width: 32px; height: 32px; border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-size: 16px; color: var(--gray-600); display: flex; align-items: center; justify-content: center; transition: all 0.15s; font-family: inherit; }
+  .so-cal-nav-btn:hover { background: var(--gray-50); }
+  .so-cal-heading { font-family: var(--font-heading); font-size: 15px; font-weight: 800; color: var(--gray-900); }
+  .so-cal-dow-row { display: grid; grid-template-columns: repeat(7, 1fr); padding: 8px 8px 4px; }
+  .so-cal-dow { text-align: center; font-family: var(--font-heading); font-size: 10px; font-weight: 700; color: var(--gray-400); text-transform: uppercase; letter-spacing: 0.05em; }
+  .so-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); padding: 0 8px 8px; gap: 2px; }
+  .so-cal-cell { display: flex; flex-direction: column; align-items: center; padding: 6px 2px; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.12s; min-height: 44px; gap: 3px; }
+  .so-cal-cell:hover:not(.other):not(.past) { background: var(--green-50); }
+  .so-cal-cell.other { opacity: 0.25; cursor: default; pointer-events: none; }
+  .so-cal-cell.past { opacity: 0.35; cursor: default; pointer-events: none; }
+  .so-cal-cell.today .so-cal-num { color: var(--green-600); font-weight: 800; }
+  .so-cal-cell.selected { background: var(--green-600); border-radius: var(--radius-md); }
+  .so-cal-cell.selected .so-cal-num { color: #fff; }
+  .so-cal-cell.original { background: var(--amber-50,#fffbeb); border: 1px solid var(--amber-200,#fde68a); }
+  .so-cal-num { font-family: var(--font-heading); font-size: 13px; font-weight: 700; color: var(--gray-700); line-height: 1; }
+  .so-cal-dots { display: flex; gap: 3px; }
+  .so-cal-dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; }
   .so-cal-dot.am { background: var(--green-500); }
   .so-cal-dot.pm { background: var(--blue-500); }
-  .so-cal-legend { display: flex; gap: 12px; margin-top: 10px; font-size: 11px; color: var(--gray-500); font-weight: 500; justify-content: center; }
-  .so-cal-legend span { display: flex; align-items: center; gap: 4px; }
-  .so-window-pick { background: var(--surface); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 14px 16px; }
-  .so-window-pick-date { font-family: var(--font-heading); font-size: 14px; font-weight: 700; color: var(--gray-700); margin-bottom: 10px; }
-  .so-window-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .so-win-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 12px 14px; border-radius: var(--radius-md); border: 2px solid var(--border-light); background: var(--surface); cursor: pointer; transition: all 0.15s; text-align: left; }
-  .so-win-btn:hover { border-color: var(--green-300); background: var(--green-25,#f0fdf4); }
-  .so-win-btn.active { border-color: var(--green-500); background: var(--green-25,#f0fdf4); box-shadow: 0 0 0 3px rgba(15,133,48,0.1); }
-  .so-win-label { font-family: var(--font-heading); font-size: 13px; font-weight: 700; color: var(--gray-800); }
-  .so-win-time { font-size: 11px; color: var(--gray-500); }
-  .so-win-cap { font-family: var(--font-heading); font-size: 11px; font-weight: 700; margin-top: 2px; }
-  .so-win-cap.avail { color: var(--green-600); }
-  .so-win-cap.full { color: var(--red-500); }
-  .so-priority-note { font-size: 13px; font-weight: 600; color: var(--amber-700); padding: 10px 14px; border-radius: var(--radius-md); background: var(--amber-25,#fffbeb); border: 1px solid var(--amber-200); }
-  .so-cap-warn { font-size: 13px; }
-  .alert-warning { background: var(--amber-25,#fffbeb); border: 1px solid var(--amber-200,#fde68a); color: var(--amber-800,#92400e); padding: 10px 14px; border-radius: var(--radius-md); }
+  .so-cal-legend { display: flex; gap: 12px; padding: 8px 16px; border-top: 1px solid var(--border-light); font-size: 11px; color: var(--gray-500); font-weight: 500; }
+  .so-window-pick { background: var(--surface); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .so-window-pick-date { font-family: var(--font-heading); font-size: 14px; font-weight: 700; color: var(--gray-900); }
+  .so-window-btns { display: flex; flex-direction: column; gap: 8px; }
+  .so-win-btn { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 2px solid var(--border-light); border-radius: var(--radius-md); background: var(--surface); cursor: pointer; transition: all 0.15s; text-align: left; font-family: inherit; }
+  .so-win-btn:hover { border-color: var(--green-300); background: var(--green-50); }
+  .so-win-btn.active { border-color: var(--green-500); background: var(--green-50); }
+  .so-win-label { font-family: var(--font-heading); font-size: 14px; font-weight: 700; color: var(--gray-900); flex: 1; }
+  .so-win-time { font-size: 12px; color: var(--gray-500); }
+  .so-win-cap { font-family: var(--font-heading); font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
+  .so-win-cap.avail { background: var(--green-100); color: var(--green-700); }
+  .so-win-cap.full { background: var(--red-100,#fee2e2); color: var(--red-700,#b91c1c); }
+  .so-resc-actions { display: flex; flex-direction: column; gap: 8px; }
+  .so-resc-actions .btn { width: 100%; justify-content: center; }
 
   /* Success */
-  .so-success { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px 20px; gap: 8px; }
-  .so-success-icon { width: 60px; height: 60px; border-radius: 50%; background: var(--green-100); color: var(--green-700); font-size: 28px; display: flex; align-items: center; justify-content: center; font-weight: 700; margin-bottom: 8px; }
-  .so-success-title { font-family: var(--font-heading); font-size: 24px; font-weight: 800; color: var(--gray-900); }
-  .so-success-sub { font-size: 14px; color: var(--gray-500); line-height: 1.5; max-width: 280px; }
-  .so-success-actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; justify-content: center; }
+  .so-success { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 40px 20px; text-align: center; }
+  .so-success-icon { width: 60px; height: 60px; border-radius: 50%; background: var(--green-600); color: #fff; font-size: 28px; display: flex; align-items: center; justify-content: center; }
+  .so-success-title { font-family: var(--font-heading); font-size: 22px; font-weight: 800; color: var(--gray-900); }
+  .so-success-sub { font-size: 14px; color: var(--gray-600); max-width: 280px; line-height: 1.5; }
+  .so-success-actions { display: flex; gap: 10px; margin-top: 8px; }
 
-  /* Mobile */
-  @media (max-width: 640px) {
-    .so-panel { top: 0; left: 0; right: 0; bottom: 0; width: 100%; border-left: none; border-radius: 0; animation: soSlideUp 0.28s cubic-bezier(0.32,0.72,0,1); }
-    @keyframes soSlideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-    .so-status-btns { gap: 5px; }
-    .so-status-btn { padding: 8px 10px; font-size: 11px; }
-    .so-actions .btn { padding: 14px; font-size: 16px; }
+  /* Lightbox */
+  .so-lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 300; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .so-lightbox-img { max-width: 90vw; max-height: 85vh; border-radius: 8px; object-fit: contain; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+  .so-lightbox-close { position: absolute; top: 20px; right: 20px; width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,0.15); border: none; color: #fff; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+
+  @media (max-width: 500px) {
+    .so-panel { width: 100%; }
   }
 `;
