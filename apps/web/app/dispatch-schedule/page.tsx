@@ -473,9 +473,6 @@ export default function DispatchSchedulePage() {
               ))}
             </div>
           )}
-
-          {scheduleLoading ? (
-
           {scheduleLoading ? (
             <div style={{ padding: 40, textAlign: 'center' }}><div className="spinner" style={{ margin: '0 auto' }} /></div>
           ) : (
