@@ -64,7 +64,10 @@ function capColor(used: number, total: number): string {
   if (pct >= 0.75) return 'amber';
   return 'green';
 }
-
+function fmtShortDate(ds: string) {
+  const d = new Date(ds + 'T12:00:00');
+  return `${FULL_MONTHS[d.getMonth()].slice(0, 3)} ${d.getDate()}`;
+}
 const STATUS_PILL: Record<string, string> = {
   assigned: 'pill-gray', loaded_leaving: 'pill-blue', delivered: 'pill-green',
   exception: 'pill-red', cancelled: 'pill-red', new: 'pill-amber',
