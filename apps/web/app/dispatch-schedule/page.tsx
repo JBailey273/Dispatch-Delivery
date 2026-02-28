@@ -626,16 +626,16 @@ const schedulerStyles = `
   .mc-bar { height: 4px; border-radius: 2px; transition: width 0.3s var(--ease-out); }
 
   /* ── Needs Attention ── */
-  .na-section { border-bottom: 1px solid var(--border-light); background: #fff7ed; }
-  .na-head { display: flex; align-items: center; gap: 8px; padding: 12px 24px 8px; font-family: var(--font-heading); font-size: 13px; font-weight: 800; color: #92400e; text-transform: uppercase; letter-spacing: 0.05em; }
+  .na-section { background: #fff1f2; border-top: 2px solid #f43f5e; border-bottom: 1px solid #fecdd3; margin: 12px 16px; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px #fecdd3; }
+  .na-head { display: flex; align-items: center; gap: 8px; padding: 10px 16px 8px; font-family: var(--font-heading); font-size: 13px; font-weight: 800; color: #be123c; text-transform: uppercase; letter-spacing: 0.05em; }
   .na-icon { font-size: 15px; }
-  .na-count { margin-left: auto; background: #b45309; color: #fff; border-radius: 10px; font-size: 11px; font-weight: 800; padding: 1px 7px; }
-  .na-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 24px; cursor: pointer; border-top: 1px solid #fde68a; transition: background 0.12s; gap: 12px; }
-  .na-row:hover { background: #fef3c7; }
+  .na-count { margin-left: auto; background: #e11d48; color: #fff; border-radius: 10px; font-size: 11px; font-weight: 800; padding: 1px 7px; }
+  .na-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; cursor: pointer; border-top: 1px solid #fecdd3; transition: background 0.12s; gap: 12px; }
+  .na-row:hover { background: #ffe4e6; }
   .na-row-info { flex: 1; min-width: 0; }
   .na-row-name { font-family: var(--font-heading); font-size: 14px; font-weight: 700; color: var(--gray-900); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .na-row-meta { font-size: 12px; color: #92400e; margin-top: 2px; }
-  .na-row-action { font-size: 12px; font-weight: 700; color: #b45309; white-space: nowrap; flex-shrink: 0; }
+  .na-row-meta { font-size: 12px; color: #be123c; margin-top: 2px; }
+  .na-row-action { font-size: 12px; font-weight: 700; color: #e11d48; white-space: nowrap; flex-shrink: 0; }
 
   /* ── Right detail panel ── */
   .detail-panel { width: 420px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--bg-primary); overflow-y: auto; border-left: 1px solid var(--border-light); }
