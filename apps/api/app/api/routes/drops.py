@@ -11,7 +11,7 @@ from app.api.deps import AuthUser, db_dep, require_roles
 from app.api.guardrails import CapacityMutationContext, assert_drop_load_invariants, guard_load_editable, mutate_capacity_or_409
 from app.api.services import find_matching_address, log_event, now_utc
 from app.billing.service import evaluate_limit, scheduling_gate
-from app.models.entities import CapacityHold, Customer, CustomerAddress, CustomerType, DeliveryMode, Drop, Load, OperationalBlackout, ProductCatalogItem, UserRole, WindowCapacity, WindowCode
+from app.models.entities import CapacityHold, Customer, CustomerAddress, CustomerType, DeliveryMode, Drop, Load, LoadStatus, OperationalBlackout, ProductCatalogItem, UserRole, WindowCapacity, WindowCode
 
 router = APIRouter(prefix="/drops", tags=["drops"])
 logger = logging.getLogger("dispatch.capacity")
@@ -359,6 +359,10 @@ def reschedule_drop(drop_id: str, payload: RescheduleIn, user: AuthUser = Depend
     for load in loads:
         load.route_date = payload.scheduled_date
         load.route_window = load_window
+        if load.status == LoadStatus.EXCEPTION:
+            load.status = LoadStatus.ASSIGNED
+            load.exception_reason_code = None
+            load.exception_notes = None
 
     log_event(db, user.tenant_id, "drop.rescheduled", "api", {
         "drop_id": drop_id,
