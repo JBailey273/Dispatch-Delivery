@@ -318,12 +318,12 @@ function NewDropPage() {
       localStorage.setItem(LAST_WINDOW_KEY, selectedWindow);
       localStorage.setItem(`${LAST_ADDRESS_KEY}${customer.id}`, addressId);
       localStorage.setItem(`${LAST_ITEMS_KEY}${customer.id}`, JSON.stringify(items));
-      if (selectedDriverId && out.drop_id) {
+      if (selectedDriverId && out.load_ids?.length) {
         try {
-          await api(`/dispatch/drops/${out.drop_id}/assign`, {
+          await api('/dispatch/loads/assign', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ driver_user_id: selectedDriverId }),
+            body: JSON.stringify({ load_ids: out.load_ids, driver_user_id: selectedDriverId }),
           });
         } catch { /* non-fatal — order still created, dispatcher can assign in scheduler */ }
       }
