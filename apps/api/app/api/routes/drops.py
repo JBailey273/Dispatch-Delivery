@@ -251,11 +251,13 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
                 tenant_id=user.tenant_id,
                 drop_id=drop.id,
                 route_date=payload.scheduled_date,
-                route_window=load_window,
-                bulk_group_snapshot=bulk_group,
-                material_name_snapshot=snap["name"],
-                qty=snap["qty"],
-                unit=snap["unit"],
+                route_window=window_enum,
+                bulk_group_snapshot=grp["bulk_group"],
+                material_name_snapshot=grp["material_name_snapshot"],
+                qty=grp["qty"],
+                unit=grp["unit"],
+                driver_user_id=payload.driver_user_id,                                          
+                status=LoadStatus.ASSIGNED if payload.driver_user_id else LoadStatus.NEW,       
             )
             db.add(load)
             db.flush()
