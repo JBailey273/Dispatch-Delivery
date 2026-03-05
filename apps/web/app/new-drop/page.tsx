@@ -336,6 +336,7 @@ function NewDropPage() {
   if (!requireRole(['dispatcher'])) return <div className="page"><p>Unauthorized</p></div>;
 
   // ── Success screen ──
+  // ── Success screen ──
   if (result) return (
     <>
       <style>{pageStyles}</style>
@@ -343,21 +344,37 @@ function NewDropPage() {
         <div className="nd-success-card card card-padded">
           <div className="nd-success-icon">{'\u2713'}</div>
           <h2>Order Created</h2>
-          <p style={{ color: 'var(--gray-600)', marginTop: 4 }}>
-            {isPriority ? (
-              <>Priority delivery scheduled for {formatDate(selDate)}</>
-            ) : (
-              <>Scheduled for {formatDate(selDate)}, {windowLabel(selectedWindow)}</>
-            )}
+          <p style={{ color: 'var(--gray-500)', marginTop: 4, fontSize: 14 }}>
+            {isPriority ? `Priority delivery · ${formatDate(selDate)}` : `${formatDate(selDate)} · ${windowLabel(selectedWindow)}`}
           </p>
-          {isPriority && <span className="pill pill-blue" style={{ marginTop: 4, fontSize: 12 }}>{'\u26A1'} Priority</span>}
+          {isPriority && <span className="pill pill-blue" style={{ marginTop: 6, fontSize: 12 }}>{'\u26A1'} Priority</span>}
+
           <div className="nd-success-detail">
-            <div className="nd-success-row"><span>Drop ID</span><span style={{ fontFamily: 'monospace', fontSize: 13 }}>{result.drop_id}</span></div>
-            <div className="nd-success-row"><span>Loads</span><span>{result.load_ids?.length || 0}</span></div>
+            <div className="nd-success-row">
+              <span>Order</span>
+              <span>{result.order_number ? `#D-${String(result.order_number).padStart(5, '0')}` : '—'}</span>
+            </div>
+            <div className="nd-success-row">
+              <span>Customer</span>
+              <span>{customer?.name}</span>
+            </div>
+            <div className="nd-success-row">
+              <span>Address</span>
+              <span>{addresses.find(a => a.id === addressId)?.line1 || '—'}</span>
+            </div>
+            <div className="nd-success-row">
+              <span>Items</span>
+              <span>{items.map(i => { const cat = catalog.find(c => c.sku === i.sku); return `${cat?.name || i.sku} ×${i.qty}`; }).join(', ')}</span>
+            </div>
+            <div className="nd-success-row">
+              <span>Driver</span>
+              <span>{drivers.find(d => d.id === selectedDriverId)?.name || 'Unassigned'}</span>
+            </div>
           </div>
+
           <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-            <button className="btn btn-primary" onClick={() => { setResult(null); setCustomer(null); setItems([]); setSearchQuery(''); setSearchResults([]); setAddressId(''); setAddresses([]); setShowNewAddr(false); setIsPriority(false); }}>New Order</button>
-            <button className="btn btn-secondary" onClick={() => router.push('/dispatch-schedule')}>Schedule</button>
+            <button className="btn btn-primary" onClick={() => { setResult(null); setCustomer(null); setItems([]); setSearchQuery(''); setSearchResults([]); setAddressId(''); setAddresses([]); setShowNewAddr(false); setIsPriority(false); setSelectedDriverId(''); }}>New Order</button>
+            <button className="btn btn-secondary" onClick={() => router.push('/dispatch-schedule')}>View Schedule</button>
           </div>
         </div>
       </div>
