@@ -257,7 +257,7 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
                 qty=snap["qty"],
                 unit=snap["unit"],
                 driver_user_id=payload.driver_user_id,
-                status=LoadStatus.ASSIGNED if payload.driver_user_id else LoadStatus.ASSIGNED,
+                status=LoadStatus.ASSIGNED,
             )
             db.add(load)
             db.flush()
