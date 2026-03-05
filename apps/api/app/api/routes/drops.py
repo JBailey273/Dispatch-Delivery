@@ -71,6 +71,7 @@ class ManualDropIn(BaseModel):
     scheduled_window: WindowCode | None = None  # None allowed for priority drops
     is_priority: bool | None = None  # None = auto-detect from customer type
     items: list[ItemIn]
+    driver_user_id: str | None = None
 
 
 def _is_blacked_out(db: Session, tenant_id, day: date, window: WindowCode) -> bool:
