@@ -9,6 +9,7 @@ from app.api.routes import (
     dispatch,
     driver,
     drops,
+    locations,
     operations,
     platform_admin,
     product_catalog,
@@ -20,6 +21,7 @@ from app.api.routes import (
 
 api_router = APIRouter()
 api_router.include_router(auth.router)
+api_router.include_router(locations.router)
 api_router.include_router(billing.router)
 api_router.include_router(channels.router)
 api_router.include_router(product_catalog.router)
