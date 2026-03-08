@@ -604,7 +604,7 @@ def anomalies(auto_fix: bool = Query(default=True), location_id: str | None = Qu
     for load in assigned:
         window_end = datetime.combine(load.route_date, window_ends[load.route_window].timetz(), tzinfo=tz)
         if window_end < now:
-            anomalies_out.append({"type": "load_stuck_assigned", "load_id": str(load.id), "route_date": str(load.route_date), "route_window": load.route_window.value, "status": load.status.value})
+            anomalies_out.append({"type": "load_stuck_assigned", "load_id": str(load.id), "drop_id": str(load.drop_id), "route_date": str(load.route_date), "route_window": load.route_window.value, "status": load.status.value})
 
     holds_q = select(CapacityHold).where(
         CapacityHold.tenant_id == user.tenant_id,
