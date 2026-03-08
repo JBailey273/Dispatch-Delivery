@@ -141,6 +141,7 @@ export default function DashboardPage() {
   }, [activeLocation?.id]);
 
   const fetchAll = useCallback(async () => {
+    const locParam = activeLocation?.id ? `&location_id=${activeLocation.id}` : '';
     setLoading(true);
     const rangeStart = new Date(today);
     rangeStart.setDate(rangeStart.getDate() - 3);
@@ -167,7 +168,7 @@ export default function DashboardPage() {
       if (b) setCapB({ used: b.used, total: b.total });
     }
     setLoading(false);
-  }, [today, todayStr, locationParam]);
+  }, [today, todayStr, activeLocation?.id]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
