@@ -30,6 +30,7 @@ export function setSession(session: Session) {
 export function clearSession() {
   localStorage.removeItem('session');
   localStorage.removeItem('tenantContext');
+  localStorage.removeItem('activeLocationId');
 }
 
 export function requireRole(roles: string[]): boolean {
