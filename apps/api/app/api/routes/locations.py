@@ -70,16 +70,17 @@ def _location_dict(loc: Location) -> dict:
 
 @router.get("")
 def list_locations(
+    include_inactive: bool = Query(default=False),
     user: AuthUser = Depends(require_roles(UserRole.ADMIN, UserRole.DISPATCHER, UserRole.DRIVER)),
     db: Session = Depends(db_dep),
 ):
-    """List all active locations for the tenant. Used by dispatcher nav switcher and customer-facing location selector."""
-    locations = db.execute(
-        select(Location)
-        .where(Location.tenant_id == user.tenant_id, Location.is_active == True)  # noqa: E712
-        .order_by(Location.name)
-    ).scalars().all()
-    return {"items": [_location_dict(loc) for loc in locations]}
+    """List locations for the tenant. Used by dispatcher nav switcher and customer-facing location selector."""
+    q = select(Location).where(Location.tenant_id == user.tenant_id)
+    if not include_inactive:
+        q = q.where(Location.is_active == True)  # noqa: E712
+    q = q.order_by(Location.name)
+    locations = db.execute(q).scalars().all()
+    return {"locations": [_location_dict(loc) for loc in locations]}
 
 
 @router.get("/{location_id}")
