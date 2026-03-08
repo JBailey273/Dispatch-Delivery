@@ -136,7 +136,7 @@ export default function DashboardPage() {
     const results = await Promise.allSettled([
       api(`/dispatch/schedule?day=${todayStr}${locationParam}`),
       api(`/ops/reports/throughput?start_date=${toKey(rangeStart)}&end_date=${toKey(rangeEnd)}${locationParam}`),
-      api(`/admin/diagnostics/anomalies?auto_fix=false`),
+      api(`/admin/diagnostics/anomalies?auto_fix=false${locationParam}`),
       api(`/ops/reports/exceptions?start_date=${toKey(rangeStart)}&end_date=${toKey(rangeEnd)}${locationParam}`),
       api(`/availability?start_date=${todayStr}&days=1${locationParam}`),
     ]);
