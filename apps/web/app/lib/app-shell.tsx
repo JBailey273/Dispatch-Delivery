@@ -2,8 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { clearSession, getSession, Session } from './auth';
+import { LocationProvider, useLocation } from './location-context';
 
 function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
   const pathname = usePathname();
@@ -11,36 +12,77 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
   return <Link href={href} className={`app-nav-link${isActive ? ' active' : ''}`}>{children}</Link>;
 }
 
-export default function AppShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const router = useRouter();
-  const [mounted, setMounted] = useState(false);
-  const [session, setSession] = useState<Session | null>(null);
+function LocationSwitcher() {
+  const { locations, activeLocation, setActiveLocation } = useLocation();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setMounted(true);
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  useEffect(() => {
-    if (!mounted) return;
-    if (pathname === '/login') return;
+  // Single location — show static label, no dropdown
+  if (locations.length <= 1) {
+    if (!activeLocation) return null;
+    return (
+      <div className="nav-location-static">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+          <path d="M8 1.5C5.515 1.5 3.5 3.515 3.5 6c0 3.75 4.5 8.5 4.5 8.5s4.5-4.75 4.5-8.5c0-2.485-2.015-4.5-4.5-4.5zm0 6a1.5 1.5 0 110-3 1.5 1.5 0 010 3z" fill="currentColor"/>
+        </svg>
+        {activeLocation.name}
+      </div>
+    );
+  }
 
-    const nextSession = getSession();
-    if (!nextSession) {
-      router.replace('/login');
-      return;
-    }
+  return (
+    <div className="nav-location-switcher" ref={ref}>
+      <button
+        className="nav-location-btn"
+        onClick={() => setOpen(o => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+          <path d="M8 1.5C5.515 1.5 3.5 3.515 3.5 6c0 3.75 4.5 8.5 4.5 8.5s4.5-4.75 4.5-8.5c0-2.485-2.015-4.5-4.5-4.5zm0 6a1.5 1.5 0 110-3 1.5 1.5 0 010 3z" fill="currentColor"/>
+        </svg>
+        <span>{activeLocation?.name ?? 'Select location'}</span>
+        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" style={{ opacity: 0.6 }}>
+          <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </button>
 
-    setSession(nextSession);
-  }, [mounted, pathname, router]);
+      {open && (
+        <div className="nav-location-dropdown" role="listbox">
+          {locations.map(loc => (
+            <button
+              key={loc.id}
+              className={`nav-location-option${activeLocation?.id === loc.id ? ' active' : ''}`}
+              role="option"
+              aria-selected={activeLocation?.id === loc.id}
+              onClick={() => { setActiveLocation(loc); setOpen(false); }}
+            >
+              {loc.name}
+              {activeLocation?.id === loc.id && (
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 8l4 4 6-7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
-  const isLogin = pathname === '/login';
-  if (!mounted) return null;
-  if (isLogin) return <>{children}</>;
-  if (!session) return null;
-
+function ShellInner({ children, session }: { children: React.ReactNode; session: Session }) {
   const isAdmin = session.role === 'admin';
   const isDriver = session.role === 'driver';
+  const router = useRouter();
 
   return (
     <>
@@ -75,7 +117,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         )}
 
         <div className="app-nav-spacer" />
+
         <div className="app-nav-user">
+          {!isDriver && <LocationSwitcher />}
           <span className="app-nav-role">{session.role}</span>
           <button className="btn btn-ghost btn-sm" onClick={() => { clearSession(); router.push('/login'); }}>
             Sign out
@@ -84,5 +128,35 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </nav>
       {children}
     </>
+  );
+}
+
+export default function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+
+  useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    if (pathname === '/login') return;
+    const nextSession = getSession();
+    if (!nextSession) { router.replace('/login'); return; }
+    setSession(nextSession);
+  }, [mounted, pathname, router]);
+
+  const isLogin = pathname === '/login';
+  if (!mounted) return null;
+  if (isLogin) return <>{children}</>;
+  if (!session) return null;
+
+  const isDispatcherOrAdmin = session.role === 'dispatcher' || session.role === 'admin';
+
+  return (
+    <LocationProvider enabled={isDispatcherOrAdmin}>
+      <ShellInner session={session}>{children}</ShellInner>
+    </LocationProvider>
   );
 }
