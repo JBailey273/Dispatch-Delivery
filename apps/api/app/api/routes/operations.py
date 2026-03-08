@@ -545,18 +545,33 @@ def remove_blackout(blackout_id: str, user: AuthUser = Depends(require_roles(Use
 
 
 @admin_router.get("/diagnostics/anomalies")
-def anomalies(auto_fix: bool = Query(default=True), user: AuthUser = Depends(require_roles(UserRole.ADMIN, UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+def anomalies(auto_fix: bool = Query(default=True), location_id: str | None = Query(default=None), user: AuthUser = Depends(require_roles(UserRole.ADMIN, UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
     anomalies_out = []
 
-    cap_violations = db.execute(select(WindowCapacity).where(WindowCapacity.tenant_id == user.tenant_id, WindowCapacity.capacity_used > WindowCapacity.capacity_total)).scalars().all()
+    # Resolve location filter
+    loc_id = None
+    if location_id:
+        loc = db.execute(
+            select(Location).where(Location.id == location_id, Location.tenant_id == user.tenant_id)
+        ).scalar_one_or_none()
+        if loc:
+            loc_id = loc.id
+
+    cap_q = select(WindowCapacity).where(WindowCapacity.tenant_id == user.tenant_id, WindowCapacity.capacity_used > WindowCapacity.capacity_total)
+    if loc_id:
+        cap_q = cap_q.where(WindowCapacity.location_id == loc_id)
+    cap_violations = db.execute(cap_q).scalars().all()
     for cap in cap_violations:
         anomalies_out.append({"type": "capacity_overrun", "service_date": str(cap.service_date), "window": cap.window_code.value, "capacity_used": cap.capacity_used, "capacity_total": cap.capacity_total})
 
-    drops_with_zero_loads = db.execute(
+    drop_q = (
         select(Drop.id, Drop.scheduled_date, Drop.scheduled_window)
         .where(Drop.tenant_id == user.tenant_id)
         .where(~Drop.id.in_(select(Load.drop_id).where(Load.tenant_id == user.tenant_id)))
-    ).all()
+    )
+    if loc_id:
+        drop_q = drop_q.where(Drop.location_id == loc_id)
+    drops_with_zero_loads = db.execute(drop_q).all()
     for drop_id, scheduled_date, scheduled_window in drops_with_zero_loads:
         anomalies_out.append({"type": "drop_without_loads", "drop_id": str(drop_id), "scheduled_date": str(scheduled_date), "scheduled_window": scheduled_window.value})
 
@@ -574,24 +589,27 @@ def anomalies(auto_fix: bool = Query(default=True), user: AuthUser = Depends(req
             WindowCode.A: datetime.combine(datetime.today(), time(13, 0), tzinfo=tz),
             WindowCode.B: datetime.combine(datetime.today(), time(17, 0), tzinfo=tz),
         }
-    assigned = db.execute(
+    assigned_q = (
         select(Load).join(Drop, Drop.id == Load.drop_id)
         .where(Load.tenant_id == user.tenant_id, Load.status == LoadStatus.ASSIGNED, Drop.is_priority == False)
-    ).scalars().all()
+    )
+    if loc_id:
+        assigned_q = assigned_q.where(Drop.location_id == loc_id)
+    assigned = db.execute(assigned_q).scalars().all()
     for load in assigned:
         window_end = datetime.combine(load.route_date, window_ends[load.route_window].timetz(), tzinfo=tz)
         if window_end < now:
             anomalies_out.append({"type": "load_stuck_assigned", "load_id": str(load.id), "route_date": str(load.route_date), "route_window": load.route_window.value, "status": load.status.value})
 
-    expired_holds = db.execute(
-        select(CapacityHold)
-        .where(
-            CapacityHold.tenant_id == user.tenant_id,
-            CapacityHold.expires_at <= now,
-            CapacityHold.converted_at.is_(None),
-            CapacityHold.released_at.is_(None),
-        )
-    ).scalars().all()
+    holds_q = select(CapacityHold).where(
+        CapacityHold.tenant_id == user.tenant_id,
+        CapacityHold.expires_at <= now,
+        CapacityHold.converted_at.is_(None),
+        CapacityHold.released_at.is_(None),
+    )
+    if loc_id:
+        holds_q = holds_q.where(CapacityHold.location_id == loc_id)
+    expired_holds = db.execute(holds_q).scalars().all()
     fixed = 0
     for hold in expired_holds:
         if auto_fix:
@@ -602,7 +620,6 @@ def anomalies(auto_fix: bool = Query(default=True), user: AuthUser = Depends(req
         anomalies_out.append({"type": "expired_hold_not_released", "hold_token": hold.hold_token, "service_date": str(hold.service_date), "window": hold.window_code.value, "auto_fixed": auto_fix})
     db.commit()
     return {"anomalies": anomalies_out, "auto_fix_applied": fixed}
-
 
 
 
