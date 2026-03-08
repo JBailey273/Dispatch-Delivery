@@ -496,7 +496,7 @@ export default function DriverPage() {
 
                   {/* ① Condition Documentation */}
                   {drop.loads.some(l => l.status === 'assigned' || l.status === 'loaded_leaving') && (
-                    <div style={{ margin: '0 -18px', borderBottom: '1.5px solid var(--g2)', marginBottom: 0 }}>
+                    <div style={{ margin: '0 -18px', borderTop: '1.5px solid var(--g2)', marginTop: 22 }}>
                       {conditionPhotoTaken === drop.loads[0].id ? (
                         /* ── Photo captured — optionally add a note before closing ── */
                         <div style={{ padding: '14px 18px', background: '#f0fdf4', borderBottom: '1.5px solid #bbf7d0' }}>
