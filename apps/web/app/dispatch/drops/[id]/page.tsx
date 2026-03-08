@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { ApiError, api, requireRole } from '../../../lib/auth';
+import { useLocation } from '../../../lib/location-context';
 import DropRescheduleSlideOver from '../../../components/DropRescheduleSlideOver';
 import type { SlideOverDropDetail } from '../../../components/DropRescheduleSlideOver';
 
@@ -109,6 +110,7 @@ function DispatchDropDetailPage() {
   const [error, setError] = useState('');
   const [showPanel, setShowPanel] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const { activeLocation } = useLocation();
 
   const fetchDrop = useCallback(async () => {
     setLoading(true);
@@ -390,6 +392,7 @@ function DispatchDropDetailPage() {
           onClose={() => setShowPanel(false)}
           onRescheduled={fetchDrop}
           startOnReschedule={searchParams.get('action') === 'reschedule'}
+          locationId={activeLocation?.id ?? null}
         />
       )}
     </>
