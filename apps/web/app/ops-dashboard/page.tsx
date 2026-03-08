@@ -124,7 +124,21 @@ export default function DashboardPage() {
   };
 
   const { activeLocation } = useLocation();
-  const locationParam = activeLocation ? `&location_id=${activeLocation.id}` : '';
+  const locationParam = activeLocation ?
+    `&location_id=${activeLocation.id}` : '';
+
+  // Clear stale data immediately when location switches
+  useEffect(() => {
+    if (!activeLocation) return;
+    setLoading(true);
+    setSchedule(null);
+    setThroughput([]);
+    setExceptions([]);
+    setCapA(null);
+    setCapB(null);
+    setAnomalies([]);
+    setDismissedAlerts(new Set());
+  }, [activeLocation?.id]);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
