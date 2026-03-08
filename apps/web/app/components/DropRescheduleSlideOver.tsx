@@ -103,11 +103,12 @@ const DEFAULT_SMS = 'Your delivery has been rescheduled. Please contact us with 
    ══════════════════════════════════════════ */
 interface OrderPanelProps {
   dropId: string;
-  dropDetail: SlideOverDropDetail | null;
+  dropDetail?: SlideOverDropDetail | null;
   capData?: Record<string, { A: CapWindow | null; B: CapWindow | null }>;
   onClose: () => void;
   onRescheduled: () => void;
   startOnReschedule?: boolean;
+  locationId?: string | null;
 }
 
 /* ══════════════════════════════════════════
@@ -120,6 +121,7 @@ export default function DropRescheduleSlideOver({
   onClose,
   onRescheduled,
   startOnReschedule = false,
+  locationId,
 }: OrderPanelProps) {
   const today = useMemo(() => new Date(), []);
 
@@ -149,7 +151,7 @@ export default function DropRescheduleSlideOver({
     try {
       const y = monthStart.getFullYear(), m = monthStart.getMonth();
       const daysCount = new Date(y, m + 1, 0).getDate();
-      const resp = await api(`/availability?start_date=${toKey(new Date(y, m, 1))}&days=${daysCount}`);
+      const resp = await api(`/availability?start_date=${toKey(new Date(y, m, 1))}&days=${daysCount}${locationId ? `&location_id=${locationId}` : ''}`);
       const map: Record<string, { A: CapWindow | null; B: CapWindow | null }> = {};
       for (const w of (resp.windows || [])) {
         if (!map[w.date]) map[w.date] = { A: null, B: null };
@@ -160,7 +162,7 @@ export default function DropRescheduleSlideOver({
       }
       setInternalCapData(prev => ({ ...prev, ...map }));
     } catch { /* silent */ }
-  }, [internalCapData]);
+  }, [internalCapData, locationId]);
 
   /* Drivers list */
   const [drivers, setDrivers] = useState<Driver[]>([]);
