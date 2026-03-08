@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { ApiError, api, requireRole } from '../lib/auth';
+import { useLocation } from '../lib/location-context';
 
 /* ── Helpers ── */
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -122,6 +123,9 @@ export default function DashboardPage() {
     });
   };
 
+  const { activeLocation } = useLocation();
+  const locationParam = activeLocation ? `&location_id=${activeLocation.id}` : '';
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
     const rangeStart = new Date(today);
@@ -130,11 +134,11 @@ export default function DashboardPage() {
     rangeEnd.setDate(rangeEnd.getDate() + 3);
 
     const results = await Promise.allSettled([
-      api(`/dispatch/schedule?day=${todayStr}`),
-      api(`/ops/reports/throughput?start_date=${toKey(rangeStart)}&end_date=${toKey(rangeEnd)}`),
+      api(`/dispatch/schedule?day=${todayStr}${locationParam}`),
+      api(`/ops/reports/throughput?start_date=${toKey(rangeStart)}&end_date=${toKey(rangeEnd)}${locationParam}`),
       api(`/admin/diagnostics/anomalies?auto_fix=false`),
-      api(`/ops/reports/exceptions?start_date=${toKey(rangeStart)}&end_date=${toKey(rangeEnd)}`),
-      api(`/availability?start_date=${todayStr}&days=1`),
+      api(`/ops/reports/exceptions?start_date=${toKey(rangeStart)}&end_date=${toKey(rangeEnd)}${locationParam}`),
+      api(`/availability?start_date=${todayStr}&days=1${locationParam}`),
     ]);
 
     if (results[0].status === 'fulfilled') setSchedule(results[0].value);
@@ -149,7 +153,7 @@ export default function DashboardPage() {
       if (b) setCapB({ used: b.used, total: b.total });
     }
     setLoading(false);
-  }, [today, todayStr]);
+  }, [today, todayStr, locationParam]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
