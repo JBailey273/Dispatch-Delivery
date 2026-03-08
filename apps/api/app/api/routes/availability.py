@@ -19,6 +19,7 @@ from app.models.entities import (
     Drop,
     EventLog,
     Load,
+    Location,
     OperationalBlackout,
     ProductCatalogItem,
     Tenant,
@@ -58,6 +59,7 @@ class HoldCreateIn(BaseModel):
     required_loads: int = Field(ge=0)
     cart_hash: str = Field(min_length=1)
     cart_items: list[CartItemIn]
+    location_id: str | None = None  # Required for multi-location; defaults to tenant's first active location
 
 
 class ExternalOrderIn(BaseModel):
@@ -102,13 +104,14 @@ class IngestOrderIn(ConfirmOrderIn):
     hold_token: str
 
 
-def _required_loads(db: Session, tenant_id, items: list[CartItemIn]) -> tuple[int, dict[str, dict]]:
+def _required_loads(db: Session, tenant_id, location_id, items: list[CartItemIn]) -> tuple[int, dict[str, dict]]:
     if not items:
         raise HTTPException(status_code=400, detail={"code": "invalid_items", "message": "At least one item is required"})
     skus = [i.sku for i in items]
     catalog = db.execute(
         select(ProductCatalogItem).where(
             ProductCatalogItem.tenant_id == tenant_id,
+            ProductCatalogItem.location_id == location_id,
             ProductCatalogItem.sku.in_(skus),
             ProductCatalogItem.active == True,  # noqa: E712
         )
@@ -128,11 +131,12 @@ def _required_loads(db: Session, tenant_id, items: list[CartItemIn]) -> tuple[in
     return len(grouped.keys()), grouped
 
 
-def _active_holds(db: Session, tenant_id, day: date, window: WindowCode) -> int:
+def _active_holds(db: Session, tenant_id, location_id, day: date, window: WindowCode) -> int:
     return (
         db.execute(
             select(func.coalesce(func.sum(CapacityHold.units_held), 0)).where(
                 CapacityHold.tenant_id == tenant_id,
+                CapacityHold.location_id == location_id,
                 CapacityHold.service_date == day,
                 CapacityHold.window_code == window,
                 CapacityHold.released_at.is_(None),
@@ -144,20 +148,26 @@ def _active_holds(db: Session, tenant_id, day: date, window: WindowCode) -> int:
     )
 
 
-def _remaining_slots(db: Session, tenant_id, tenant_default: int, day: date, window: WindowCode) -> tuple[int, int, int]:
+def _remaining_slots(db: Session, tenant_id, location_id, location_default: int, day: date, window: WindowCode) -> tuple[int, int, int]:
     cap = db.execute(
-        select(WindowCapacity).where(WindowCapacity.tenant_id == tenant_id, WindowCapacity.service_date == day, WindowCapacity.window_code == window)
+        select(WindowCapacity).where(
+            WindowCapacity.tenant_id == tenant_id,
+            WindowCapacity.location_id == location_id,
+            WindowCapacity.service_date == day,
+            WindowCapacity.window_code == window,
+        )
     ).scalar_one_or_none()
-    total = cap.capacity_total if cap else tenant_default
+    total = cap.capacity_total if cap else location_default
     used = cap.capacity_used if cap else 0
-    holds = _active_holds(db, tenant_id, day, window)
+    holds = _active_holds(db, tenant_id, location_id, day, window)
     return total - used - holds, used, holds
 
 
-def _is_blacked_out(db: Session, tenant_id, day: date, window: WindowCode) -> bool:
+def _is_blacked_out(db: Session, tenant_id, location_id, day: date, window: WindowCode) -> bool:
     blackout = db.execute(
         select(OperationalBlackout.id).where(
             OperationalBlackout.tenant_id == tenant_id,
+            OperationalBlackout.location_id == location_id,
             OperationalBlackout.service_date == day,
             OperationalBlackout.active.is_(True),
             or_(OperationalBlackout.window_code.is_(None), OperationalBlackout.window_code == window),
@@ -214,10 +224,11 @@ def _next_order_number(db: Session, tenant_id) -> int:
     return current_max + 1
 
 
-def _create_drop_and_loads(db: Session, tenant_id, payload: ConfirmOrderIn, grouped: dict[str, dict], customer_id, address_id, *, source: str = "channel"):
+def _create_drop_and_loads(db: Session, tenant_id, location_id, payload: ConfirmOrderIn, grouped: dict[str, dict], customer_id, address_id, *, source: str = "channel"):
     ext_id = payload.external_order.id if payload.external_order else None
     drop = Drop(
         tenant_id=tenant_id,
+        location_id=location_id,
         customer_id=customer_id,
         address_id=address_id,
         order_number=_next_order_number(db, tenant_id),
@@ -255,8 +266,8 @@ def _is_expired(ts: datetime) -> bool:
 
 
 def _confirm_hold_transaction(hold: CapacityHold, payload: ConfirmOrderIn, channel: ChannelAuth, db: Session):
-    required_loads, grouped = _required_loads(db, channel.tenant_id, payload.items)
-    if _is_blacked_out(db, channel.tenant_id, payload.drop.requested_date, payload.drop.requested_window):
+    required_loads, grouped = _required_loads(db, channel.tenant_id, hold.location_id, payload.items)
+    if _is_blacked_out(db, channel.tenant_id, hold.location_id, payload.drop.requested_date, payload.drop.requested_window):
         raise HTTPException(status_code=409, detail={"code": "window_blacked_out", "message": f"Could not confirm order: {payload.drop.requested_date} window {payload.drop.requested_window.value} is blocked.", "next_step": "Pick a different available window and retry."})
     if payload.drop.requested_date != hold.service_date or payload.drop.requested_window != hold.window_code:
         raise HTTPException(status_code=409, detail={"code": "hold_window_mismatch", "message": "Could not confirm order because the selected date/window does not match the held slot.", "next_step": "Use the held date/window or create a new hold for the new choice."})
@@ -269,7 +280,7 @@ def _confirm_hold_transaction(hold: CapacityHold, payload: ConfirmOrderIn, chann
         raise HTTPException(status_code=409, detail={"code": "capacity_conflict", "message": f"Could not confirm order: needed {required_loads} loads but only {remaining} remain in that window.", "next_step": "Choose another available window and retry."})
 
     customer, address = _upsert_customer_and_address(db, channel.tenant_id, payload)
-    drop, load_ids = _create_drop_and_loads(db, channel.tenant_id, payload, grouped, customer.id, address.id)
+    drop, load_ids = _create_drop_and_loads(db, channel.tenant_id, hold.location_id, payload, grouped, customer.id, address.id)
     mutate_capacity_or_409(
         db,
         channel.tenant_id,
@@ -290,34 +301,53 @@ def check_availability(
     required_loads: int = Query(default=1, ge=0),
     start_date: date | None = Query(default=None),
     days: int = Query(default=7, ge=1, le=45),
+    location_id: str | None = Query(default=None),
     user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
     db: Session = Depends(db_dep),
 ) -> dict:
-    tenant = db.execute(select(Tenant).where(Tenant.id == user.tenant_id)).scalar_one()
+    if location_id:
+        location = db.execute(
+            select(Location).where(Location.id == location_id, Location.tenant_id == user.tenant_id)
+        ).scalar_one_or_none()
+        if not location:
+            raise HTTPException(status_code=404, detail={"code": "location_not_found", "message": "Location not found"})
+    else:
+        location = db.execute(
+            select(Location).where(Location.tenant_id == user.tenant_id, Location.is_active == True)  # noqa: E712
+            .order_by(Location.created_at)
+        ).scalars().first()
+        if not location:
+            raise HTTPException(status_code=400, detail={"code": "no_location", "message": "No active location found"})
+
     start = start_date or date.today()
     windows = []
     for i in range(days):
         d = start + timedelta(days=i)
         for w in [WindowCode.A, WindowCode.B]:
-            if _is_blacked_out(db, user.tenant_id, d, w):
+            if _is_blacked_out(db, user.tenant_id, location.id, d, w):
                 continue
-            remaining_capacity, used, active_holds = _remaining_slots(db, user.tenant_id, tenant.capacity_per_window, d, w)
+            remaining_capacity, used, active_holds = _remaining_slots(db, user.tenant_id, location.id, location.capacity_per_window, d, w)
             windows.append({"date": str(d), "window": w.value, "used": used, "active_holds": active_holds, "total": used + active_holds + remaining_capacity, "required_loads": required_loads, "remaining_capacity": remaining_capacity, "available": remaining_capacity >= required_loads})
     return {"required_loads": required_loads, "windows": windows}
 
 
 @router.post("/availability")
 def channel_availability(payload: AvailabilityIn, channel: ChannelAuth = Depends(require_channel), db: Session = Depends(db_dep)):
-    required_loads, _ = _required_loads(db, channel.tenant_id, payload.cart_items)
-    tenant = db.execute(select(Tenant).where(Tenant.id == channel.tenant_id)).scalar_one()
+    location = db.execute(
+        select(Location).where(Location.tenant_id == channel.tenant_id, Location.is_active == True)  # noqa: E712
+        .order_by(Location.created_at)
+    ).scalars().first()
+    if not location:
+        raise HTTPException(status_code=400, detail={"code": "no_location", "message": "No active location found"})
+    required_loads, _ = _required_loads(db, channel.tenant_id, location.id, payload.cart_items)
     days = []
     current = payload.date_range.start_date
     while current <= payload.date_range.end_date:
         window_rows = []
         for window in [WindowCode.A, WindowCode.B]:
-            if _is_blacked_out(db, channel.tenant_id, current, window):
+            if _is_blacked_out(db, channel.tenant_id, location.id, current, window):
                 continue
-            remaining, _used, _holds = _remaining_slots(db, channel.tenant_id, tenant.capacity_per_window, current, window)
+            remaining, _used, _holds = _remaining_slots(db, channel.tenant_id, location.id, location.capacity_per_window, current, window)
             if remaining >= required_loads:
                 window_rows.append({"window": window.value, "remaining_slots": remaining})
         if window_rows:
@@ -343,8 +373,16 @@ def create_hold(payload: HoldCreateIn, channel: ChannelAuth = Depends(require_ch
         db.commit()
         raise HTTPException(status_code=409, detail={"code": "capacity_conflict", "message": f"Could not hold capacity: needed {payload.required_loads} loads but only {remaining} are open.", "next_step": "Choose a less full window or reduce cart load requirements."})
 
+    location = db.execute(
+        select(Location).where(Location.tenant_id == channel.tenant_id, Location.is_active == True)  # noqa: E712
+        .order_by(Location.created_at)
+    ).scalars().first()
+    if not location:
+        raise HTTPException(status_code=400, detail={"code": "no_location", "message": "No active location found"})
+
     hold = CapacityHold(
         tenant_id=channel.tenant_id,
+        location_id=location.id,
         service_date=payload.date,
         window_code=payload.window,
         units_held=payload.required_loads,
