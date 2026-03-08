@@ -426,7 +426,75 @@ export default function DriverPage() {
               <div className={`drv-body ${isExpanded ? 'drv-body--open' : ''}`}>
                 <div className="drv-inner">
                
-               {/* ① Condition Documentation */}
+               
+                  {/* ① Load Manifest */}
+                  <div className="drv-manifest">
+                    <div className={`drv-manifest-hd ${isPriority ? 'drv-manifest-hd--priority' : ''}`}>
+                      {isPriority ? '⚡ PRIORITY LOAD' : '📋 LOAD MANIFEST'}
+                    </div>
+                    {drop.loads.map((load, idx) => {
+                      const isActive = load.status === 'assigned' || load.status === 'loaded_leaving';
+                      const lCfg = STATUS_CONFIG[load.status] || STATUS_CONFIG.assigned;
+                      return (
+                        <div key={load.id} className={`drv-manifest-row ${idx < drop.loads.length - 1 ? 'drv-manifest-row--border' : ''}`}>
+                          <div className={`drv-manifest-qty-line ${isPriority ? 'drv-manifest-qty-line--priority' : ''}`}>{load.qty} {load.unit}{load.qty !== 1 ? 's' : ''}</div>
+                          <div className="drv-manifest-material">{load.material}</div>
+                          {!isActive && <span className="drv-manifest-badge" style={{ color: lCfg.color, background: lCfg.bg }}>{lCfg.label}</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* ② Drop photo */}
+                  {drop.drop_photos && drop.drop_photos.length > 0 && (
+                    <div style={{ marginTop: 22 }}>
+                      <div className="drv-label">Drop Location</div>
+                      <div className="drv-photo-frame" onClick={() => setLightboxUrl(drop.drop_photos[0])}>
+                        <img src={drop.drop_photos[0]} alt="Drop location" className="drv-photo-img" />
+                        <div className="drv-photo-overlay">Tap to enlarge</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ③ Notes */}
+                  {drop.notes && (
+                    <div className="drv-notes" style={{ marginTop: 22 }}>
+                      <div className="drv-notes-hd">Delivery Notes</div>
+                      <div className="drv-notes-body">{drop.notes}</div>
+                    </div>
+                  )}
+
+                  {/* ⑤ Notify */}
+                  {!isDone && !isException && (
+                    <div style={{ marginTop: 22 }}>
+                      {drop.notify_sent ? (
+                        <div className="drv-notified">✅ Customer has been notified</div>
+                      ) : (
+                        <button
+                          className="drv-btn drv-btn--amber"
+                          disabled={actionLoading === `notify-${drop.drop_id}`}
+                          onClick={() => notifyCustomer(drop.drop_id)}
+                        >
+                          <span className="drv-btn-ic">📱</span>
+                          {actionLoading === `notify-${drop.drop_id}` ? 'Sending…' : 'Notify Customer'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                   
+                  {/* ④ Navigate */}
+                  {drop.address && (
+                    <a href={getGoogleMapsUrl(drop.address)} target="_blank" rel="noopener noreferrer" className="drv-nav" style={{ marginTop: 22 }}>
+                      <div className="drv-nav-icon">🗺️</div>
+                      <div className="drv-nav-info">
+                        <div className="drv-nav-hint">Tap to Navigate</div>
+                        <div className="drv-nav-addr">{formatAddress(drop.address)}</div>
+                      </div>
+                      <div className="drv-nav-go">→</div>
+                    </a>
+                  )}
+
+                  {/* ① Condition Documentation */}
                   {drop.loads.some(l => l.status === 'assigned' || l.status === 'loaded_leaving') && (
                     <div style={{ margin: '0 -18px', borderBottom: '1.5px solid var(--g2)', marginBottom: 0 }}>
                       {conditionPhotoTaken === drop.loads[0].id ? (
@@ -543,74 +611,7 @@ export default function DriverPage() {
                       )}
                     </div>
                   )}
-                  {/* ① Load Manifest */}
-                  <div className="drv-manifest">
-                    <div className={`drv-manifest-hd ${isPriority ? 'drv-manifest-hd--priority' : ''}`}>
-                      {isPriority ? '⚡ PRIORITY LOAD' : '📋 LOAD MANIFEST'}
-                    </div>
-                    {drop.loads.map((load, idx) => {
-                      const isActive = load.status === 'assigned' || load.status === 'loaded_leaving';
-                      const lCfg = STATUS_CONFIG[load.status] || STATUS_CONFIG.assigned;
-                      return (
-                        <div key={load.id} className={`drv-manifest-row ${idx < drop.loads.length - 1 ? 'drv-manifest-row--border' : ''}`}>
-                          <div className={`drv-manifest-qty-line ${isPriority ? 'drv-manifest-qty-line--priority' : ''}`}>{load.qty} {load.unit}{load.qty !== 1 ? 's' : ''}</div>
-                          <div className="drv-manifest-material">{load.material}</div>
-                          {!isActive && <span className="drv-manifest-badge" style={{ color: lCfg.color, background: lCfg.bg }}>{lCfg.label}</span>}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* ② Drop photo */}
-                  {drop.drop_photos && drop.drop_photos.length > 0 && (
-                    <div style={{ marginTop: 22 }}>
-                      <div className="drv-label">Drop Location</div>
-                      <div className="drv-photo-frame" onClick={() => setLightboxUrl(drop.drop_photos[0])}>
-                        <img src={drop.drop_photos[0]} alt="Drop location" className="drv-photo-img" />
-                        <div className="drv-photo-overlay">Tap to enlarge</div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ③ Notes */}
-                  {drop.notes && (
-                    <div className="drv-notes" style={{ marginTop: 22 }}>
-                      <div className="drv-notes-hd">Delivery Notes</div>
-                      <div className="drv-notes-body">{drop.notes}</div>
-                    </div>
-                  )}
-
-                  {/* ⑤ Notify */}
-                  {!isDone && !isException && (
-                    <div style={{ marginTop: 22 }}>
-                      {drop.notify_sent ? (
-                        <div className="drv-notified">✅ Customer has been notified</div>
-                      ) : (
-                        <button
-                          className="drv-btn drv-btn--amber"
-                          disabled={actionLoading === `notify-${drop.drop_id}`}
-                          onClick={() => notifyCustomer(drop.drop_id)}
-                        >
-                          <span className="drv-btn-ic">📱</span>
-                          {actionLoading === `notify-${drop.drop_id}` ? 'Sending…' : 'Notify Customer'}
-                        </button>
-                      )}
-                    </div>
-                  )}
                    
-                  {/* ④ Navigate */}
-                  {drop.address && (
-                    <a href={getGoogleMapsUrl(drop.address)} target="_blank" rel="noopener noreferrer" className="drv-nav" style={{ marginTop: 22 }}>
-                      <div className="drv-nav-icon">🗺️</div>
-                      <div className="drv-nav-info">
-                        <div className="drv-nav-hint">Tap to Navigate</div>
-                        <div className="drv-nav-addr">{formatAddress(drop.address)}</div>
-                      </div>
-                      <div className="drv-nav-go">→</div>
-                    </a>
-                  )}
-
-                  
                   {/* ⑥ Primary action */}
                   {activeLoads.length > 0 && (
                     <div className="drv-actions">
