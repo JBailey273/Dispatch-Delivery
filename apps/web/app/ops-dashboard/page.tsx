@@ -175,6 +175,8 @@ export default function DashboardPage() {
     setLoading(false);
   }, [today, todayStr, activeLocation?.id]);
 
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
   /* ── Derived data ── */
   const todayTP = throughput.find(d => d.date === todayStr);
 
