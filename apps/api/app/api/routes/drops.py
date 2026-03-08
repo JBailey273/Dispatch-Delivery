@@ -11,7 +11,7 @@ from app.api.deps import AuthUser, db_dep, require_roles
 from app.api.guardrails import CapacityMutationContext, assert_drop_load_invariants, guard_load_editable, mutate_capacity_or_409
 from app.api.services import find_matching_address, log_event, now_utc
 from app.billing.service import evaluate_limit, scheduling_gate
-from app.models.entities import CapacityHold, Customer, CustomerAddress, CustomerType, DeliveryMode, Drop, Load, LoadStatus, OperationalBlackout, ProductCatalogItem, UserRole, WindowCapacity, WindowCode
+from app.models.entities import CapacityHold, Customer, CustomerAddress, CustomerType, DeliveryMode, Drop, Load, LoadStatus, Location, OperationalBlackout, ProductCatalogItem, UserRole, WindowCapacity, WindowCode
 
 router = APIRouter(prefix="/drops", tags=["drops"])
 logger = logging.getLogger("dispatch.capacity")
@@ -72,12 +72,14 @@ class ManualDropIn(BaseModel):
     is_priority: bool | None = None  # None = auto-detect from customer type
     items: list[ItemIn]
     driver_user_id: str | None = None
+    location_id: str | None = None  # Required; defaults to tenant's only location if omitted
 
 
-def _is_blacked_out(db: Session, tenant_id, day: date, window: WindowCode) -> bool:
+def _is_blacked_out(db: Session, tenant_id, location_id, day: date, window: WindowCode) -> bool:
     return db.execute(
         select(OperationalBlackout.id).where(
             OperationalBlackout.tenant_id == tenant_id,
+            OperationalBlackout.location_id == location_id,
             OperationalBlackout.service_date == day,
             OperationalBlackout.active.is_(True),
             or_(OperationalBlackout.window_code.is_(None), OperationalBlackout.window_code == window),
@@ -85,8 +87,8 @@ def _is_blacked_out(db: Session, tenant_id, day: date, window: WindowCode) -> bo
     ).scalar_one_or_none() is not None
 
 
-def reserve_capacity(db: Session, tenant_id, day: date, window: WindowCode, required_loads: int):
-    if _is_blacked_out(db, tenant_id, day, window):
+def reserve_capacity(db: Session, tenant_id, location_id, day: date, window: WindowCode, required_loads: int):
+    if _is_blacked_out(db, tenant_id, location_id, day, window):
         raise HTTPException(
             status_code=409,
             detail={
@@ -97,20 +99,31 @@ def reserve_capacity(db: Session, tenant_id, day: date, window: WindowCode, requ
         )
     cap = db.execute(
         select(WindowCapacity)
-        .where(WindowCapacity.tenant_id == tenant_id, WindowCapacity.service_date == day, WindowCapacity.window_code == window)
+        .where(
+            WindowCapacity.tenant_id == tenant_id,
+            WindowCapacity.location_id == location_id,
+            WindowCapacity.service_date == day,
+            WindowCapacity.window_code == window,
+        )
         .with_for_update()
     ).scalar_one_or_none()
     if not cap:
-        from app.models.entities import Tenant
-
-        tenant = db.execute(select(Tenant).where(Tenant.id == tenant_id)).scalar_one()
-        cap = WindowCapacity(tenant_id=tenant_id, service_date=day, window_code=window, capacity_total=tenant.capacity_per_window, capacity_used=0)
+        location = db.execute(select(Location).where(Location.id == location_id)).scalar_one()
+        cap = WindowCapacity(
+            tenant_id=tenant_id,
+            location_id=location_id,
+            service_date=day,
+            window_code=window,
+            capacity_total=location.capacity_per_window,
+            capacity_used=0,
+        )
         db.add(cap)
         db.flush()
     active_holds = (
         db.execute(
             select(func.coalesce(func.sum(CapacityHold.units_held), 0)).where(
                 CapacityHold.tenant_id == tenant_id,
+                CapacityHold.location_id == location_id,
                 CapacityHold.service_date == day,
                 CapacityHold.window_code == window,
                 CapacityHold.released_at.is_(None),
@@ -147,6 +160,21 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
     schedule_decision = scheduling_gate(db, user.tenant_id)
     if not schedule_decision.allowed:
         raise HTTPException(status_code=402, detail={"code": schedule_decision.code, "message": schedule_decision.message})
+
+    # Resolve location — use provided id or fall back to the tenant's only/first active location
+    if payload.location_id:
+        location = db.execute(
+            select(Location).where(Location.id == payload.location_id, Location.tenant_id == user.tenant_id, Location.is_active == True)  # noqa: E712
+        ).scalar_one_or_none()
+        if not location:
+            raise HTTPException(status_code=404, detail={"code": "location_not_found", "message": "Location not found"})
+    else:
+        location = db.execute(
+            select(Location).where(Location.tenant_id == user.tenant_id, Location.is_active == True)  # noqa: E712
+            .order_by(Location.created_at)
+        ).scalars().first()
+        if not location:
+            raise HTTPException(status_code=400, detail={"code": "no_location", "message": "No active location found for this tenant"})
 
     # Resolve customer
     customer = None
@@ -225,10 +253,11 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
     try:
         # Priority drops bypass capacity reservation entirely
         if not is_priority:
-            reserve_capacity(db, user.tenant_id, payload.scheduled_date, payload.scheduled_window, required_loads)
+            reserve_capacity(db, user.tenant_id, location.id, payload.scheduled_date, payload.scheduled_window, required_loads)
 
         drop = Drop(
             tenant_id=user.tenant_id,
+            location_id=location.id,
             customer_id=customer.id,
             address_id=address.id,
             order_number=next_order_number(db, user.tenant_id),
@@ -351,7 +380,7 @@ def reschedule_drop(drop_id: str, payload: RescheduleIn, user: AuthUser = Depend
 
     # Reserve new capacity (only if the drop is NOT priority after)
     if not new_is_priority and new_window:
-        reserve_capacity(db, user.tenant_id, payload.scheduled_date, new_window, int(load_count))
+        reserve_capacity(db, user.tenant_id, drop.location_id, payload.scheduled_date, new_window, int(load_count))
 
     drop.scheduled_date = payload.scheduled_date
     drop.scheduled_window = new_window
