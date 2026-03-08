@@ -274,7 +274,7 @@ def _confirm_hold_transaction(hold: CapacityHold, payload: ConfirmOrderIn, chann
     if required_loads != hold.units_held:
         raise HTTPException(status_code=409, detail={"code": "hold_mismatch", "message": "Could not confirm order because cart load requirements changed since hold creation.", "next_step": "Refresh the cart, request a new hold, then submit again."})
 
-    cap = locked_capacity_row(db, channel.tenant_id, hold.service_date, hold.window_code)
+    cap = locked_capacity_row(db, channel.tenant_id, hold.service_date, hold.window_code, location_id=hold.location_id)
     if cap.capacity_total - cap.capacity_used < required_loads:
         remaining = cap.capacity_total - cap.capacity_used
         raise HTTPException(status_code=409, detail={"code": "capacity_conflict", "message": f"Could not confirm order: needed {required_loads} loads but only {remaining} remain in that window.", "next_step": "Choose another available window and retry."})
@@ -288,6 +288,7 @@ def _confirm_hold_transaction(hold: CapacityHold, payload: ConfirmOrderIn, chann
         hold.window_code,
         required_loads,
         CapacityMutationContext(source="channel", reason="hold_confirm", reference_id=hold.hold_token),
+        location_id=hold.location_id,
     )
     hold.converted_at = now_utc()
     hold.converted_drop_id = drop.id
