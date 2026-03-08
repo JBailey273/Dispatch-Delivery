@@ -395,6 +395,10 @@ def reschedule_drop(drop_id: str, payload: RescheduleIn, user: AuthUser = Depend
             load.status = LoadStatus.ASSIGNED
             load.exception_reason_code = None
             load.exception_notes = None
+        # Always clear site condition docs on reschedule so driver
+        # can re-document conditions fresh on the next delivery attempt
+        load.condition_photo_url = None
+        load.condition_notes = None
 
     log_event(db, user.tenant_id, "drop.rescheduled", "api", {
         "drop_id": drop_id,
