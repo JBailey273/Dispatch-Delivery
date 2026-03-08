@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ApiError, api, requireRole } from '../lib/auth';
+import { useLocation } from '../lib/location-context';
 
 /* ── Types ── */
 type CatalogItem = { sku: string; name: string; active: boolean; delivery_mode: string; bulk_group: string; unit?: string };
@@ -290,6 +291,8 @@ function NewDropPage() {
   const removeItem = (idx: number) => setItems(items.filter((_, i) => i !== idx));
 
   /* ── Submit ── */
+  const { activeLocation } = useLocation();
+
   const canSubmit = customer && addressId && items.length > 0 && selDate && (isPriority || selectedWindow);
   const createDrop = async () => {
     if (!customer || !addressId || !items.length) { setError('Complete all sections before creating.'); return; }
@@ -305,6 +308,7 @@ function NewDropPage() {
         scheduled_date: selDate,
         items,
         is_priority: isPriority,
+        ...(activeLocation ? { location_id: activeLocation.id } : {}),
       };
       // Only include window for non-priority drops
       if (!isPriority) {
