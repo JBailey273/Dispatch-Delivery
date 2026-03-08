@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { ApiError, api, requireRole } from '../lib/auth';
 import { useLocation } from '../lib/location-context';
 
@@ -124,6 +124,7 @@ export default function DashboardPage() {
   };
 
   const { activeLocation } = useLocation();
+  const fetchAbortRef = useRef<number>(0);
   const locationParam = activeLocation ?
     `&location_id=${activeLocation.id}` : '';
 
@@ -141,6 +142,7 @@ export default function DashboardPage() {
   }, [activeLocation?.id]);
 
   const fetchAll = useCallback(async () => {
+    const token = ++fetchAbortRef.current;
     const locParam = activeLocation?.id ? `&location_id=${activeLocation.id}` : '';
     setLoading(true);
     const rangeStart = new Date(today);
@@ -149,12 +151,15 @@ export default function DashboardPage() {
     rangeEnd.setDate(rangeEnd.getDate() + 3);
 
     const results = await Promise.allSettled([
-      api(`/dispatch/schedule?day=${todayStr}${locationParam}`),
-      api(`/ops/reports/throughput?start_date=${toKey(rangeStart)}&end_date=${toKey(rangeEnd)}${locationParam}`),
-      api(`/admin/diagnostics/anomalies?auto_fix=false${locationParam}`),
-      api(`/ops/reports/exceptions?start_date=${toKey(rangeStart)}&end_date=${toKey(rangeEnd)}${locationParam}`),
-      api(`/availability?start_date=${todayStr}&days=1${locationParam}`),
+      api(`/dispatch/schedule?day=${todayStr}${locParam}`),
+      api(`/ops/reports/throughput?start_date=${toKey(rangeStart)}&end_date=${toKey(rangeEnd)}${locParam}`),
+      api(`/admin/diagnostics/anomalies?auto_fix=false${locParam}`),
+      api(`/ops/reports/exceptions?start_date=${toKey(rangeStart)}&end_date=${toKey(rangeEnd)}${locParam}`),
+      api(`/availability?start_date=${todayStr}&days=1${locParam}`),
     ]);
+
+    // Discard results if a newer fetch has started (location switched mid-flight)
+    if (token !== fetchAbortRef.current) return;
 
     if (results[0].status === 'fulfilled') setSchedule(results[0].value);
     if (results[1].status === 'fulfilled') setThroughput(results[1].value.per_day || []);
@@ -169,8 +174,6 @@ export default function DashboardPage() {
     }
     setLoading(false);
   }, [today, todayStr, activeLocation?.id]);
-
-  useEffect(() => { fetchAll(); }, [fetchAll]);
 
   /* ── Derived data ── */
   const todayTP = throughput.find(d => d.date === todayStr);
