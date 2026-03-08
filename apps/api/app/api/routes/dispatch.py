@@ -18,7 +18,7 @@ from app.api.optimization import apply_proposal, generate_proposals, undo_propos
 from app.api.guardrails import guard_load_editable
 from app.api.services import enqueue_sms_job, log_event, now_utc
 from app.billing.service import ensure_billing_account, get_plan, scheduling_gate
-from app.models.entities import Customer, CustomerAddress, Drop, ExceptionReasonCode, Load, LoadStatus, OperationalBlackout, OptimizationProposal, Tenant, User, UserRole, WindowCapacity, WindowCode
+from app.models.entities import Customer, CustomerAddress, Drop, ExceptionReasonCode, Load, LoadStatus, Location, OperationalBlackout, OptimizationProposal, Tenant, User, UserRole, WindowCapacity, WindowCode
 
 router = APIRouter(prefix="/dispatch", tags=["dispatch"])
 logger = logging.getLogger("dispatch.ops")
@@ -65,9 +65,23 @@ def _build_load_dict(load: Load, drop: Drop, driver: User | None, customer: Cust
 
 
 @router.get("/schedule")
-def dispatch_schedule(day: date, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
-    tenant = db.execute(select(Tenant).where(Tenant.id == user.tenant_id)).scalar_one()
-    default_cap = tenant.capacity_per_window
+def dispatch_schedule(
+    day: date,
+    location_id: str | None = Query(default=None),
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
+    db: Session = Depends(db_dep),
+):
+    # Resolve location for capacity defaults
+    if location_id:
+        location = db.execute(
+            select(Location).where(Location.id == location_id, Location.tenant_id == user.tenant_id)
+        ).scalar_one_or_none()
+        if not location:
+            raise HTTPException(status_code=404, detail={"code": "location_not_found", "message": "Location not found"})
+        default_cap = location.capacity_per_window
+    else:
+        tenant = db.execute(select(Tenant).where(Tenant.id == user.tenant_id)).scalar_one()
+        default_cap = tenant.capacity_per_window
 
     # Check for orphaned loads
     orphaned = db.execute(select(Load.id).where(Load.tenant_id == user.tenant_id, Load.route_date == day, ~Load.drop_id.in_(select(Drop.id)))).scalars().all()
@@ -75,30 +89,34 @@ def dispatch_schedule(day: date, user: AuthUser = Depends(require_roles(UserRole
         logger.error("orphaned_loads_detected", extra={"tenant_id": str(user.tenant_id), "count": len(orphaned)})
 
     # Capacity and blackouts
-    caps = db.execute(select(WindowCapacity).where(WindowCapacity.tenant_id == user.tenant_id, WindowCapacity.service_date == day)).scalars().all()
+    cap_query = select(WindowCapacity).where(WindowCapacity.tenant_id == user.tenant_id, WindowCapacity.service_date == day)
+    if location_id:
+        cap_query = cap_query.where(WindowCapacity.location_id == location_id)
+    caps = db.execute(cap_query).scalars().all()
     cap_map = {c.window_code.value: {"used": c.capacity_used, "total": c.capacity_total, "remaining_capacity": c.capacity_total - c.capacity_used} for c in caps}
-    disabled_windows = set(
-        code.value
-        for code in db.execute(
-            select(OperationalBlackout.window_code).where(
-                OperationalBlackout.tenant_id == user.tenant_id,
-                OperationalBlackout.service_date == day,
-                OperationalBlackout.active.is_(True),
-                or_(OperationalBlackout.window_code == WindowCode.A, OperationalBlackout.window_code == WindowCode.B),
-            )
-        ).scalars().all()
-        if code
+
+    blackout_query = select(OperationalBlackout.window_code).where(
+        OperationalBlackout.tenant_id == user.tenant_id,
+        OperationalBlackout.service_date == day,
+        OperationalBlackout.active.is_(True),
+        or_(OperationalBlackout.window_code == WindowCode.A, OperationalBlackout.window_code == WindowCode.B),
     )
+    if location_id:
+        blackout_query = blackout_query.where(OperationalBlackout.location_id == location_id)
+    disabled_windows = set(code.value for code in db.execute(blackout_query).scalars().all() if code)
 
     # Fetch all loads for the day with joins
-    rows = db.execute(
+    loads_query = (
         select(Load, Drop, User, Customer, CustomerAddress)
         .join(Drop, Drop.id == Load.drop_id)
         .outerjoin(User, User.id == Load.driver_user_id)
         .join(Customer, Customer.id == Drop.customer_id)
         .join(CustomerAddress, CustomerAddress.id == Drop.address_id)
         .where(Load.tenant_id == user.tenant_id, Load.route_date == day)
-    ).all()
+    )
+    if location_id:
+        loads_query = loads_query.where(Drop.location_id == location_id)
+    rows = db.execute(loads_query).all()
 
     # Split into priority and windowed
     priority_groups: dict[str, list] = defaultdict(list)
@@ -134,16 +152,24 @@ def dispatch_schedule(day: date, user: AuthUser = Depends(require_roles(UserRole
     }
 
 @router.get("/needs-attention")
-def needs_attention(user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
-    rows = db.execute(
+@router.get("/needs-attention")
+def needs_attention(
+    location_id: str | None = Query(default=None),
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
+    db: Session = Depends(db_dep),
+):
+    needs_attn_query = (
         select(Drop, Customer)
         .join(Customer, Customer.id == Drop.customer_id)
         .where(
             Drop.tenant_id == user.tenant_id,
-            Drop.needs_reschedule == True,
+            Drop.needs_reschedule == True,  # noqa: E712
         )
         .order_by(Drop.scheduled_date.asc())
-    ).all()
+    )
+    if location_id:
+        needs_attn_query = needs_attn_query.where(Drop.location_id == location_id)
+    rows = db.execute(needs_attn_query).all()
     out = []
     for drop, customer in rows:
         out.append({
@@ -168,11 +194,12 @@ def list_drivers(user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), d
 def month_summary(
     start_date: date = Query(...),
     end_date: date = Query(...),
+    location_id: str | None = Query(default=None),
     user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
     db: Session = Depends(db_dep),
 ):
     """Lightweight summary of deliveries per day for calendar month cells."""
-    drops = db.execute(
+    drops_query = (
         select(Drop, Customer)
         .join(Customer, Customer.id == Drop.customer_id)
         .where(
@@ -181,7 +208,10 @@ def month_summary(
             Drop.scheduled_date <= end_date,
         )
         .order_by(Drop.scheduled_date, Drop.scheduled_window)
-    ).all()
+    )
+    if location_id:
+        drops_query = drops_query.where(Drop.location_id == location_id)
+    drops = db.execute(drops_query).all()
 
     # Collect materials per drop
     drop_ids = [str(d.id) for d, _ in drops]
@@ -216,6 +246,7 @@ def list_orders(
     end_date: date = Query(...),
     status: str | None = Query(default=None),
     driver_name: str | None = Query(default=None),
+    location_id: str | None = Query(default=None),
     user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
     db: Session = Depends(db_dep),
 ):
@@ -232,6 +263,8 @@ def list_orders(
             Load.route_date <= end_date,
         )
     )
+    if location_id:
+        stmt = stmt.where(Drop.location_id == location_id)
 
     if status:
         try:
