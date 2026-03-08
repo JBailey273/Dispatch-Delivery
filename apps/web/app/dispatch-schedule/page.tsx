@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { ApiError, api, requireRole } from '../lib/auth';
+import { useLocation } from '../lib/location-context';
 import DropRescheduleSlideOver from '../components/DropRescheduleSlideOver';
 import type { SlideOverDropDetail } from '../components/DropRescheduleSlideOver';
 
@@ -152,6 +153,10 @@ export default function DispatchSchedulePage() {
     }
   }, [today, viewMode, navOffset, visibleRange]);
 
+  /* ── Location context ── */
+  const { activeLocation } = useLocation();
+  const locationParam = activeLocation ? `&location_id=${activeLocation.id}` : '';
+
   /* ── Data fetching ── */
   const fetchCapacity = useCallback(async () => {
     try {
@@ -164,7 +169,7 @@ export default function DispatchSchedulePage() {
         const nonOther = monthCells.filter(c => !c.other);
         startDate = toKey(nonOther[0].date); days = nonOther.length;
       }
-      const resp = await api(`/availability?start_date=${startDate}&days=${days}`);
+      const resp = await api(`/availability?start_date=${startDate}&days=${days}${locationParam}`);
       const map: Record<string, { A: CapWindow | null; B: CapWindow | null }> = {};
       for (const w of (resp.windows || [])) {
         if (!map[w.date]) map[w.date] = { A: null, B: null };
@@ -172,7 +177,7 @@ export default function DispatchSchedulePage() {
       }
       setCapData(map);
     } catch { /* silently fail */ }
-  }, [viewMode, visibleRange]);
+  }, [viewMode, visibleRange, locationParam]);
 
   const fetchMonthSummary = useCallback(async () => {
     try {
@@ -186,21 +191,21 @@ export default function DispatchSchedulePage() {
         if (nonOther.length === 0) return;
         startDate = toKey(nonOther[0].date); endDate = toKey(nonOther[nonOther.length - 1].date);
       }
-      const resp = await api(`/dispatch/month-summary?start_date=${startDate}&end_date=${endDate}`);
+      const resp = await api(`/dispatch/month-summary?start_date=${startDate}&end_date=${endDate}${locationParam}`);
       setMonthSummary(resp.days || {});
     } catch { /* silently fail */ }
-  }, [viewMode, visibleRange]);
+  }, [viewMode, visibleRange, locationParam]);
 
   const fetchSchedule = useCallback(async () => {
     setScheduleLoading(true); setError('');
     try {
-      const resp = await api(`/dispatch/schedule?day=${toKey(selDate)}`);
+      const resp = await api(`/dispatch/schedule?day=${toKey(selDate)}${locationParam}`);
       setSchedule(resp);
     } catch (err) {
       setError((err as ApiError).message || 'Failed to load schedule');
       setSchedule(null);
     } finally { setScheduleLoading(false); }
-  }, [selDate]);
+  }, [selDate, locationParam]);
 
   useEffect(() => { fetchCapacity(); }, [fetchCapacity]);
   useEffect(() => { fetchMonthSummary(); }, [fetchMonthSummary]);
@@ -209,8 +214,8 @@ export default function DispatchSchedulePage() {
     api('/dispatch/drivers').then(d => setDrivers(d.drivers || [])).catch(() => null);
   }, []);
   useEffect(() => {
-    api('/dispatch/needs-attention').then(r => setNeedsAttention(r.drops || [])).catch(() => null);
-  }, []);
+    api(`/dispatch/needs-attention${locationParam ? `?location_id=${activeLocation?.id}` : ''}`).then(r => setNeedsAttention(r.drops || [])).catch(() => null);
+  }, [locationParam, activeLocation]);
 
   /* ── Open slide-over ── */
   const openDrop = async (dropId: string, startOnReschedule = false) => {
