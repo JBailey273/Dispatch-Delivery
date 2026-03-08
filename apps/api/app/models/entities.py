@@ -65,6 +65,30 @@ class CustomerType(str, enum.Enum):
     COMMERCIAL = "commercial"
 
 
+class BlackoutReason(str, enum.Enum):
+    WEATHER = "weather"
+    EQUIPMENT = "equipment"
+    STAFFING = "staffing"
+    OTHER = "other"
+
+
+class ChannelType(str, enum.Enum):
+    MANUAL = "manual"
+    WOOCOMMERCE = "woocommerce"
+    CUSTOM = "custom"
+
+
+class BillingAccountStatus(str, enum.Enum):
+    TRIAL = "trial"
+    ACTIVE = "active"
+    PAST_DUE = "past_due"
+    SUSPENDED = "suspended"
+
+
+# ---------------------------------------------------------------------------
+# Tenant
+# ---------------------------------------------------------------------------
+
 class Tenant(Base, TimestampMixin):
     __tablename__ = "tenants"
 
@@ -72,6 +96,8 @@ class Tenant(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(120), nullable=False, unique=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Timezone and scheduling fields remain on Tenant as org-level defaults.
+    # Each Location can override these independently.
     timezone: Mapped[str] = mapped_column(String(64), default="America/New_York", nullable=False)
     service_days: Mapped[list[str]] = mapped_column(JSON, default=lambda: ["mon", "tue", "wed", "thu", "fri"], nullable=False)
     windowA_start: Mapped[time] = mapped_column(Time, default=time(9, 0), nullable=False)
@@ -84,6 +110,42 @@ class Tenant(Base, TimestampMixin):
     optimization_drop_split_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     optimization_aggressiveness: Mapped[str] = mapped_column(String(16), default="medium", nullable=False)
 
+
+# ---------------------------------------------------------------------------
+# Location — physical storefront/yard within a Tenant
+# Each Location owns its own inventory, capacity windows, and deliveries.
+# Customers and Users remain tenant-scoped; Users have an optional home_location_id.
+# ---------------------------------------------------------------------------
+
+class Location(Base, TenantScopedMixin, TimestampMixin):
+    __tablename__ = "locations"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "slug", name="uq_location_tenant_slug"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    address_line1: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    address_line2: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    state: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    postal_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # Each location can have its own schedule/capacity independent of tenant defaults
+    timezone: Mapped[str] = mapped_column(String(64), default="America/New_York", nullable=False)
+    service_days: Mapped[list[str]] = mapped_column(JSON, default=lambda: ["mon", "tue", "wed", "thu", "fri"], nullable=False)
+    windowA_start: Mapped[time] = mapped_column(Time, default=time(9, 0), nullable=False)
+    windowA_end: Mapped[time] = mapped_column(Time, default=time(13, 0), nullable=False)
+    windowB_start: Mapped[time] = mapped_column(Time, default=time(13, 0), nullable=False)
+    windowB_end: Mapped[time] = mapped_column(Time, default=time(17, 0), nullable=False)
+    capacity_per_window: Mapped[int] = mapped_column(Integer, default=4, nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# User
+# ---------------------------------------------------------------------------
 
 class User(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "users"
@@ -99,6 +161,10 @@ class User(Base, TenantScopedMixin, TimestampMixin):
     role: Mapped[UserRole] = mapped_column(Enum(UserRole, name="user_role"), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     default_truck_identifier: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Nullable: drivers are typically tied to one location; dispatchers/admins are location-agnostic
+    home_location_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("locations.id"), nullable=True, index=True
+    )
 
     @property
     def display_name(self) -> str:
@@ -109,11 +175,21 @@ class User(Base, TenantScopedMixin, TimestampMixin):
         return self.email.split("@")[0]
 
 
+# ---------------------------------------------------------------------------
+# Product Catalog — location-scoped (each location has its own inventory)
+# ---------------------------------------------------------------------------
+
 class ProductCatalogItem(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "product_catalog_items"
-    __table_args__ = (UniqueConstraint("tenant_id", "sku", name="uq_product_tenant_sku"),)
+    __table_args__ = (
+        # SKU uniqueness is now per location, not just per tenant
+        UniqueConstraint("tenant_id", "location_id", "sku", name="uq_product_tenant_location_sku"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    location_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("locations.id"), nullable=False, index=True
+    )
     sku: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     delivery_mode: Mapped[DeliveryMode] = mapped_column(Enum(DeliveryMode, name="delivery_mode"), nullable=False)
@@ -122,6 +198,10 @@ class ProductCatalogItem(Base, TenantScopedMixin, TimestampMixin):
     category: Mapped[str | None] = mapped_column(String(120), nullable=True)
     bulk_group: Mapped[str] = mapped_column(String(120), nullable=False)
 
+
+# ---------------------------------------------------------------------------
+# Customer — tenant-scoped only (shared across locations)
+# ---------------------------------------------------------------------------
 
 class Customer(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "customers"
@@ -157,26 +237,59 @@ class CustomerAddress(Base, TenantScopedMixin, TimestampMixin):
     customer = relationship("Customer", back_populates="addresses")
 
 
+# ---------------------------------------------------------------------------
+# Capacity — location-scoped
+# ---------------------------------------------------------------------------
+
 class WindowCapacity(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "window_capacities"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "service_date", "window_code", name="uq_capacity_window"),
+        # location_id added to unique constraint — each location has its own capacity per window
+        UniqueConstraint("tenant_id", "location_id", "service_date", "window_code", name="uq_capacity_window"),
         CheckConstraint("capacity_total >= 1", name="ck_capacity_total_min"),
         CheckConstraint("capacity_used >= 0", name="ck_capacity_used_nonnegative"),
         CheckConstraint("capacity_used <= capacity_total", name="ck_capacity_used_lte_total"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    location_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("locations.id"), nullable=False, index=True
+    )
     service_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     window_code: Mapped[WindowCode] = mapped_column(Enum(WindowCode, name="window_code"), nullable=False)
     capacity_total: Mapped[int] = mapped_column(Integer, nullable=False)
     capacity_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
+class CapacityHold(Base, TenantScopedMixin, TimestampMixin):
+    __tablename__ = "capacity_holds"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    location_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("locations.id"), nullable=False, index=True
+    )
+    service_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    window_code: Mapped[WindowCode] = mapped_column(Enum(WindowCode, name="window_code"), nullable=False)
+    hold_token: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    cart_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    units_held: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    converted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    converted_drop_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("drops.id"), nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Drop — location-scoped (a delivery originates from a specific location)
+# ---------------------------------------------------------------------------
+
 class Drop(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "drops"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    location_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("locations.id"), nullable=False, index=True
+    )
     customer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=False)
     address_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("customer_addresses.id"), nullable=False)
     order_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -193,6 +306,10 @@ class Drop(Base, TenantScopedMixin, TimestampMixin):
     last_reschedule_sms_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     needs_reschedule: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+
+# ---------------------------------------------------------------------------
+# Load — inherits location scope via Drop
+# ---------------------------------------------------------------------------
 
 class Load(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "loads"
@@ -220,6 +337,10 @@ class Load(Base, TenantScopedMixin, TimestampMixin):
     drop = relationship("Drop", lazy="select")
 
 
+# ---------------------------------------------------------------------------
+# Optimization — tenant-scoped (optimization is cross-location for now)
+# ---------------------------------------------------------------------------
+
 class OptimizationProposal(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "optimization_proposals"
 
@@ -237,39 +358,44 @@ class OptimizationProposal(Base, TenantScopedMixin, TimestampMixin):
     application_record: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
 
-class CapacityHold(Base, TenantScopedMixin, TimestampMixin):
-    __tablename__ = "capacity_holds"
+# ---------------------------------------------------------------------------
+# Operational Blackouts — location-scoped
+# ---------------------------------------------------------------------------
+
+class OperationalBlackout(Base, TenantScopedMixin, TimestampMixin):
+    __tablename__ = "operational_blackouts"
+    __table_args__ = (
+        # location_id added — blackouts are per-location
+        UniqueConstraint("tenant_id", "location_id", "service_date", "window_code", name="uq_operational_blackout"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    location_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("locations.id"), nullable=False, index=True
+    )
     service_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
-    window_code: Mapped[WindowCode] = mapped_column(Enum(WindowCode, name="window_code"), nullable=False)
-    hold_token: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
-    cart_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    units_held: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    converted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    converted_drop_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("drops.id"), nullable=True)
+    window_code: Mapped[WindowCode | None] = mapped_column(Enum(WindowCode, name="window_code"), nullable=True)
+    reason_code: Mapped[BlackoutReason] = mapped_column(Enum(BlackoutReason, name="blackout_reason"), nullable=False)
+    reason_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
-class BlackoutReason(str, enum.Enum):
-    WEATHER = "weather"
-    EQUIPMENT = "equipment"
-    STAFFING = "staffing"
-    OTHER = "other"
+# ---------------------------------------------------------------------------
+# Channels, Billing, Events — tenant-scoped, no location needed
+# ---------------------------------------------------------------------------
 
+class Channel(Base, TenantScopedMixin, TimestampMixin):
+    __tablename__ = "channels"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_channels_tenant_name"),
+    )
 
-class ChannelType(str, enum.Enum):
-    MANUAL = "manual"
-    WOOCOMMERCE = "woocommerce"
-    CUSTOM = "custom"
-
-
-class BillingAccountStatus(str, enum.Enum):
-    TRIAL = "trial"
-    ACTIVE = "active"
-    PAST_DUE = "past_due"
-    SUSPENDED = "suspended"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    channel_type: Mapped[ChannelType] = mapped_column(Enum(ChannelType, name="channel_type"), nullable=False)
+    api_key_hash: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    last_called_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class BillingPlan(Base, TimestampMixin):
@@ -310,34 +436,6 @@ class BillingWebhookEvent(Base, TimestampMixin):
     event_type: Mapped[str] = mapped_column(String(120), nullable=False)
     payload_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-
-class OperationalBlackout(Base, TenantScopedMixin, TimestampMixin):
-    __tablename__ = "operational_blackouts"
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "service_date", "window_code", name="uq_operational_blackout"),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    service_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
-    window_code: Mapped[WindowCode | None] = mapped_column(Enum(WindowCode, name="window_code"), nullable=True)
-    reason_code: Mapped[BlackoutReason] = mapped_column(Enum(BlackoutReason, name="blackout_reason"), nullable=False)
-    reason_note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-
-
-class Channel(Base, TenantScopedMixin, TimestampMixin):
-    __tablename__ = "channels"
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "name", name="uq_channels_tenant_name"),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    channel_type: Mapped[ChannelType] = mapped_column(Enum(ChannelType, name="channel_type"), nullable=False)
-    api_key_hash: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    last_called_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class EventLog(Base, TenantScopedMixin):
