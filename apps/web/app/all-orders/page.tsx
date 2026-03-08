@@ -275,9 +275,13 @@ export default function AllOrdersPage() {
                       <tr key={`${o.load_id}-${i}`} className="ao-row" onClick={() => window.location.href = `/dispatch/drops/${o.drop_id}`}>
                         <td className="ao-td ao-td-date">{fmtDate(o.scheduled_date)}</td>
                         <td className="ao-td">
-                          <span className={`ao-win-badge ${o.window === 'A' ? 'ao-win-am' : 'ao-win-pm'}`}>
-                            {o.window === 'A' ? 'Morning' : 'Afternoon'}
-                          </span>
+                          {o.is_priority ? (
+                            <span className="ao-win-badge" style={{ background: 'rgba(37,99,235,0.08)', color: 'var(--blue-700)' }}>⚡ Priority</span>
+                          ) : (
+                            <span className={`ao-win-badge ${o.window === 'A' ? 'ao-win-am' : 'ao-win-pm'}`}>
+                              {o.window === 'A' ? 'Morning' : 'Afternoon'}
+                            </span>
+                          )}
                         </td>
                         <td className="ao-td">
                           <div className="ao-customer-name">{o.customer_name}</div>
