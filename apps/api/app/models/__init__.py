@@ -9,6 +9,7 @@ from app.models.entities import (
     Drop,
     EventLog,
     Load,
+    Location,
     OperationalBlackout,
     OptimizationProposal,
     ProductCatalogItem,
@@ -19,6 +20,7 @@ from app.models.entities import (
 
 __all__ = [
     "Tenant",
+    "Location",
     "User",
     "ProductCatalogItem",
     "Customer",
