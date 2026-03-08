@@ -130,14 +130,19 @@ def capacity_utilization_report(start_date: date, end_date: date, user: AuthUser
 
 
 @router.get("/reports/throughput")
-def throughput_report(start_date: date, end_date: date, window: WindowCode | None = Query(default=None), driver_user_id: str | None = Query(default=None), material: str | None = Query(default=None), user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)), db: Session = Depends(db_dep)):
+def throughput_report(start_date: date, end_date: date, window: WindowCode | None = Query(default=None), driver_user_id: str | None = Query(default=None), material: str | None = Query(default=None), location_id: str | None = Query(default=None), user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)), db: Session = Depends(db_dep)):
     _date_range(start_date, end_date)
+    drop_filters = [Drop.tenant_id == user.tenant_id, Drop.scheduled_date >= start_date, Drop.scheduled_date <= end_date]
+    if location_id:
+        drop_filters.append(Drop.location_id == location_id)
     drop_counts = db.execute(
         select(Drop.scheduled_date, func.count(Drop.id))
-        .where(Drop.tenant_id == user.tenant_id, Drop.scheduled_date >= start_date, Drop.scheduled_date <= end_date)
+        .where(*drop_filters)
         .group_by(Drop.scheduled_date)
     ).all()
     load_filters = [Load.tenant_id == user.tenant_id, Load.route_date >= start_date, Load.route_date <= end_date]
+    if location_id:
+        load_filters.append(Load.drop_id.in_(select(Drop.id).where(*drop_filters)))
     if window:
         load_filters.append(Load.route_window == window)
     if driver_user_id:
