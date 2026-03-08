@@ -20,7 +20,7 @@ from app.models.entities import (
     Drop,
     EventLog,
     Load,
-    Locations,
+    Location,
     LoadStatus,
     OperationalBlackout,
     User,
