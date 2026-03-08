@@ -234,7 +234,7 @@ export default function DispatchSchedulePage() {
     await fetchSchedule();
     await fetchCapacity();
     fetchMonthSummary();
-    api('/dispatch/needs-attention').then(r => setNeedsAttention(r.drops || [])).catch(() => null);
+    api(`/dispatch/needs-attention${locationParam ? `?location_id=${activeLocation?.id}` : ''}`).then(r => setNeedsAttention(r.drops || [])).catch(() => null);
     if (slideDropId) {
       try {
         const resp = await api(`/dispatch/drops/${slideDropId}`);
