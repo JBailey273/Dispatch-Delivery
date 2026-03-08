@@ -20,6 +20,7 @@ from app.models.entities import (
     Drop,
     EventLog,
     Load,
+    Locations,
     LoadStatus,
     OperationalBlackout,
     User,
@@ -33,10 +34,11 @@ router = APIRouter(prefix="/ops", tags=["operations"])
 admin_router = APIRouter(prefix="/admin", tags=["admin-ops"])
 
 
-def is_window_blacked_out(db: Session, tenant_id, day: date, window: WindowCode) -> bool:
+def is_window_blacked_out(db: Session, tenant_id, location_id, day: date, window: WindowCode) -> bool:
     row = db.execute(
         select(OperationalBlackout.id).where(
             OperationalBlackout.tenant_id == tenant_id,
+            OperationalBlackout.location_id == location_id,
             OperationalBlackout.service_date == day,
             OperationalBlackout.active.is_(True),
             or_(OperationalBlackout.window_code.is_(None), OperationalBlackout.window_code == window),
@@ -470,24 +472,49 @@ class BlackoutIn(BaseModel):
     window_code: WindowCode | None = None
     reason_code: BlackoutReason
     reason_note: str | None = None
+    location_id: str | None = None  # Required for multi-location; defaults to tenant's first active location
 
 
 @admin_router.get("/blackouts")
-def list_blackouts(start_date: date | None = Query(default=None), end_date: date | None = Query(default=None), user: AuthUser = Depends(require_roles(UserRole.ADMIN)), db: Session = Depends(db_dep)):
+def list_blackouts(
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    location_id: str | None = Query(default=None),
+    user: AuthUser = Depends(require_roles(UserRole.ADMIN)),
+    db: Session = Depends(db_dep),
+):
     q = select(OperationalBlackout).where(OperationalBlackout.tenant_id == user.tenant_id)
     if start_date:
         q = q.where(OperationalBlackout.service_date >= start_date)
     if end_date:
         q = q.where(OperationalBlackout.service_date <= end_date)
+    if location_id:
+        q = q.where(OperationalBlackout.location_id == location_id)
     rows = db.execute(q.order_by(OperationalBlackout.service_date.asc())).scalars().all()
-    return {"blackouts": [{"id": str(r.id), "service_date": str(r.service_date), "window_code": r.window_code.value if r.window_code else None, "reason_code": r.reason_code.value, "reason_note": r.reason_note, "active": r.active} for r in rows]}
+    return {"blackouts": [{"id": str(r.id), "service_date": str(r.service_date), "window_code": r.window_code.value if r.window_code else None, "reason_code": r.reason_code.value, "reason_note": r.reason_note, "active": r.active, "location_id": str(r.location_id)} for r in rows]}
 
 
 @admin_router.post("/blackouts")
 def create_blackout(payload: BlackoutIn, user: AuthUser = Depends(require_roles(UserRole.ADMIN)), db: Session = Depends(db_dep)):
+    # Resolve location
+    if payload.location_id:
+        location = db.execute(
+            select(Location).where(Location.id == payload.location_id, Location.tenant_id == user.tenant_id)
+        ).scalar_one_or_none()
+        if not location:
+            raise HTTPException(status_code=404, detail={"code": "location_not_found", "message": "Location not found"})
+    else:
+        location = db.execute(
+            select(Location).where(Location.tenant_id == user.tenant_id, Location.is_active == True)  # noqa: E712
+            .order_by(Location.created_at)
+        ).scalars().first()
+        if not location:
+            raise HTTPException(status_code=400, detail={"code": "no_location", "message": "No active location found"})
+
     existing = db.execute(
         select(OperationalBlackout).where(
             OperationalBlackout.tenant_id == user.tenant_id,
+            OperationalBlackout.location_id == location.id,
             OperationalBlackout.service_date == payload.service_date,
             OperationalBlackout.window_code == payload.window_code,
         )
@@ -498,9 +525,10 @@ def create_blackout(payload: BlackoutIn, user: AuthUser = Depends(require_roles(
         existing.reason_note = payload.reason_note
         event_type = "WINDOW_ENABLED" if payload.window_code else "BLACKOUT_CREATED"
     else:
-        db.add(OperationalBlackout(tenant_id=user.tenant_id, **payload.model_dump()))
+        data = payload.model_dump(exclude={"location_id"})
+        db.add(OperationalBlackout(tenant_id=user.tenant_id, location_id=location.id, **data))
         event_type = "WINDOW_DISABLED" if payload.window_code else "BLACKOUT_CREATED"
-    log_event(db, user.tenant_id, event_type, "api", payload.model_dump(mode="json"))
+    log_event(db, user.tenant_id, event_type, "api", {**payload.model_dump(mode="json"), "location_id": str(location.id)})
     db.commit()
     return {"status": "ok"}
 
@@ -655,6 +683,7 @@ def bulk_reschedule(payload: BulkRescheduleIn, user: AuthUser = Depends(require_
                 payload.scheduled_window,
                 load_count,
                 CapacityMutationContext(source="api", reason="bulk_reschedule_consume", reference_id=drop_id),
+                location_id=str(drop.location_id),
             )
             mutate_capacity_or_409(
                 db,
@@ -663,6 +692,7 @@ def bulk_reschedule(payload: BulkRescheduleIn, user: AuthUser = Depends(require_
                 drop.scheduled_window,
                 -load_count,
                 CapacityMutationContext(source="api", reason="bulk_reschedule_release", reference_id=drop_id),
+                location_id=str(drop.location_id),
             )
             drop.scheduled_date = payload.scheduled_date
             drop.scheduled_window = payload.scheduled_window
