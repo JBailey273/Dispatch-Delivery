@@ -109,6 +109,7 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
           <>
             <div className="app-nav-sep" />
             <NavLink href="/admin/tenant">Settings</NavLink>
+            <NavLink href="/admin/locations">Locations</NavLink>
             <NavLink href="/admin/catalog">Catalog</NavLink>
             <NavLink href="/admin/users">Users</NavLink>
             <NavLink href="/admin/channels">Channels</NavLink>
