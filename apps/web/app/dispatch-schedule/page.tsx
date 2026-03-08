@@ -536,10 +536,11 @@ export default function DispatchSchedulePage() {
         <DropRescheduleSlideOver
           dropId={slideDropId}
           dropDetail={slideDropDetail}
-          onClose={closeDrop}
-          onRescheduled={handleRescheduled}
           capData={capData}
+          onClose={() => { setSlideDropId(null); setSlideDropDetail(null); }}
+          onRescheduled={() => { fetchSchedule(); fetchCapacity(); fetchMonthSummary(); }}
           startOnReschedule={slideStartReschedule}
+          locationId={activeLocation?.id ?? null}
         />
       )}
     </>
