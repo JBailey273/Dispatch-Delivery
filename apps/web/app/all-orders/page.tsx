@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { ApiError, api, requireRole } from '../lib/auth';
+import { useLocation } from '../lib/location-context';
 
 /* ── Types ── */
 type OrderRow = {
@@ -82,6 +83,9 @@ export default function AllOrdersPage() {
     else { setSortCol(col); setSortDir(col === 'date' ? 'desc' : 'asc'); }
   };
 
+  // Location context
+  const { activeLocation } = useLocation();
+
   // Fetch
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -90,6 +94,7 @@ export default function AllOrdersPage() {
       const params = new URLSearchParams({ start_date: startDate, end_date: endDate });
       if (statusFilter) params.set('status', statusFilter);
       if (driverFilter) params.set('driver_name', driverFilter);
+      if (activeLocation) params.set('location_id', activeLocation.id);
       const resp = await api(`/dispatch/orders?${params.toString()}`);
       setOrders(resp.orders || []);
     } catch (err) {
@@ -97,7 +102,7 @@ export default function AllOrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, statusFilter, driverFilter]);
+  }, [startDate, endDate, statusFilter, driverFilter, activeLocation]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
