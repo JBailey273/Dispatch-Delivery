@@ -272,11 +272,11 @@ export default function AdminLocationsPage() {
               <div className="loc-grid-3" style={{ marginTop: 8 }}>
                 <div className="form-group">
                   <label className="form-label">City</label>
-                  <input value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} placeholder="East Meadow" />
+                  <input value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} placeholder="Boston" />
                 </div>
                 <div className="form-group">
                   <label className="form-label">State</label>
-                  <input value={form.state} onChange={e => setForm(f => ({ ...f, state: e.target.value }))} placeholder="NY" maxLength={2} style={{ textTransform: 'uppercase' }} />
+                  <input value={form.state} onChange={e => setForm(f => ({ ...f, state: e.target.value }))} placeholder="MA" maxLength={2} style={{ textTransform: 'uppercase' }} />
                 </div>
                 <div className="form-group">
                   <label className="form-label">ZIP</label>
@@ -285,7 +285,7 @@ export default function AdminLocationsPage() {
               </div>
               <div className="form-group" style={{ marginTop: 8 }}>
                 <label className="form-label">Phone</label>
-                <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="(516) 555-0100" />
+                <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="(555) 555-0100" />
               </div>
 
               <div className="loc-section-label" style={{ marginTop: 20 }}>Capacity & Schedule</div>
