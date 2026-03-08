@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.services import log_event
-from app.models.entities import Drop, Load, LoadStatus, Tenant, WindowCapacity, WindowCode
+from app.models.entities import Drop, Load, LoadStatus, Location, Tenant, WindowCapacity, WindowCode
 
 
 @dataclass
@@ -18,16 +18,44 @@ class CapacityMutationContext:
     reference_id: str | None = None
 
 
-def locked_capacity_row(db: Session, tenant_id, day: date, window: WindowCode) -> WindowCapacity:
+def locked_capacity_row(db: Session, tenant_id, day: date, window: WindowCode, location_id=None) -> WindowCapacity:
+    # Resolve location if not provided — fall back to tenant's first active location
+    if location_id is None:
+        location = db.execute(
+            select(Location).where(Location.tenant_id == tenant_id, Location.is_active == True)  # noqa: E712
+            .order_by(Location.created_at)
+        ).scalars().first()
+        if location:
+            location_id = location.id
+            default_cap = location.capacity_per_window
+        else:
+            from app.models.entities import Tenant
+            tenant = db.execute(select(Tenant).where(Tenant.id == tenant_id)).scalar_one()
+            default_cap = tenant.capacity_per_window
+    else:
+        location = db.execute(select(Location).where(Location.id == location_id)).scalar_one_or_none()
+        default_cap = location.capacity_per_window if location else 4
+
     cap = db.execute(
         select(WindowCapacity)
-        .where(WindowCapacity.tenant_id == tenant_id, WindowCapacity.service_date == day, WindowCapacity.window_code == window)
+        .where(
+            WindowCapacity.tenant_id == tenant_id,
+            WindowCapacity.location_id == location_id,
+            WindowCapacity.service_date == day,
+            WindowCapacity.window_code == window,
+        )
         .with_for_update()
     ).scalar_one_or_none()
     if cap:
         return cap
-    tenant = db.execute(select(Tenant).where(Tenant.id == tenant_id)).scalar_one()
-    cap = WindowCapacity(tenant_id=tenant_id, service_date=day, window_code=window, capacity_total=tenant.capacity_per_window, capacity_used=0)
+    cap = WindowCapacity(
+        tenant_id=tenant_id,
+        location_id=location_id,
+        service_date=day,
+        window_code=window,
+        capacity_total=default_cap,
+        capacity_used=0,
+    )
     db.add(cap)
     db.flush()
     return cap
@@ -67,8 +95,9 @@ def mutate_capacity_or_409(
     window: WindowCode,
     delta: int,
     context: CapacityMutationContext,
+    location_id=None,
 ) -> WindowCapacity:
-    cap = locked_capacity_row(db, tenant_id, day, window)
+    cap = locked_capacity_row(db, tenant_id, day, window, location_id=location_id)
     attempted_used = int(cap.capacity_used) + int(delta)
     if attempted_used < 0:
         _raise_capacity_violation(db, tenant_id, cap, attempted_used, "below_zero")
