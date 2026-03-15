@@ -461,19 +461,36 @@ export default function DropRescheduleSlideOver({
             {/* Schedule */}
             <div className="so-card">
               <div className="so-card-label">Schedule</div>
-              <div className="so-info-date">{fmtDateLong(dropDetail.scheduled_date)}</div>
-              <div className="so-info-window">
-                {dropDetail.is_priority ? 'Priority — flexible window'
-                  : dropDetail.scheduled_window === 'A' ? 'Morning Window (9am – 1pm)'
-                  : 'Afternoon Window (1pm – 5pm)'}
-              </div>
-              {!hasExceptions && (
-                <button
-                  className="so-resc-trigger"
-                  onClick={() => { setView('reschedule'); setRescMsg(''); setRescSuccess(false); }}
-                >
-                  📅 Reschedule
-                </button>
+              {dropDetail.scheduled_date ? (
+                <>
+                  <div className="so-info-date">{fmtDateLong(dropDetail.scheduled_date)}</div>
+                  <div className="so-info-window">
+                    {dropDetail.is_priority ? 'Priority — flexible window'
+                      : dropDetail.scheduled_window === 'A' ? 'Morning Window (9am – 1pm)'
+                      : 'Afternoon Window (1pm – 5pm)'}
+                  </div>
+                  {!hasExceptions && (
+                    <button
+                      className="so-resc-trigger"
+                      onClick={() => { setView('reschedule'); setRescMsg(''); setRescSuccess(false); }}
+                    >
+                      📅 Reschedule
+                    </button>
+                  )}
+                </>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                  <div>
+                    <div className="so-info-date" style={{ color: 'var(--amber-600)', fontSize: 15 }}>Not yet scheduled</div>
+                    <div className="so-info-window">Send the customer a scheduling link below</div>
+                  </div>
+                  <button
+                    className="so-resc-trigger"
+                    onClick={() => { setView('reschedule'); setRescMsg(''); setRescSuccess(false); }}
+                  >
+                    📅 Assign Date
+                  </button>
+                </div>
               )}
             </div>
 
