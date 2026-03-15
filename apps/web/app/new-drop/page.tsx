@@ -68,6 +68,9 @@ function NewDropPage() {
   const [sku, setSku] = useState('');
   const [qty, setQty] = useState(1);
 
+  // Schedule later
+  const [schedLater, setSchedLater] = useState(false);
+
   // Schedule — mini calendar
   const today = useMemo(() => new Date(), []);
   const [calMonth, setCalMonth] = useState({ y: today.getFullYear(), m: today.getMonth() });
@@ -228,7 +231,6 @@ function NewDropPage() {
     setCustomerName(c.name || '');
     setSearchResults([]);
     setShowNewCustomerForm(false);
-    // Priority auto-sets from the useEffect above
     try {
       const ad = await api(`/customers/${c.id}/addresses`);
       const fetched = ad.addresses || [];
@@ -293,9 +295,11 @@ function NewDropPage() {
   /* ── Submit ── */
   const { activeLocation } = useLocation();
 
-  const canSubmit = customer && addressId && items.length > 0 && selDate && (isPriority || selectedWindow);
+  const canSubmit = customer && addressId && items.length > 0 && (schedLater || (selDate && (isPriority || selectedWindow)));
+
   const createDrop = async () => {
     if (!customer || !addressId || !items.length) { setError('Complete all sections before creating.'); return; }
+    if (!schedLater && !selDate) { setError('Please select a delivery date.'); return; }
     setError('');
     setSubmitting(true);
     try {
@@ -305,21 +309,22 @@ function NewDropPage() {
       const payload: any = {
         customer: { id: customer.id },
         address: { address_id: addressId },
-        scheduled_date: selDate,
         items,
         is_priority: isPriority,
         ...(activeLocation ? { location_id: activeLocation.id } : {}),
       };
-      // Only include window for non-priority drops
-      if (!isPriority) {
-        payload.scheduled_window = selectedWindow;
+      if (!schedLater) {
+        payload.scheduled_date = selDate;
+        if (!isPriority) payload.scheduled_window = selectedWindow;
       }
       const out = await api('/drops/manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      localStorage.setItem(LAST_WINDOW_KEY, selectedWindow);
+      if (!schedLater) {
+        localStorage.setItem(LAST_WINDOW_KEY, selectedWindow);
+      }
       localStorage.setItem(`${LAST_ADDRESS_KEY}${customer.id}`, addressId);
       localStorage.setItem(`${LAST_ITEMS_KEY}${customer.id}`, JSON.stringify(items));
       if (selectedDriverId && out.load_ids?.length) {
@@ -329,7 +334,7 @@ function NewDropPage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ load_ids: out.load_ids, driver_user_id: selectedDriverId }),
           });
-        } catch { /* non-fatal — order still created, dispatcher can assign in scheduler */ }
+        } catch { /* non-fatal */ }
       }
       setResult(out);
     } catch (err) {
@@ -340,7 +345,6 @@ function NewDropPage() {
   if (!requireRole(['dispatcher'])) return <div className="page"><p>Unauthorized</p></div>;
 
   // ── Success screen ──
-  // ── Success screen ──
   if (result) return (
     <>
       <style>{pageStyles}</style>
@@ -349,9 +353,14 @@ function NewDropPage() {
           <div className="nd-success-icon">{'\u2713'}</div>
           <h2>Order Created</h2>
           <p style={{ color: 'var(--gray-500)', marginTop: 4, fontSize: 14 }}>
-            {isPriority ? `Priority delivery · ${formatDate(selDate)}` : `${formatDate(selDate)} · ${windowLabel(selectedWindow)}`}
+            {result.unscheduled
+              ? 'Unscheduled — send customer a scheduling link'
+              : isPriority
+                ? `Priority delivery · ${formatDate(selDate)}`
+                : `${formatDate(selDate)} · ${windowLabel(selectedWindow)}`}
           </p>
-          {isPriority && <span className="pill pill-blue" style={{ marginTop: 6, fontSize: 12 }}>{'\u26A1'} Priority</span>}
+          {isPriority && !result.unscheduled && <span className="pill pill-blue" style={{ marginTop: 6, fontSize: 12 }}>{'\u26A1'} Priority</span>}
+          {result.unscheduled && <span className="pill" style={{ marginTop: 6, fontSize: 12, background: 'var(--amber-50)', color: 'var(--amber-700)' }}>⏳ Awaiting schedule</span>}
 
           <div className="nd-success-detail">
             <div className="nd-success-row">
@@ -370,14 +379,20 @@ function NewDropPage() {
               <span>Items</span>
               <span>{items.map(i => { const cat = catalog.find(c => c.sku === i.sku); return `${cat?.name || i.sku} ×${i.qty}`; }).join(', ')}</span>
             </div>
-            <div className="nd-success-row">
-              <span>Driver</span>
-              <span>{drivers.find(d => d.id === selectedDriverId)?.name || 'Unassigned'}</span>
-            </div>
+            {!result.unscheduled && (
+              <div className="nd-success-row">
+                <span>Driver</span>
+                <span>{drivers.find(d => d.id === selectedDriverId)?.name || 'Unassigned'}</span>
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-            <button className="btn btn-primary" onClick={() => { setResult(null); setCustomer(null); setItems([]); setSearchQuery(''); setSearchResults([]); setAddressId(''); setAddresses([]); setShowNewAddr(false); setIsPriority(false); setSelectedDriverId(''); }}>New Order</button>
+            <button className="btn btn-primary" onClick={() => {
+              setResult(null); setCustomer(null); setItems([]); setSearchQuery('');
+              setSearchResults([]); setAddressId(''); setAddresses([]); setShowNewAddr(false);
+              setIsPriority(false); setSelectedDriverId(''); setSchedLater(false);
+            }}>New Order</button>
             <button className="btn btn-secondary" onClick={() => router.push('/dispatch-schedule')}>View Schedule</button>
           </div>
         </div>
@@ -521,11 +536,7 @@ function NewDropPage() {
                 </div>
               </div>
               <label className="nd-priority-switch">
-                <input
-                  type="checkbox"
-                  checked={isPriority}
-                  onChange={e => setIsPriority(e.target.checked)}
-                />
+                <input type="checkbox" checked={isPriority} onChange={e => setIsPriority(e.target.checked)} />
                 <span className="nd-priority-slider"></span>
               </label>
             </div>
@@ -559,7 +570,6 @@ function NewDropPage() {
                     ))}
                   </div>
                 )}
-
                 {!showNewAddr ? (
                   <button className="btn btn-secondary btn-sm" style={{ marginTop: addresses.length > 0 ? 12 : 0 }} onClick={() => setShowNewAddr(true)}>+ Add New Address</button>
                 ) : (
@@ -597,76 +607,100 @@ function NewDropPage() {
           </div>
         </div>
 
-        {/* ═══ SCHEDULE — MINI CALENDAR ═══ */}
+        {/* ═══ SCHEDULE ═══ */}
         <div className="nd-card card">
           <div className="nd-card-head"><span className="nd-card-icon">{'\uD83D\uDCC5'}</span><span className="nd-card-title">Delivery Date{isPriority ? '' : ' & Window'}</span></div>
           <div className="nd-card-body">
-            <div className="nd-cal-nav">
-              <button className="nd-cal-btn" onClick={() => setCalMonth(p => { const nm = p.m - 1; return nm < 0 ? { y: p.y - 1, m: 11 } : { ...p, m: nm }; })}>{'\u2039'}</button>
-              <div className="nd-cal-heading">{MONTHS[calMonth.m]} {calMonth.y}</div>
-              <button className="nd-cal-btn" onClick={() => setCalMonth(p => { const nm = p.m + 1; return nm > 11 ? { y: p.y + 1, m: 0 } : { ...p, m: nm }; })}>{'\u203A'}</button>
-            </div>
-            <div className="nd-cal-grid">
-              <div className="nd-cal-header">{DAYS.map(d => <div key={d} className="nd-cal-dow">{d}</div>)}</div>
-              <div className="nd-cal-body">
-                {calGrid.map((cell, i) => {
-                  const k = toKey(cell.date);
-                  const awA = getWindowAvail(k, 'A');
-                  const awB = getWindowAvail(k, 'B');
-                  const isPast = cell.date < today && toKey(cell.date) !== toKey(today);
-                  const isSel = k === selDate;
-                  const isToday = toKey(cell.date) === toKey(today);
-                  return (
-                    <div
-                      key={i}
-                      className={`nd-cal-cell${cell.other ? ' other' : ''}${isPast ? ' past' : ''}${isSel ? ' sel' : ''}${isToday ? ' today' : ''}`}
-                      onClick={() => !cell.other && !isPast && setSelDate(k)}
-                    >
-                      <div className="nd-cal-d">{cell.day}</div>
-                      {!cell.other && !isPast && !isPriority && (
-                        <div className="nd-cal-dots">
-                          <div className={`nd-cal-dot ${awA ? capColor(awA.used, awA.total) : 'empty'}`} title="Morning" />
-                          <div className={`nd-cal-dot ${awB ? capColor(awB.used, awB.total) : 'empty'}`} title="Afternoon" />
-                        </div>
-                      )}
-                      {!cell.other && !isPast && isPriority && (
-                        <div className="nd-cal-dots">
-                          <div className="nd-cal-dot" style={{ background: 'var(--blue-400, #60a5fa)', width: 7, height: 7 }} title="Priority — no capacity limit" />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${!schedLater ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setSchedLater(false)}
+              >
+                Schedule now
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${schedLater ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setSchedLater(true)}
+              >
+                Schedule later
+              </button>
             </div>
 
-            {/* Window selector — hidden for priority */}
-            {!isPriority && (
-              <div className="nd-win-row">
-                <div className="nd-win-label">Delivery window for {formatDate(selDate)}:</div>
-                <div className="nd-win-toggle">
-                  <button className={`nd-win-btn${selectedWindow === 'A' ? ' active' : ''}`} onClick={() => setSelectedWindow('A')}>
-                    <span className="nd-win-name">Morning Delivery</span>
-                    <span className="nd-win-time">9:00 AM {'\u2013'} 1:00 PM</span>
-                    {(() => { const a = getWindowAvail(selDate, 'A'); return a ? <span className={`nd-win-cap ${capColor(a.used, a.total)}`}>{a.remaining_capacity} slot{a.remaining_capacity !== 1 ? 's' : ''} open</span> : null; })()}
-                  </button>
-                  <button className={`nd-win-btn${selectedWindow === 'B' ? ' active' : ''}`} onClick={() => setSelectedWindow('B')}>
-                    <span className="nd-win-name">Afternoon Delivery</span>
-                    <span className="nd-win-time">1:00 PM {'\u2013'} 5:00 PM</span>
-                    {(() => { const a = getWindowAvail(selDate, 'B'); return a ? <span className={`nd-win-cap ${capColor(a.used, a.total)}`}>{a.remaining_capacity} slot{a.remaining_capacity !== 1 ? 's' : ''} open</span> : null; })()}
-                  </button>
+            {schedLater ? (
+              <div style={{ padding: '12px 0', color: 'var(--gray-500)', fontSize: 14 }}>
+                Order will be created without a delivery date. You can send the customer a scheduling link from the dispatch schedule page.
+              </div>
+            ) : (
+              <>
+                <div className="nd-cal-nav">
+                  <button className="nd-cal-btn" onClick={() => setCalMonth(p => { const nm = p.m - 1; return nm < 0 ? { y: p.y - 1, m: 11 } : { ...p, m: nm }; })}>{'\u2039'}</button>
+                  <div className="nd-cal-heading">{MONTHS[calMonth.m]} {calMonth.y}</div>
+                  <button className="nd-cal-btn" onClick={() => setCalMonth(p => { const nm = p.m + 1; return nm > 11 ? { y: p.y + 1, m: 0 } : { ...p, m: nm }; })}>{'\u203A'}</button>
                 </div>
-              </div>
-            )}
+                <div className="nd-cal-grid">
+                  <div className="nd-cal-header">{DAYS.map(d => <div key={d} className="nd-cal-dow">{d}</div>)}</div>
+                  <div className="nd-cal-body">
+                    {calGrid.map((cell, i) => {
+                      const k = toKey(cell.date);
+                      const awA = getWindowAvail(k, 'A');
+                      const awB = getWindowAvail(k, 'B');
+                      const isPast = cell.date < today && toKey(cell.date) !== toKey(today);
+                      const isSel = k === selDate;
+                      const isToday = toKey(cell.date) === toKey(today);
+                      return (
+                        <div
+                          key={i}
+                          className={`nd-cal-cell${cell.other ? ' other' : ''}${isPast ? ' past' : ''}${isSel ? ' sel' : ''}${isToday ? ' today' : ''}`}
+                          onClick={() => !cell.other && !isPast && setSelDate(k)}
+                        >
+                          <div className="nd-cal-d">{cell.day}</div>
+                          {!cell.other && !isPast && !isPriority && (
+                            <div className="nd-cal-dots">
+                              <div className={`nd-cal-dot ${awA ? capColor(awA.used, awA.total) : 'empty'}`} title="Morning" />
+                              <div className={`nd-cal-dot ${awB ? capColor(awB.used, awB.total) : 'empty'}`} title="Afternoon" />
+                            </div>
+                          )}
+                          {!cell.other && !isPast && isPriority && (
+                            <div className="nd-cal-dots">
+                              <div className="nd-cal-dot" style={{ background: 'var(--blue-400, #60a5fa)', width: 7, height: 7 }} title="Priority — no capacity limit" />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
 
-            {isPriority && (
-              <div className="nd-priority-schedule-note">
-                {'\u26A1'} Priority delivery for <strong>{formatDate(selDate)}</strong> {'\u2014'} no window assignment needed. This delivery will appear at the top of the driver{'\u2019'}s schedule.
-              </div>
-            )}
+                {!isPriority && (
+                  <div className="nd-win-row">
+                    <div className="nd-win-label">Delivery window for {formatDate(selDate)}:</div>
+                    <div className="nd-win-toggle">
+                      <button className={`nd-win-btn${selectedWindow === 'A' ? ' active' : ''}`} onClick={() => setSelectedWindow('A')}>
+                        <span className="nd-win-name">Morning Delivery</span>
+                        <span className="nd-win-time">9:00 AM {'\u2013'} 1:00 PM</span>
+                        {(() => { const a = getWindowAvail(selDate, 'A'); return a ? <span className={`nd-win-cap ${capColor(a.used, a.total)}`}>{a.remaining_capacity} slot{a.remaining_capacity !== 1 ? 's' : ''} open</span> : null; })()}
+                      </button>
+                      <button className={`nd-win-btn${selectedWindow === 'B' ? ' active' : ''}`} onClick={() => setSelectedWindow('B')}>
+                        <span className="nd-win-name">Afternoon Delivery</span>
+                        <span className="nd-win-time">1:00 PM {'\u2013'} 5:00 PM</span>
+                        {(() => { const a = getWindowAvail(selDate, 'B'); return a ? <span className={`nd-win-cap ${capColor(a.used, a.total)}`}>{a.remaining_capacity} slot{a.remaining_capacity !== 1 ? 's' : ''} open</span> : null; })()}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-            {!isPriority && selectedDateAvail && !selectedDateAvail.available && (
-              <div className="alert alert-error" style={{ marginTop: 8, fontSize: 13 }}><span>{'\u2715'}</span> Not enough capacity for {requiredLoads} load{requiredLoads !== 1 ? 's' : ''} in this window</div>
+                {isPriority && (
+                  <div className="nd-priority-schedule-note">
+                    {'\u26A1'} Priority delivery for <strong>{formatDate(selDate)}</strong> {'\u2014'} no window assignment needed. This delivery will appear at the top of the driver{'\u2019'}s schedule.
+                  </div>
+                )}
+
+                {!isPriority && selectedDateAvail && !selectedDateAvail.available && (
+                  <div className="alert alert-error" style={{ marginTop: 8, fontSize: 13 }}><span>{'\u2715'}</span> Not enough capacity for {requiredLoads} load{requiredLoads !== 1 ? 's' : ''} in this window</div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -708,8 +742,8 @@ function NewDropPage() {
           </div>
         </div>
 
-{/* ═══ DRIVER ASSIGNMENT (optional) ═══ */}
-        {selDate && (
+        {/* ═══ DRIVER ASSIGNMENT (optional) ═══ */}
+        {(selDate || schedLater) && (
           <div className="nd-card card">
             <div className="nd-card-head">
               <span className="nd-card-icon">🚚</span>
@@ -772,14 +806,13 @@ function NewDropPage() {
         )}
 
         {/* ═══ SUBMIT BAR ═══ */}
-        
-        {/* ═══ SUBMIT BAR ═══ */}
         <div className="nd-submit-bar">
           <button className="btn btn-ghost" onClick={() => router.push('/dispatch-schedule')}>Cancel</button>
           <div style={{ flex: 1 }} />
           {isPriority && <span className="pill pill-blue" style={{ fontSize: 12, marginRight: 8 }}>{'\u26A1'} Priority</span>}
+          {schedLater && <span className="pill" style={{ fontSize: 12, marginRight: 8, background: 'var(--amber-50)', color: 'var(--amber-700)' }}>⏳ Unscheduled</span>}
           <button className="btn btn-primary btn-lg" onClick={createDrop} disabled={!canSubmit || submitting}>
-            {submitting ? 'Creating\u2026' : '\u2713 Confirm & Schedule'}
+            {submitting ? 'Creating\u2026' : schedLater ? '\u2713 Create Unscheduled Order' : '\u2713 Confirm & Schedule'}
           </button>
         </div>
       </div>
@@ -792,7 +825,6 @@ const pageStyles = `
   .nd-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }
   .nd-top h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
 
-  /* Cards */
   .nd-card { margin-bottom: 16px; }
   .nd-card-head { display: flex; align-items: center; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--border-light); }
   .nd-card-icon { font-size: 18px; }
@@ -801,28 +833,22 @@ const pageStyles = `
   .nd-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   @media (max-width: 500px) { .nd-row-2 { grid-template-columns: 1fr; } }
 
-  /* New customer form */
   .nd-new-customer-form { padding: 16px; background: var(--gray-50); border: 1px solid var(--border-light); border-radius: var(--radius-md); }
-
-  /* New customer type toggle */
   .nd-type-toggle { display: flex; gap: 6px; }
   .nd-type-btn { padding: 8px 14px; border: 2px solid var(--border); border-radius: var(--radius-md); background: var(--surface); cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600; color: var(--gray-600); transition: all 0.15s; }
   .nd-type-btn:hover { border-color: var(--gray-300); }
   .nd-type-btn.active { border-color: var(--green-400); background: var(--green-50); color: var(--green-700); }
 
-  /* Customer results */
   .nd-results { border: 1px solid var(--border-light); border-radius: var(--radius-md); overflow: hidden; margin-top: 12px; }
   .nd-result-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; cursor: pointer; transition: background 0.12s; border-bottom: 1px solid var(--border-light); }
   .nd-result-row:last-child { border-bottom: none; }
   .nd-result-row:hover { background: var(--green-50); }
 
-  /* Returning customer banner */
   .nd-returning { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--green-50); border: 1px solid var(--green-200); border-radius: var(--radius-md); }
   .nd-returning-avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--green-600); color: white; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px; flex-shrink: 0; }
   .nd-returning-avatar.commercial { background: var(--blue-600, #2563eb); font-size: 18px; font-weight: normal; }
   @media (max-width: 500px) { .nd-returning { flex-wrap: wrap; } }
 
-  /* Priority delivery card */
   .nd-priority-card { margin-bottom: 16px; transition: all 0.2s; }
   .nd-priority-card.priority-active { border-color: var(--blue-300, #93c5fd); background: var(--blue-50, #eff6ff); }
   .nd-priority-inner { display: flex; align-items: center; gap: 14px; padding: 16px 20px; }
@@ -835,7 +861,6 @@ const pageStyles = `
   .nd-priority-note { padding: 10px 20px 14px; font-size: 12px; color: var(--amber-700, #b45309); background: var(--amber-50, #fffbeb); border-top: 1px solid var(--amber-200, #fde68a); }
   @media (max-width: 500px) { .nd-priority-inner { flex-direction: column; align-items: flex-start; gap: 10px; } }
 
-  /* Priority toggle switch */
   .nd-priority-switch { position: relative; display: inline-block; width: 48px; height: 26px; flex-shrink: 0; }
   .nd-priority-switch input { opacity: 0; width: 0; height: 0; }
   .nd-priority-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: var(--gray-300); border-radius: 26px; transition: 0.2s; }
@@ -843,13 +868,9 @@ const pageStyles = `
   .nd-priority-switch input:checked + .nd-priority-slider { background: var(--blue-500, #3b82f6); }
   .nd-priority-switch input:checked + .nd-priority-slider:before { transform: translateX(22px); }
 
-  /* Priority schedule note */
   .nd-priority-schedule-note { margin-top: 16px; padding: 12px 16px; background: var(--blue-50, #eff6ff); border: 1px solid var(--blue-200, #bfdbfe); border-radius: var(--radius-md); font-size: 13px; color: var(--blue-700, #1d4ed8); line-height: 1.5; }
-
-  /* Blue pill for priority badges */
   .pill-blue { background: var(--blue-50, #eff6ff); color: var(--blue-700, #1d4ed8); }
 
-  /* Address */
   .nd-addr-list { display: flex; flex-direction: column; gap: 8px; }
   .nd-addr-opt { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 2px solid var(--border-light); border-radius: var(--radius-md); cursor: pointer; transition: all 0.15s; }
   .nd-addr-opt:hover { border-color: var(--gray-300); }
@@ -857,12 +878,10 @@ const pageStyles = `
   .nd-addr-radio { font-size: 18px; color: var(--gray-300); flex-shrink: 0; }
   .nd-addr-opt.sel .nd-addr-radio { color: var(--green-600); }
 
-  /* New address form */
   .nd-new-addr { padding: 16px; background: var(--gray-50); border: 1px solid var(--border-light); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: 10px; }
   .nd-addr-row-3 { display: grid; grid-template-columns: 1fr 80px 100px; gap: 10px; }
   @media (max-width: 500px) { .nd-addr-row-3 { grid-template-columns: 1fr; } }
 
-  /* Mini calendar */
   .nd-cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
   .nd-cal-btn { width: 32px; height: 32px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; color: var(--gray-600); font-family: inherit; }
   .nd-cal-btn:hover { background: var(--gray-50); }
@@ -886,7 +905,6 @@ const pageStyles = `
   .nd-cal-dot.red { background: var(--red-500); }
   .nd-cal-dot.empty { background: var(--gray-200); }
 
-  /* Window selector */
   .nd-win-row { margin-top: 16px; }
   .nd-win-label { font-size: 14px; font-weight: 600; color: var(--gray-600); margin-bottom: 8px; }
   .nd-win-toggle { display: flex; gap: 8px; }
@@ -903,7 +921,6 @@ const pageStyles = `
   .nd-win-cap.red { color: var(--red-600); }
   @media (max-width: 400px) { .nd-win-toggle { flex-direction: column; } }
 
-  /* Products */
   .nd-prod-add { display: flex; gap: 8px; }
   @media (max-width: 500px) { .nd-prod-add { flex-direction: column; } }
   .nd-load-list { margin-top: 12px; border: 1px solid var(--border-light); border-radius: var(--radius-md); overflow: hidden; }
@@ -911,10 +928,8 @@ const pageStyles = `
   .nd-load-row:last-child { border-bottom: none; }
   .nd-load-summary { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--green-50); border-top: 1px solid var(--green-100); font-size: 14px; font-weight: 600; color: var(--gray-700); }
 
-  /* Submit bar */
   .nd-submit-bar { position: fixed; bottom: 0; left: 0; right: 0; padding: 14px 24px; background: var(--surface); border-top: 1px solid var(--border); box-shadow: 0 -4px 12px rgba(0,0,0,0.06); display: flex; align-items: center; gap: 8px; z-index: 100; }
 
-  /* Success */
   .nd-success-card { max-width: 460px; margin: 40px auto; text-align: center; }
   .nd-success-icon { width: 56px; height: 56px; border-radius: 50%; background: var(--green-100); color: var(--green-700); font-size: 24px; font-weight: 800; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; }
   .nd-success-detail { margin-top: 16px; text-align: left; border: 1px solid var(--border-light); border-radius: var(--radius-md); overflow: hidden; }
