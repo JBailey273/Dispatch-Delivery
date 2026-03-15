@@ -366,7 +366,44 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
         "loads": loads_out,
         "drop_photos": drop.drop_photos if drop.drop_photos else [],
     }
+@router.get("/unscheduled")
+def get_unscheduled_drops(
+    location_id: str | None = Query(default=None),
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)),
+    db: Session = Depends(db_dep),
+):
+    """Return all drops with no scheduled_date, ordered by creation time."""
+    stmt = (
+        select(Drop, Customer, CustomerAddress)
+        .join(Customer, Customer.id == Drop.customer_id)
+        .join(CustomerAddress, CustomerAddress.id == Drop.address_id)
+        .where(
+            Drop.tenant_id == user.tenant_id,
+            Drop.scheduled_date.is_(None),
+        )
+        .order_by(Drop.created_at.asc())
+    )
+    if location_id:
+        stmt = stmt.where(Drop.location_id == location_id)
 
+    rows = db.execute(stmt).all()
+
+    return {
+        "drops": [
+            {
+                "drop_id": str(drop.id),
+                "order_number": drop.order_number,
+                "customer_name": customer.name,
+                "customer_phone": customer.phone_e164,
+                "address_short": f"{addr.line1}, {addr.city}",
+                "materials": drop.notes,
+                "created_at": drop.created_at.isoformat(),
+                "is_priority": drop.is_priority,
+                "source": drop.source,
+            }
+            for drop, customer, addr in rows
+        ]
+    }
 @router.post("/drops/{drop_id}/send-delivery-notification")
 def send_delivery_notification(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)), db: Session = Depends(db_dep)):
     row = db.execute(
