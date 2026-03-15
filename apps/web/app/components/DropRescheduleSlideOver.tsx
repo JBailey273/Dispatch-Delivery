@@ -239,12 +239,16 @@ export default function DropRescheduleSlideOver({
   }, [calMonth, fetchCapForMonth]);
 
   /* ── Notification/SMS ── */
+/* ── Notification/SMS ── */
   const [notifLoading, setNotifLoading] = useState(false);
   const [notifMsg, setNotifMsg] = useState('');
   const [smsEditing, setSmsEditing] = useState(false);
   const [smsText, setSmsText] = useState(DEFAULT_SMS);
   const [smsSending, setSmsSending] = useState(false);
   const [smsMsg, setSmsMsg] = useState('');
+  const [schedLinkLoading, setSchedLinkLoading] = useState(false);
+  const [schedLinkMsg, setSchedLinkMsg] = useState('');
+  const [schedLink, setSchedLink] = useState('');
 
   const sendNotification = async () => {
     setNotifLoading(true); setNotifMsg('');
@@ -255,7 +259,6 @@ export default function DropRescheduleSlideOver({
     } catch (err) { setNotifMsg((err as ApiError).message || 'Failed'); }
     finally { setNotifLoading(false); }
   };
-
   const sendSms = async () => {
     setSmsSending(true); setSmsMsg('');
     try {
@@ -268,6 +271,24 @@ export default function DropRescheduleSlideOver({
       await refreshDetail();
     } catch (err) { setSmsMsg((err as ApiError).message || 'Failed'); }
     finally { setSmsSending(false); }
+  };
+  const sendSchedulingLink = async () => {
+    setSchedLinkLoading(true); setSchedLinkMsg(''); setSchedLink('');
+    try {
+      const r = await api(`/schedule/drops/${dropId}/scheduling-link`, { method: 'POST' });
+      const link = `${window.location.origin}/schedule?token=${r.token}`;
+      setSchedLink(link);
+      // Send via reschedule SMS channel
+      const message = `Hi ${dropDetail?.customer_name?.split(' ')[0] || 'there'}, please use this link to schedule your delivery from East Meadow Garden Center: ${link}`;
+      await api(`/dispatch/drops/${dropId}/send-reschedule-sms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, admin_override: true }),
+      });
+      setSchedLinkMsg('sent');
+      await refreshDetail();
+    } catch (err) { setSchedLinkMsg((err as ApiError).message || 'Failed'); }
+    finally { setSchedLinkLoading(false); }
   };
 
   /* ── Calendar cells ── */
