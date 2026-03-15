@@ -102,7 +102,9 @@ export default function DispatchSchedulePage() {
   const [schedule, setSchedule] = useState<ScheduleData | null>(null);
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [error, setError] = useState('');
-  const [needsAttention, setNeedsAttention] = useState<NeedsAttentionItem[]>([]);
+ const [needsAttention, setNeedsAttention] = useState<NeedsAttentionItem[]>([]);
+  const [unscheduled, setUnscheduled] = useState<{ drop_id: string; order_number: number | null; customer_name: string; customer_phone: string; address_short: string; created_at: string; source: string }[]>([]);
+  const [unschedLoading, setUnschedLoading] = useState(false);
 
   /* ── Slide-over state ── */
   const [slideDropId, setSlideDropId] = useState<string | null>(null);
@@ -216,6 +218,17 @@ export default function DispatchSchedulePage() {
   useEffect(() => {
     api(`/dispatch/needs-attention${locationParam ? `?location_id=${activeLocation?.id}` : ''}`).then(r => setNeedsAttention(r.drops || [])).catch(() => null);
   }, [locationParam, activeLocation]);
+
+  const fetchUnscheduled = useCallback(async () => {
+    setUnschedLoading(true);
+    try {
+      const r = await api(`/dispatch/unscheduled${locationParam ? `?location_id=${activeLocation?.id}` : ''}`);
+      setUnscheduled(r.drops || []);
+    } catch { /* silent */ }
+    finally { setUnschedLoading(false); }
+  }, [locationParam, activeLocation]);
+
+  useEffect(() => { fetchUnscheduled(); }, [fetchUnscheduled]);
 
   /* ── Open slide-over ── */
   const openDrop = async (dropId: string, startOnReschedule = false) => {
@@ -456,6 +469,49 @@ export default function DispatchSchedulePage() {
 
           {error && <div className="alert alert-error" style={{ margin: '12px 16px', fontSize: 13 }}>{error}</div>}
 
+          {/* ── Unscheduled Queue ── */}
+          {(unscheduled.length > 0 || unschedLoading) && (
+            <div className="uq-section">
+              <div className="uq-head">
+                <span className="uq-icon">⏳</span>
+                <span>Awaiting Schedule</span>
+                {unschedLoading
+                  ? <span className="uq-count">…</span>
+                  : <span className="uq-count">{unscheduled.length}</span>}
+              </div>
+              {unschedLoading ? (
+                <div style={{ padding: '12px 16px' }}><div className="spinner" style={{ width: 16, height: 16 }} /></div>
+              ) : unscheduled.map(item => (
+                <div key={item.drop_id} className="uq-row" onClick={() => openDrop(item.drop_id, false)}>
+                  <div className="uq-row-info">
+                    <div className="uq-row-name">{item.customer_name}</div>
+                    <div className="uq-row-meta">{item.address_short} · {item.source === 'manual' ? 'Manual' : 'Online'}</div>
+                  </div>
+                  <button
+                    className="uq-link-btn"
+                    onClick={async e => {
+                      e.stopPropagation();
+                      try {
+                        const r = await api(`/schedule/drops/${item.drop_id}/scheduling-link`, { method: 'POST' });
+                        const link = `${window.location.origin}/schedule?token=${r.token}`;
+                        const msg = `Hi ${item.customer_name.split(' ')[0]}, please use this link to schedule your delivery from East Meadow Garden Center: ${link}`;
+                        await api(`/dispatch/drops/${item.drop_id}/send-reschedule-sms`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ message: msg, admin_override: true }),
+                        });
+                        fetchUnscheduled();
+                      } catch { /* silent — dispatcher can use slide-over for details */ }
+                    }}
+                  >
+                    🔗 Send Link
+                  </button>
+                  <div className="uq-row-action">View →</div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* ── Needs Attention ── */}
           {needsAttention.length > 0 && (
             <div className="na-section">
@@ -630,6 +686,20 @@ const schedulerStyles = `
   .mc-cap-label { font-family: var(--font-heading); font-size: 10px; font-weight: 700; color: var(--gray-400); display: flex; justify-content: space-between; letter-spacing: 0.02em; }
   .mc-bar-track { height: 4px; border-radius: 2px; background: var(--gray-100); overflow: hidden; }
   .mc-bar { height: 4px; border-radius: 2px; transition: width 0.3s var(--ease-out); }
+
+/* ── Unscheduled Queue ── */
+  .uq-section { background: #fffbeb; border-top: 2px solid #f59e0b; border-bottom: 1px solid #fde68a; margin: 12px 16px; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px #fde68a; }
+  .uq-head { display: flex; align-items: center; gap: 8px; padding: 10px 16px 8px; font-family: var(--font-heading); font-size: 13px; font-weight: 800; color: #92400e; text-transform: uppercase; letter-spacing: 0.05em; }
+  .uq-icon { font-size: 15px; }
+  .uq-count { margin-left: auto; background: #d97706; color: #fff; border-radius: 10px; font-size: 11px; font-weight: 800; padding: 1px 7px; }
+  .uq-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-top: 1px solid #fde68a; transition: background 0.12s; gap: 10px; }
+  .uq-row:hover { background: #fef3c7; }
+  .uq-row-info { flex: 1; min-width: 0; }
+  .uq-row-name { font-family: var(--font-heading); font-size: 14px; font-weight: 700; color: var(--gray-900); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .uq-row-meta { font-size: 12px; color: #92400e; margin-top: 2px; }
+  .uq-link-btn { font-size: 12px; font-weight: 700; color: #92400e; background: #fde68a; border: 1px solid #f59e0b; border-radius: 6px; padding: 4px 8px; cursor: pointer; white-space: nowrap; flex-shrink: 0; font-family: inherit; transition: background 0.12s; }
+  .uq-link-btn:hover { background: #fcd34d; }
+  .uq-row-action { font-size: 12px; font-weight: 700; color: #d97706; white-space: nowrap; flex-shrink: 0; }
 
   /* ── Needs Attention ── */
   .na-section { background: #fff1f2; border-top: 2px solid #f43f5e; border-bottom: 1px solid #fecdd3; margin: 12px 16px; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px #fecdd3; }
