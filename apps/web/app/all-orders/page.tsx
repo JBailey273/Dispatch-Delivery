@@ -12,6 +12,7 @@ type OrderRow = {
   order_ref: string;
   scheduled_date: string;
   window: string;
+  is_priority: boolean;
   customer_name: string;
   customer_phone: string;
   address_short: string;
