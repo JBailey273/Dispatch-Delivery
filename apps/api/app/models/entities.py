@@ -297,7 +297,7 @@ class Drop(Base, TenantScopedMixin, TimestampMixin):
     source: Mapped[str] = mapped_column(String(60), nullable=False, default="manual")
     is_priority: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="new")
-    scheduled_date: Mapped[date] = mapped_column(Date, nullable=False)
+    scheduled_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     scheduled_window: Mapped[WindowCode | None] = mapped_column(Enum(WindowCode, name="drop_window_code"), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     drop_photos: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
