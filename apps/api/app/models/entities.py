@@ -306,6 +306,14 @@ class Drop(Base, TenantScopedMixin, TimestampMixin):
     last_reschedule_sms_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     needs_reschedule: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+class SchedulingToken(Base, TimestampMixin):
+    __tablename__ = "scheduling_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    drop_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("drops.id"), nullable=False, index=True)
+    token: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 # ---------------------------------------------------------------------------
 # Load — inherits location scope via Drop
