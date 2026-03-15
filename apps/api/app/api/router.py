@@ -13,6 +13,7 @@ from app.api.routes import (
     operations,
     platform_admin,
     product_catalog,
+    schedule,
     sms,
     tenant,
     uploads,
@@ -38,3 +39,4 @@ api_router.include_router(operations.router)
 api_router.include_router(operations.admin_router)
 
 api_router.include_router(platform_admin.router)
+api_router.include_router(schedule.router)  # add after the other include_router lines
