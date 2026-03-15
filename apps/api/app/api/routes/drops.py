@@ -67,12 +67,12 @@ class ManualDropIn(BaseModel):
     customer: CustomerRef
     address: AddressRef
     notes: str | None = None
-    scheduled_date: date
-    scheduled_window: WindowCode | None = None  # None allowed for priority drops
-    is_priority: bool | None = None  # None = auto-detect from customer type
+    scheduled_date: date | None = None  # None = unscheduled
+    scheduled_window: WindowCode | None = None
+    is_priority: bool | None = None
     items: list[ItemIn]
     driver_user_id: str | None = None
-    location_id: str | None = None  # Required; defaults to tenant's only location if omitted
+    location_id: str | None = None
 
 
 def _is_blacked_out(db: Session, tenant_id, location_id, day: date, window: WindowCode) -> bool:
@@ -189,11 +189,11 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
     else:
         is_priority = customer.customer_type == CustomerType.COMMERCIAL
 
-    # Validate window: non-priority drops MUST have a window
-    if not is_priority and not payload.scheduled_window:
+    # Validate window: non-priority scheduled drops MUST have a window
+    if payload.scheduled_date and not is_priority and not payload.scheduled_window:
         raise HTTPException(
             status_code=422,
-            detail={"code": "window_required", "message": "Non-priority deliveries require a delivery window (A or B)."},
+            detail={"code": "window_required", "message": "Non-priority deliveries require a delivery window (A or B)."}
         )
 
     # Resolve address
@@ -251,59 +251,59 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
         raise HTTPException(status_code=402, detail={"code": load_limit_decision.code, "message": load_limit_decision.message, "upgrade_required": load_limit_decision.upgrade_required})
 
     try:
-        # Priority drops bypass capacity reservation entirely
-        if not is_priority:
-            reserve_capacity(db, user.tenant_id, location.id, payload.scheduled_date, payload.scheduled_window, required_loads)
-
         drop = Drop(
             tenant_id=user.tenant_id,
             location_id=location.id,
             customer_id=customer.id,
             address_id=address.id,
             order_number=next_order_number(db, user.tenant_id),
+            external_order_id=None,
             source="manual",
             is_priority=is_priority,
             scheduled_date=payload.scheduled_date,
-            scheduled_window=payload.scheduled_window,  # None for priority drops
+            scheduled_window=payload.scheduled_window,
             notes=payload.notes,
         )
         db.add(drop)
         db.flush()
 
-        # For priority drops without a window, we still need a route_window on loads.
-        # Use window A as default — it doesn't affect capacity or scheduling.
-        load_window = payload.scheduled_window or WindowCode.A
-
         load_ids = []
-        for bulk_group, snap in grouped.items():
-            load = Load(
-                tenant_id=user.tenant_id,
-                drop_id=drop.id,
-                route_date=payload.scheduled_date,
-                route_window=load_window,
-                bulk_group_snapshot=bulk_group,
-                material_name_snapshot=snap["name"],
-                qty=snap["qty"],
-                unit=snap["unit"],
-                driver_user_id=payload.driver_user_id,
-                status=LoadStatus.ASSIGNED,
-            )
-            db.add(load)
-            db.flush()
-            load_ids.append(str(load.id))
+
+        if payload.scheduled_date:
+            # Only reserve capacity and create loads when a date is provided
+            if not is_priority:
+                reserve_capacity(db, user.tenant_id, location.id, payload.scheduled_date, payload.scheduled_window, required_loads)
+
+            load_window = payload.scheduled_window or WindowCode.A
+            for bulk_group, snap in grouped.items():
+                load = Load(
+                    tenant_id=user.tenant_id,
+                    drop_id=drop.id,
+                    route_date=payload.scheduled_date,
+                    route_window=load_window,
+                    bulk_group_snapshot=bulk_group,
+                    material_name_snapshot=snap["name"],
+                    qty=snap["qty"],
+                    unit=snap["unit"],
+                    driver_user_id=payload.driver_user_id,
+                    status=LoadStatus.ASSIGNED,
+                )
+                db.add(load)
+                db.flush()
+                load_ids.append(str(load.id))
+
+            log_event(db, user.tenant_id, "loads.created", "api", {"drop_id": str(drop.id), "load_ids": load_ids})
+            if not is_priority:
+                log_event(db, user.tenant_id, "capacity.consumed", "api", {"date": str(payload.scheduled_date), "window": payload.scheduled_window.value, "units": required_loads})
 
         address.last_used_at = now_utc()
-        log_event(db, user.tenant_id, "drop.created", "api", {"drop_id": str(drop.id), "is_priority": is_priority})
-        log_event(db, user.tenant_id, "loads.created", "api", {"drop_id": str(drop.id), "load_ids": load_ids})
-        if not is_priority:
-            log_event(db, user.tenant_id, "capacity.consumed", "api", {"date": str(payload.scheduled_date), "window": payload.scheduled_window.value, "units": required_loads})
+        log_event(db, user.tenant_id, "drop.created", "api", {"drop_id": str(drop.id), "is_priority": is_priority, "unscheduled": payload.scheduled_date is None})
         db.commit()
     except Exception:
         db.rollback()
         raise
 
-    # Check for priority soft cap warning
-    priority_warning = check_priority_warning(db, user.tenant_id, payload.scheduled_date) if is_priority else None
+    priority_warning = check_priority_warning(db, user.tenant_id, payload.scheduled_date) if is_priority and payload.scheduled_date else None
 
     return {
         "drop_id": str(drop.id),
@@ -311,6 +311,7 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
         "load_ids": load_ids,
         "required_loads": required_loads,
         "is_priority": is_priority,
+        "unscheduled": payload.scheduled_date is None,
         "priority_warning": priority_warning,
     }
 
