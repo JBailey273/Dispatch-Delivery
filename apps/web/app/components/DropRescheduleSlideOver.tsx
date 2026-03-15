@@ -629,6 +629,28 @@ export default function DropRescheduleSlideOver({
                 )}
                 {smsMsg === 'sent' && <div className="so-notif-success">✓ SMS sent</div>}
               </div>
+              <div style={{ borderTop: '1px solid var(--border-light)', marginTop: 10, paddingTop: 10 }}>
+                <div className="so-notif-row">
+                  <div className="so-notif-info">
+                    <div className="so-notif-title">Scheduling Link</div>
+                    <div className="so-notif-sub">Send customer a link to self-schedule</div>
+                  </div>
+                  <button className="btn btn-secondary btn-sm" onClick={sendSchedulingLink} disabled={schedLinkLoading}>
+                    {schedLinkLoading ? 'Sending…' : '🔗 Send'}
+                  </button>
+                </div>
+                {schedLinkMsg === 'sent' && (
+                  <div className="so-notif-success">✓ Scheduling link sent</div>
+                )}
+                {schedLink && schedLinkMsg === 'sent' && (
+                  <div style={{ marginTop: 6, fontSize: 11, color: 'var(--gray-400)', wordBreak: 'break-all' }}>
+                    {schedLink}
+                  </div>
+                )}
+                {schedLinkMsg && schedLinkMsg !== 'sent' && (
+                  <div className="so-notif-err">{schedLinkMsg}</div>
+                )}
+              </div>
             </div>
 
             {/* Notes */}
