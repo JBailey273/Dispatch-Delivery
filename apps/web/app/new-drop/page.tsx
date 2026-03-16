@@ -506,9 +506,31 @@ function NewDropPage() {
                     </button>
                   </div>
                 </div>
+                <div className="form-group" style={{ marginTop: 8 }}>
+                  <label className="form-label">Notification Preferences</label>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                    <button
+                      type="button"
+                      className={`nd-type-btn${newCustomerSmsOptIn ? ' active' : ''}`}
+                      onClick={() => setNewCustomerSmsOptIn(v => !v)}
+                    >
+                      {newCustomerSmsOptIn ? '✓' : '○'} SMS
+                    </button>
+                    <button
+                      type="button"
+                      className={`nd-type-btn${newCustomerEmailOptIn ? ' active' : ''}`}
+                      onClick={() => { if (newCustomerEmail.trim()) setNewCustomerEmailOptIn(v => !v); }}
+                      disabled={!newCustomerEmail.trim()}
+                      title={!newCustomerEmail.trim() ? 'Enter an email address first' : ''}
+                    >
+                      {newCustomerEmailOptIn ? '✓' : '○'} Email
+                    </button>
+                  </div>
+                </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                   <button className="btn btn-primary btn-sm" onClick={createCustomer}>Create Customer</button>
                   <button className="btn btn-ghost btn-sm" onClick={() => { setShowNewCustomerForm(false); setError(''); }}>Back to Search</button>
+                </div>
                 </div>
               </div>
             )}
