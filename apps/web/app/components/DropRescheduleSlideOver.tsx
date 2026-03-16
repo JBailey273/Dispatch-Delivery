@@ -53,7 +53,7 @@ export type SlideOverDropDetail = {
   ref: string;
   source?: string;
   is_priority: boolean;
-  scheduled_date: string | null; scheduled_window: string | null;
+  scheduled_date: string | null;
   scheduled_window: string | null;
   customer_name: string;
   customer_phone: string;
