@@ -955,12 +955,13 @@ const styles = `
   .cs-type-opt-desc { font-size: 11px; color: var(--gray-500); text-align: center; }
 
   /* Responsive columns */
-  @media (max-width: 640px) {
+ @media (max-width: 640px) {
     .cs-phone-col, .cs-last-col { display: none; }
     .cs-info-grid { grid-template-columns: 1fr; }
     .cs-type-selector { flex-direction: column; }
     .cs-addr-read { flex-direction: column; }
     .cs-addr-actions { justify-content: flex-start; }
+  }
 
   .cs-new-customer-modal { max-width: 560px; width: 100%; }
   .cs-modal-section-label { font-family: var(--font-heading); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--gray-400); margin-bottom: 8px; }
