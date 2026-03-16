@@ -76,6 +76,9 @@ export default function CustomerSearchPage() {
   const [newName, setNewName] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [newType, setNewType] = useState<'residential' | 'commercial'>('residential');
+  const [newEmail, setNewEmail] = useState('');
+  const [newSmsOptIn, setNewSmsOptIn] = useState(false);
+  const [newEmailOptIn, setNewEmailOptIn] = useState(false);
   const [creating, setCreating] = useState(false);
 
   /* ── Debounce timer ── */
@@ -334,15 +337,32 @@ export default function CustomerSearchPage() {
   };
 
   /* ── Create customer ── */
-  const createCustomer = async () => {
+const createCustomer = async () => {
     if (!newPhone.trim()) return;
     setCreating(true); setError('');
     try {
-      await api('/customers', {
+      const c = await api('/customers', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newName || 'Walk-in Customer', phone: newPhone, customer_type: newType }),
       });
-      setShowCreate(false); setNewName(''); setNewPhone(''); setNewType('residential');
+      const created = c.customer || c;
+      if (newEmail.trim()) {
+        try {
+          await api(`/customers/${created.id}/email`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: newEmail.trim() }),
+          });
+        } catch { /* non-fatal */ }
+      }
+      if (newSmsOptIn || newEmailOptIn) {
+        try {
+          await api(`/customers/${created.id}/opt-ins`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sms_opt_in: newSmsOptIn, email_opt_in: newEmailOptIn && !!newEmail.trim() }),
+          });
+        } catch { /* non-fatal */ }
+      }
+      setShowCreate(false); setNewName(''); setNewPhone(''); setNewType('residential'); setNewEmail(''); setNewSmsOptIn(false); setNewEmailOptIn(false);
       await refreshCustomers();
       setQ(''); setSearchResults(null);
     } catch (err) {
@@ -791,6 +811,33 @@ export default function CustomerSearchPage() {
                       <span className="cs-type-opt-icon">🏢</span>
                       <span className="cs-type-opt-label">Commercial</span>
                       <span className="cs-type-opt-desc">Contractor / landscaper</span>
+                    </button>
+                  </div>
+                </div>
+              <div className="form-group">
+                  <label className="form-label">Email <span style={{ color: 'var(--gray-400)', fontWeight: 400 }}>(optional)</span></label>
+                  <input type="email" placeholder="customer@example.com" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Notification Preferences</label>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                    <button
+                      type="button"
+                      className={`cs-type-opt${newSmsOptIn ? ' active' : ''}`}
+                      style={{ flex: 'none', padding: '8px 16px' }}
+                      onClick={() => setNewSmsOptIn(v => !v)}
+                    >
+                      {newSmsOptIn ? '✓' : '○'} SMS
+                    </button>
+                    <button
+                      type="button"
+                      className={`cs-type-opt${newEmailOptIn ? ' active' : ''}`}
+                      style={{ flex: 'none', padding: '8px 16px' }}
+                      onClick={() => { if (newEmail.trim()) setNewEmailOptIn(v => !v); }}
+                      disabled={!newEmail.trim()}
+                      title={!newEmail.trim() ? 'Enter an email address first' : ''}
+                    >
+                      {newEmailOptIn ? '✓' : '○'} Email
                     </button>
                   </div>
                 </div>
