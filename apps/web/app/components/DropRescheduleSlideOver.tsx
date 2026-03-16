@@ -776,7 +776,7 @@ export default function DropRescheduleSlideOver({
                         const cap = w === 'A' ? targetCap?.A : targetCap?.B;
                         return (
                           <button key={w} className={`so-win-btn${rescWindow === w ? ' active' : ''}`} onClick={() => setRescWindow(w)}>
-                            <span className="so-win-label">{w === 'A' ? '🌅 Morning' : '🌤 Afternoon'}</span>
+                            <span className="so-win-label">{w === 'A' ? 'Morning' : 'Afternoon'}</span>
                             <span className="so-win-time">{w === 'A' ? '9am – 1pm' : '1pm – 5pm'}</span>
                             {cap != null && (
                               <span className={`so-win-cap ${(cap.remaining_capacity ?? 0) > 0 ? 'avail' : 'full'}`}>
