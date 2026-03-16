@@ -535,7 +535,6 @@ function NewDropPage() {
                   <button className="btn btn-primary btn-sm" onClick={createCustomer}>Create Customer</button>
                   <button className="btn btn-ghost btn-sm" onClick={() => { setShowNewCustomerForm(false); setError(''); }}>Back to Search</button>
                 </div>
-                </div>
               </div>
             )}
 
