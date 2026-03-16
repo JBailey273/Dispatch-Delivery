@@ -27,6 +27,7 @@ type DropDetail = {
   notes: string | null; required_loads: number; loads: LoadItem[];
   notify_sent_at: string | null; last_reschedule_sms_at: string | null;
   drop_photos: string[];
+  customer_email?: string | null; customer_sms_opt_in?: boolean; customer_email_opt_in?: boolean;
 };
 
 /* ── Helpers ── */
@@ -75,6 +76,7 @@ function toSlideOverDetail(drop: DropDetail): SlideOverDropDetail {
     is_priority: drop.is_priority,
     scheduled_date: drop.scheduled_date, scheduled_window: drop.scheduled_window,
     customer_name: drop.customer_name, customer_phone: drop.customer_phone,
+    customer_email: drop.customer_email, customer_sms_opt_in: drop.customer_sms_opt_in, customer_email_opt_in: drop.customer_email_opt_in,
     delivery_address: drop.delivery_address, notes: drop.notes,
     required_loads: drop.required_loads,
     loads: drop.loads.map(l => ({
