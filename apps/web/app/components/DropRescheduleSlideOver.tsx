@@ -481,14 +481,14 @@ export default function DropRescheduleSlideOver({
               ) : (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, cursor: 'pointer' }}>
                   <div>
-                    <div className="so-info-date" style={{ color: 'var(--amber-600)', fontSize: 15 }}>Not yet scheduled</div>
+                    <div className="so-info-date" style={{ color: 'var(--amber-600)', fontSize: 15 }}>Not Yet Scheduled</div>
                     <div className="so-info-window">Send the customer a scheduling link below</div>
                   </div>
                   <button
                     className="so-resc-trigger"
                     onClick={() => { setView('reschedule'); setRescMsg(''); setRescSuccess(false); }}
                   >
-                    📅 Assign Date
+                    Assign Date
                   </button>
                 </div>
               )}
