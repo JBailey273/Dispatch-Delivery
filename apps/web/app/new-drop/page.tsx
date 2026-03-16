@@ -224,6 +224,14 @@ function NewDropPage() {
     try {
       const c = await api('/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newCustomerName.trim() || 'Walk-in Customer', phone: newCustomerPhone.trim(), customer_type: newCustomerType }) });
       const created = c.customer || c;
+      if (newCustomerEmail.trim()) {
+        try {
+          await api(`/customers/${created.id}/email`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: newCustomerEmail.trim() }),
+          });
+        } catch { /* non-fatal */ }
+      }
       if (newCustomerEmail.trim() || newCustomerSmsOptIn) {
         try {
           await api(`/customers/${created.id}/opt-ins`, {
