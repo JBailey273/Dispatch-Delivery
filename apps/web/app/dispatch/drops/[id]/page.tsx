@@ -251,7 +251,7 @@ function DispatchDropDetailPage() {
               </div>
               <div className="card dd-hero-card">
                 <div className="dd-hero-label">📅 Scheduled Delivery</div>
-                <div className="dd-hero-name">{drop.scheduled_date ? fmtDate(drop.scheduled_date) : 'Not yet scheduled'}</div>
+                <div className="dd-hero-name">{drop.scheduled_date ? fmtDate(drop.scheduled_date) : 'Not Yet Scheduled'}</div>
                 <div className="dd-hero-window">
                   {drop.is_priority
                     ? <span className="dd-window-badge priority">⚡ Priority</span>
