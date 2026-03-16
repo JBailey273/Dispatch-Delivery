@@ -229,7 +229,7 @@ export default function DropRescheduleSlideOver({
 
   useEffect(() => {
     if (dropDetail && !rescDate) {
-      setRescDate(dropDetail.scheduled_date);
+      setRescDate(dropDetail.scheduled_date ?? '');
       setRescWindow((dropDetail.scheduled_window as 'A' | 'B') || 'A');
     }
   }, [dropDetail?.scheduled_date]);
