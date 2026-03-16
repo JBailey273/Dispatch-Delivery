@@ -48,6 +48,8 @@ function NewDropPage() {
   const [newCustomerName, setNewCustomerName] = useState('');
   const [newCustomerEmail, setNewCustomerEmail] = useState('');
   const [newCustomerType, setNewCustomerType] = useState<'residential' | 'commercial'>('residential');
+  const [newCustomerSmsOptIn, setNewCustomerSmsOptIn] = useState(false);
+  const [newCustomerEmailOptIn, setNewCustomerEmailOptIn] = useState(false);
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
   const [customer, setCustomer] = useState<CustomerResult | null>(null);
   const [searchResults, setSearchResults] = useState<CustomerResult[]>([]);
@@ -212,6 +214,8 @@ function NewDropPage() {
     setNewCustomerType('residential');
     setNewCustomerEmail('');
     setIsPriority(false);
+    setNewCustomerSmsOptIn(false);
+    setNewCustomerEmailOptIn(false);
   };
 
   const createCustomer = async () => {
@@ -220,11 +224,11 @@ function NewDropPage() {
     try {
       const c = await api('/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newCustomerName.trim() || 'Walk-in Customer', phone: newCustomerPhone.trim(), customer_type: newCustomerType }) });
       const created = c.customer || c;
-      if (newCustomerEmail.trim()) {
+      if (newCustomerEmail.trim() || newCustomerSmsOptIn) {
         try {
-          await api(`/customers/${created.id}/email`, {
+          await api(`/customers/${created.id}/opt-ins`, {
             method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: newCustomerEmail.trim() }),
+            body: JSON.stringify({ sms_opt_in: newCustomerSmsOptIn, email_opt_in: newCustomerEmailOptIn && !!newCustomerEmail.trim() }),
           });
         } catch { /* non-fatal */ }
       }
