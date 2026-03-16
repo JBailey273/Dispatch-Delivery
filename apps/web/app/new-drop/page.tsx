@@ -46,6 +46,7 @@ function NewDropPage() {
   const [customerName, setCustomerName] = useState('');
   const [newCustomerPhone, setNewCustomerPhone] = useState('');
   const [newCustomerName, setNewCustomerName] = useState('');
+  const [newCustomerEmail, setNewCustomerEmail] = useState('');
   const [newCustomerType, setNewCustomerType] = useState<'residential' | 'commercial'>('residential');
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
   const [customer, setCustomer] = useState<CustomerResult | null>(null);
@@ -209,6 +210,7 @@ function NewDropPage() {
     setNewCustomerPhone('');
     setNewCustomerName('');
     setNewCustomerType('residential');
+    setNewCustomerEmail('');
     setIsPriority(false);
   };
 
@@ -218,6 +220,14 @@ function NewDropPage() {
     try {
       const c = await api('/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newCustomerName.trim() || 'Walk-in Customer', phone: newCustomerPhone.trim(), customer_type: newCustomerType }) });
       const created = c.customer || c;
+      if (newCustomerEmail.trim()) {
+        try {
+          await api(`/customers/${created.id}/email`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: newCustomerEmail.trim() }),
+          });
+        } catch { /* non-fatal */ }
+      }
       setShowNewCustomerForm(false);
       setSearchQuery('');
       selectCustomer(created);
@@ -480,6 +490,10 @@ function NewDropPage() {
                     <label className="form-label">Customer Name</label>
                     <input placeholder="Customer name (optional)" value={newCustomerName} onChange={e => setNewCustomerName(e.target.value)} />
                   </div>
+                </div>
+                <div className="form-group" style={{ marginTop: 8 }}>
+                  <label className="form-label">Email <span style={{ color: 'var(--gray-400)', fontWeight: 400 }}>(optional)</span></label>
+                  <input type="email" placeholder="customer@example.com" value={newCustomerEmail} onChange={e => setNewCustomerEmail(e.target.value)} />
                 </div>
                 <div className="form-group" style={{ marginTop: 8 }}>
                   <label className="form-label">Customer Type</label>
