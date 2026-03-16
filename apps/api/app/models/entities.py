@@ -217,6 +217,9 @@ class Customer(Base, TenantScopedMixin, TimestampMixin):
     )
 
     addresses = relationship("CustomerAddress", back_populates="customer")
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sms_opt_in: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    email_opt_in: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class CustomerAddress(Base, TenantScopedMixin, TimestampMixin):
