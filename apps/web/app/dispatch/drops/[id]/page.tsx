@@ -22,7 +22,7 @@ type LoadItem = {
 };
 type DropDetail = {
   id: string; ref: string; source: string;
-  scheduled_date: string; scheduled_window: string; is_priority: boolean;
+  scheduled_date: string | null; scheduled_window: string | null; is_priority: boolean;
   customer_name: string; customer_phone: string; delivery_address: Address | null;
   notes: string | null; required_loads: number; loads: LoadItem[];
   notify_sent_at: string | null; last_reschedule_sms_at: string | null;
@@ -251,13 +251,13 @@ function DispatchDropDetailPage() {
               </div>
               <div className="card dd-hero-card">
                 <div className="dd-hero-label">📅 Scheduled Delivery</div>
-                <div className="dd-hero-name">{fmtDate(drop.scheduled_date)}</div>
+                <div className="dd-hero-name">{drop.scheduled_date ? fmtDate(drop.scheduled_date) : 'Not yet scheduled'}</div>
                 <div className="dd-hero-window">
                   {drop.is_priority
                     ? <span className="dd-window-badge priority">⚡ Priority</span>
-                    : <span className={`dd-window-badge ${drop.scheduled_window === 'A' ? 'am' : 'pm'}`}>
-                        {drop.scheduled_window === 'A' ? '🌅 Morning (9am – 1pm)' : '🌤 Afternoon (1pm – 5pm)'}
-                      </span>}
+                    : drop.scheduled_window ? <span className={`dd-window-badge ${drop.scheduled_window === 'A' ? 'am' : 'pm'}`}>
+                        {drop.scheduled_window === 'A' ? 'Morning Window (9am – 1pm)' : 'Afternoon Window (1pm – 5pm)'}
+                      </span> : null}
                 </div>
                 <div className="dd-hero-loads">{drop.required_loads} load{drop.required_loads !== 1 ? 's' : ''}</div>
               </div>
