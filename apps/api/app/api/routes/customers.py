@@ -102,6 +102,9 @@ def _customer_dict(c: Customer, last_ordered=None):
         "phone_e164": c.phone_e164,
         "customer_type": c.customer_type.value if c.customer_type else "residential",
         "last_ordered": str(last_ordered) if last_ordered else None,
+        "email": c.email,
+        "sms_opt_in": c.sms_opt_in,
+        "email_opt_in": c.email_opt_in,
     }
 
 
@@ -381,6 +384,31 @@ def update_customer_type(
         })
     db.commit()
     return {"customer_id": customer_id, "customer_type": new_type}
+
+class EmailIn(BaseModel):
+    email: str | None = None
+
+@router.patch("/{customer_id}/email")
+def update_customer_email(customer_id: str, payload: EmailIn, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)), db: Session = Depends(db_dep)):
+    customer = _get_customer_or_404(db, customer_id, user.tenant_id)
+    customer.email = payload.email.strip().lower() if payload.email else None
+    db.commit()
+    return {"email": customer.email}
+
+
+class OptInsIn(BaseModel):
+    sms_opt_in: bool | None = None
+    email_opt_in: bool | None = None
+
+@router.patch("/{customer_id}/opt-ins")
+def update_customer_opt_ins(customer_id: str, payload: OptInsIn, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)), db: Session = Depends(db_dep)):
+    customer = _get_customer_or_404(db, customer_id, user.tenant_id)
+    if payload.sms_opt_in is not None:
+        customer.sms_opt_in = payload.sms_opt_in
+    if payload.email_opt_in is not None:
+        customer.email_opt_in = payload.email_opt_in
+    db.commit()
+    return {"sms_opt_in": customer.sms_opt_in, "email_opt_in": customer.email_opt_in}
 
 
 @router.get("/{customer_id}/addresses")
