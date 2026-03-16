@@ -798,7 +798,7 @@ export default function DropRescheduleSlideOver({
                     onClick={doReschedule}
                     disabled={rescheduling || !rescDate || isSameAsOriginal}
                   >
-                    {rescheduling ? 'Saving…' : isSameAsOriginal ? 'No Change Made' : `Move to ${fmtDateShort(rescDate)}`}
+                    {rescheduling ? 'Saving…' : isSameAsOriginal ? 'No Change Made' : rescDate ? `Move to ${fmtDateShort(rescDate)}` : 'Select A Date Above'}
                   </button>
                   <button className="btn btn-ghost" onClick={startOnReschedule ? onClose : () => setView('main')}>
                     Cancel
