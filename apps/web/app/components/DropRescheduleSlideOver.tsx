@@ -53,7 +53,7 @@ export type SlideOverDropDetail = {
   ref: string;
   source?: string;
   is_priority: boolean;
-  scheduled_date: string | null;
+  scheduled_date: string | null; scheduled_window: string | null;
   scheduled_window: string | null;
   customer_name: string;
   customer_phone: string;
@@ -479,7 +479,7 @@ export default function DropRescheduleSlideOver({
                   )}
                 </>
               ) : (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, cursor: 'pointer' }}>
                   <div>
                     <div className="so-info-date" style={{ color: 'var(--amber-600)', fontSize: 15 }}>Not yet scheduled</div>
                     <div className="so-info-window">Send the customer a scheduling link below</div>
