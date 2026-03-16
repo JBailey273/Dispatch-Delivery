@@ -777,91 +777,81 @@ const createCustomer = async () => {
           </div>
         )}
 
-        {/* ── Create customer modal ── */}
-        {showCreate && (
-          <div className="modal-overlay" onClick={() => setShowCreate(false)}>
-            <div className="modal-card cs-new-customer-modal" onClick={e => e.stopPropagation()}>
-              <div className="modal-header">
-                <h2>New Customer</h2>
-                <button className="btn btn-ghost btn-sm" onClick={() => setShowCreate(false)} style={{ fontSize: 18, padding: '4px 8px' }}>✕</button>
-              </div>
-              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      </div>
 
-                {/* Contact */}
-                <div className="cs-modal-section-label">Contact Info</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Phone <span style={{ color: 'var(--red-500)' }}>*</span></label>
-                    <input type="tel" value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="(555) 000-0000" autoFocus />
-                  </div>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Name</label>
-                    <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Customer name" />
-                  </div>
+      {showCreate && (
+        <div className="modal-overlay" onClick={() => setShowCreate(false)}>
+          <div className="modal-card cs-new-customer-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>New Customer</h2>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowCreate(false)} style={{ fontSize: 18, padding: '4px 8px' }}>✕</button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div className="cs-modal-section-label">Contact Info</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label">Phone <span style={{ color: 'var(--red-500)' }}>*</span></label>
+                  <input type="tel" value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="(555) 000-0000" autoFocus />
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label">Email <span style={{ color: 'var(--gray-400)', fontWeight: 400 }}>(optional)</span></label>
-                  <input type="email" placeholder="customer@example.com" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
+                  <label className="form-label">Name</label>
+                  <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Customer name" />
                 </div>
-
-                {/* Account type */}
-                <div>
-                  <div className="cs-modal-section-label">Account Type</div>
-                  <div className="cs-type-selector">
-                    <button className={`cs-type-opt${newType === 'residential' ? ' active' : ''}`} onClick={() => setNewType('residential')} type="button">
-                      <span className="cs-type-opt-icon">🏠</span>
-                      <span className="cs-type-opt-label">Residential</span>
-                      <span className="cs-type-opt-desc">Standard homeowner delivery</span>
-                    </button>
-                    <button className={`cs-type-opt${newType === 'commercial' ? ' active' : ''}`} onClick={() => setNewType('commercial')} type="button">
-                      <span className="cs-type-opt-icon">🏢</span>
-                      <span className="cs-type-opt-label">Commercial</span>
-                      <span className="cs-type-opt-desc">Contractor / landscaper</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Notification prefs */}
-                <div>
-                  <div className="cs-modal-section-label">Notification Preferences</div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button type="button" className={`cs-notif-opt${newSmsOptIn ? ' active' : ''}`} onClick={() => setNewSmsOptIn(v => !v)}>
-                      {newSmsOptIn ? '✓' : '○'} SMS
-                    </button>
-                    <button type="button" className={`cs-notif-opt${newEmailOptIn ? ' active' : ''}`}
-                      onClick={() => { if (newEmail.trim()) setNewEmailOptIn(v => !v); }}
-                      disabled={!newEmail.trim()} title={!newEmail.trim() ? 'Enter an email address first' : ''}>
-                      {newEmailOptIn ? '✓' : '○'} Email
-                    </button>
-                  </div>
-                </div>
-
-                {/* Delivery address */}
-                <div>
-                  <div className="cs-modal-section-label">Primary Delivery Address <span style={{ color: 'var(--gray-400)', fontWeight: 400, textTransform: 'none', fontSize: 11 }}>(optional)</span></div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <input placeholder="Street address" value={newAddr.line1} onChange={e => setNewAddr(a => ({ ...a, line1: e.target.value }))} />
-                    <input placeholder="Apt, suite, etc. (optional)" value={newAddr.line2} onChange={e => setNewAddr(a => ({ ...a, line2: e.target.value }))} />
-                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 8 }}>
-                      <input placeholder="City" value={newAddr.city} onChange={e => setNewAddr(a => ({ ...a, city: e.target.value }))} />
-                      <input placeholder="State" value={newAddr.state} onChange={e => setNewAddr(a => ({ ...a, state: e.target.value }))} maxLength={2} />
-                      <input placeholder="ZIP" value={newAddr.postal_code} onChange={e => setNewAddr(a => ({ ...a, postal_code: e.target.value }))} />
-                    </div>
-                  </div>
-                </div>
-
               </div>
-              <div className="modal-footer">
-                <button className="btn btn-ghost" onClick={() => setShowCreate(false)}>Cancel</button>
-                <button className="btn btn-primary" onClick={createCustomer} disabled={creating || !newPhone.trim()}>
-                  {creating ? 'Creating…' : 'Create Customer'}
-                </button>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Email <span style={{ color: 'var(--gray-400)', fontWeight: 400 }}>(optional)</span></label>
+                <input type="email" placeholder="customer@example.com" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
+              </div>
+              <div>
+                <div className="cs-modal-section-label">Account Type</div>
+                <div className="cs-type-selector">
+                  <button className={`cs-type-opt${newType === 'residential' ? ' active' : ''}`} onClick={() => setNewType('residential')} type="button">
+                    <span className="cs-type-opt-icon">🏠</span>
+                    <span className="cs-type-opt-label">Residential</span>
+                    <span className="cs-type-opt-desc">Standard homeowner delivery</span>
+                  </button>
+                  <button className={`cs-type-opt${newType === 'commercial' ? ' active' : ''}`} onClick={() => setNewType('commercial')} type="button">
+                    <span className="cs-type-opt-icon">🏢</span>
+                    <span className="cs-type-opt-label">Commercial</span>
+                    <span className="cs-type-opt-desc">Contractor / landscaper</span>
+                  </button>
+                </div>
+              </div>
+              <div>
+                <div className="cs-modal-section-label">Notification Preferences</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" className={`cs-notif-opt${newSmsOptIn ? ' active' : ''}`} onClick={() => setNewSmsOptIn(v => !v)}>
+                    {newSmsOptIn ? '✓' : '○'} SMS
+                  </button>
+                  <button type="button" className={`cs-notif-opt${newEmailOptIn ? ' active' : ''}`}
+                    onClick={() => { if (newEmail.trim()) setNewEmailOptIn(v => !v); }}
+                    disabled={!newEmail.trim()} title={!newEmail.trim() ? 'Enter an email address first' : ''}>
+                    {newEmailOptIn ? '✓' : '○'} Email
+                  </button>
+                </div>
+              </div>
+              <div>
+                <div className="cs-modal-section-label">Primary Delivery Address <span style={{ color: 'var(--gray-400)', fontWeight: 400, textTransform: 'none', fontSize: 11 }}>(optional)</span></div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <input placeholder="Street address" value={newAddr.line1} onChange={e => setNewAddr(a => ({ ...a, line1: e.target.value }))} />
+                  <input placeholder="Apt, suite, etc. (optional)" value={newAddr.line2} onChange={e => setNewAddr(a => ({ ...a, line2: e.target.value }))} />
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 8 }}>
+                    <input placeholder="City" value={newAddr.city} onChange={e => setNewAddr(a => ({ ...a, city: e.target.value }))} />
+                    <input placeholder="State" value={newAddr.state} onChange={e => setNewAddr(a => ({ ...a, state: e.target.value }))} maxLength={2} />
+                    <input placeholder="ZIP" value={newAddr.postal_code} onChange={e => setNewAddr(a => ({ ...a, postal_code: e.target.value }))} />
+                  </div>
+                </div>
               </div>
             </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setShowCreate(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={createCustomer} disabled={creating || !newPhone.trim()}>
+                {creating ? 'Creating…' : 'Create Customer'}
+              </button>
+            </div>
           </div>
-        )}
-
-      </div>
+        </div>
+      )}
     </>
   );
 }
