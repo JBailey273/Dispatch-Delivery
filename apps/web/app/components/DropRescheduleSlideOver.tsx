@@ -53,7 +53,7 @@ export type SlideOverDropDetail = {
   ref: string;
   source?: string;
   is_priority: boolean;
-  scheduled_date: string;
+  scheduled_date: string | null;
   scheduled_window: string | null;
   customer_name: string;
   customer_phone: string;
@@ -713,7 +713,9 @@ export default function DropRescheduleSlideOver({
                 <div className="so-resc-current">
                   <span className="so-resc-current-label">Currently:</span>
                   <span className="so-resc-current-val">
-                    {fmtDateShort(dropDetail.scheduled_date)} · {dropDetail.scheduled_window === 'A' ? 'AM' : dropDetail.scheduled_window === 'B' ? 'PM' : 'Priority'}
+                    {dropDetail.scheduled_date
+                      ? `${fmtDateShort(dropDetail.scheduled_date)} · ${dropDetail.scheduled_window === 'A' ? 'AM' : dropDetail.scheduled_window === 'B' ? 'PM' : 'Priority'}`
+                      : 'Not yet scheduled'}
                   </span>
                 </div>
 
