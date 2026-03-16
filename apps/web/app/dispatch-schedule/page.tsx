@@ -692,7 +692,7 @@ const schedulerStyles = `
   .uq-head { display: flex; align-items: center; gap: 8px; padding: 10px 16px 8px; font-family: var(--font-heading); font-size: 13px; font-weight: 800; color: #92400e; text-transform: uppercase; letter-spacing: 0.05em; }
   .uq-icon { font-size: 15px; }
   .uq-count { margin-left: auto; background: #d97706; color: #fff; border-radius: 10px; font-size: 11px; font-weight: 800; padding: 1px 7px; }
-  .uq-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-top: 1px solid #fde68a; transition: background 0.12s; gap: 10px; }
+  .uq-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-top: 1px solid #fde68a; transition: background 0.12s; gap: 10px; cursor: pointer; }
   .uq-row:hover { background: #fef3c7; }
   .uq-row-info { flex: 1; min-width: 0; }
   .uq-row-name { font-family: var(--font-heading); font-size: 14px; font-weight: 700; color: var(--gray-900); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
