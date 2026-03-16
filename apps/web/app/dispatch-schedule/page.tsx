@@ -552,7 +552,7 @@ export default function DispatchSchedulePage() {
               {/* AM Window */}
               <div className="window-section">
                 <div className="window-head">
-                  <div className="window-title">🌅 Morning (9am – 1pm)</div>
+                  <div className="window-title">Morning Window (9am – 1pm)</div>
                   <span className={`pill pill-sm pill-${capColor(amCap.used ?? 0, amCap.total ?? 0) === 'red' ? 'red' : capColor(amCap.used ?? 0, amCap.total ?? 0) === 'amber' ? 'amber' : 'green'}`}>
                     <span className="pill-dot" />{amCap.used ?? 0}/{amCap.total ?? 0}
                   </span>
@@ -568,7 +568,7 @@ export default function DispatchSchedulePage() {
               {/* PM Window */}
               <div className="window-section">
                 <div className="window-head">
-                  <div className="window-title">🌤 Afternoon (1pm – 5pm)</div>
+                  <div className="window-title">Afternoon Window (1pm – 5pm)</div>
                   <span className={`pill pill-sm pill-${capColor(pmCap.used ?? 0, pmCap.total ?? 0) === 'red' ? 'red' : capColor(pmCap.used ?? 0, pmCap.total ?? 0) === 'amber' ? 'amber' : 'green'}`}>
                     <span className="pill-dot" />{pmCap.used ?? 0}/{pmCap.total ?? 0}
                   </span>
