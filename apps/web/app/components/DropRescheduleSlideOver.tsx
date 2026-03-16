@@ -80,6 +80,9 @@ export type SlideOverDropDetail = {
   }[];
   notify_sent_at?: string | null;
   last_reschedule_sms_at?: string | null;
+  customer_email?: string | null;
+  customer_sms_opt_in?: boolean;
+  customer_email_opt_in?: boolean;
 };
 
 type Driver = { id: string; name: string; email: string; truck?: string | null };
