@@ -4,10 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, api, requireRole } from '../lib/auth';
 
-type CustomerResult = {
-  id: string; name: string; phone_e164: string;
-  customer_type?: string; exact_phone_match?: boolean; last_ordered?: string | null;
-};
+type CustomerResult = { id: string; name: string; phone_e164: string; customer_type: string; last_ordered: string | null; email: string | null; sms_opt_in: boolean; email_opt_in: boolean; };
 type Address = {
   id: string; line1: string; line2?: string | null;
   city: string; state: string; postal_code: string; is_default?: boolean;
@@ -54,6 +51,10 @@ export default function CustomerSearchPage() {
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [savingField, setSavingField] = useState('');
+  const [editingEmail, setEditingEmail] = useState<string | null>(null);
+  const [editEmail, setEditEmail] = useState('');
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [togglingOptIn, setTogglingOptIn] = useState<string | null>(null);
 
   /* ── Address edit/add ── */
   const [editingAddrId, setEditingAddrId] = useState<string | null>(null);  // address id being edited
@@ -139,7 +140,7 @@ export default function CustomerSearchPage() {
   };
 
   const resetEditState = () => {
-    setEditingName(null); setEditingPhone(null);
+    setEditingName(null); setEditingPhone(null); setEditingEmail(null);
     setEditingAddrId(null); setShowAddAddr(false);
     setAddAddrForm(emptyAddrForm()); setEditAddrForm(emptyAddrForm());
     setConfirmDeleteAddr(null); setConfirmDeleteCustomer(null);
@@ -212,6 +213,41 @@ export default function CustomerSearchPage() {
     } catch (err) {
       setError((err as ApiError).message || 'Failed to update type');
     } finally { setTypeToggling(null); }
+  };
+
+  const saveEmail = async (customerId: string) => {
+    setSavingEmail(true);
+    try {
+      await api(`/customers/${customerId}/email`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: editEmail.trim() || null }),
+      });
+      const update = (list: CustomerResult[]) =>
+        list.map(c => c.id === customerId ? { ...c, email: editEmail.trim() || null } : c);
+      setAllCustomers(update);
+      if (searchResults) setSearchResults(update(searchResults));
+      setEditingEmail(null);
+      setSuccess('Email updated');
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err) {
+      setError((err as ApiError).message || 'Failed to update email');
+    } finally { setSavingEmail(false); }
+  };
+
+  const toggleOptIn = async (customerId: string, field: 'sms_opt_in' | 'email_opt_in', current: boolean) => {
+    setTogglingOptIn(`${customerId}_${field}`);
+    try {
+      await api(`/customers/${customerId}/opt-ins`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: !current }),
+      });
+      const update = (list: CustomerResult[]) =>
+        list.map(c => c.id === customerId ? { ...c, [field]: !current } : c);
+      setAllCustomers(update);
+      if (searchResults) setSearchResults(update(searchResults));
+    } catch (err) {
+      setError((err as ApiError).message || 'Failed to update preference');
+    } finally { setTogglingOptIn(null); }
   };
 
   /* ── Address editing ── */
@@ -507,7 +543,54 @@ export default function CustomerSearchPage() {
                                       {r.last_ordered ? fmtDate(r.last_ordered) : <span style={{ color: 'var(--gray-400)' }}>No orders yet</span>}
                                     </div>
                                   </div>
+                                  {/* Email */}
+                                  <div className="cs-info-field">
+                                    <div className="cs-field-label">Email</div>
+                                    {editingEmail === r.id ? (
+                                      <div className="cs-inline-edit">
+                                        <input
+                                          className="cs-inline-input"
+                                          value={editEmail}
+                                          onChange={e => setEditEmail(e.target.value)}
+                                          onKeyDown={e => { if (e.key === 'Enter') saveEmail(r.id); if (e.key === 'Escape') setEditingEmail(null); }}
+                                          autoFocus
+                                          placeholder="customer@example.com"
+                                          type="email"
+                                        />
+                                        <button className="btn btn-primary btn-xs" disabled={savingEmail} onClick={() => saveEmail(r.id)}>
+                                          {savingEmail ? '…' : 'Save'}
+                                        </button>
+                                        <button className="btn btn-ghost btn-xs" onClick={() => setEditingEmail(null)}>Cancel</button>
+                                      </div>
+                                    ) : (
+                                      <div className="cs-field-value">
+                                        {r.email || <span style={{ color: 'var(--gray-300)' }}>—</span>}
+                                        <button className="cs-edit-btn" onClick={e => { e.stopPropagation(); setEditingEmail(r.id); setEditEmail(r.email || ''); }}>Edit</button>
+                                      </div>
+                                    )}
+                                  </div>
 
+                                  {/* Notification opt-ins */}
+                                  <div className="cs-info-field" style={{ gridColumn: '1 / -1' }}>
+                                    <div className="cs-field-label">Notification Preferences</div>
+                                    <div style={{ display: 'flex', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
+                                      <button
+                                        className={`btn btn-sm ${r.sms_opt_in ? 'btn-primary' : 'btn-secondary'}`}
+                                        disabled={togglingOptIn === `${r.id}_sms_opt_in`}
+                                        onClick={e => { e.stopPropagation(); toggleOptIn(r.id, 'sms_opt_in', r.sms_opt_in); }}
+                                      >
+                                        {r.sms_opt_in ? '✓ SMS' : '○ SMS'}
+                                      </button>
+                                      <button
+                                        className={`btn btn-sm ${r.email_opt_in ? 'btn-primary' : 'btn-secondary'}`}
+                                        disabled={togglingOptIn === `${r.id}_email_opt_in` || !r.email}
+                                        onClick={e => { e.stopPropagation(); toggleOptIn(r.id, 'email_opt_in', r.email_opt_in); }}
+                                        title={!r.email ? 'Add an email address first' : ''}
+                                      >
+                                        {r.email_opt_in ? '✓ Email' : '○ Email'}
+                                      </button>
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
 
