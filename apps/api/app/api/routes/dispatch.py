@@ -176,7 +176,7 @@ def needs_attention(
             "drop_id": str(drop.id),
             "ref": _build_order_ref(drop),
             "customer_name": customer.name,
-            "scheduled_date": str(drop.scheduled_date),
+            "scheduled_date": str(drop.scheduled_date) if drop.scheduled_date else None,
             "scheduled_window": drop.scheduled_window.value if drop.scheduled_window else None,
             "is_priority": drop.is_priority,
         })
