@@ -79,6 +79,7 @@ export default function CustomerSearchPage() {
   const [newEmail, setNewEmail] = useState('');
   const [newSmsOptIn, setNewSmsOptIn] = useState(false);
   const [newEmailOptIn, setNewEmailOptIn] = useState(false);
+  const [newAddr, setNewAddr] = useState({ line1: '', line2: '', city: '', state: '', postal_code: '' });
   const [creating, setCreating] = useState(false);
 
   /* ── Debounce timer ── */
@@ -362,7 +363,15 @@ const createCustomer = async () => {
           });
         } catch { /* non-fatal */ }
       }
-      setShowCreate(false); setNewName(''); setNewPhone(''); setNewType('residential'); setNewEmail(''); setNewSmsOptIn(false); setNewEmailOptIn(false);
+      if (newAddr.line1.trim() && newAddr.city.trim() && newAddr.state.trim() && newAddr.postal_code.trim()) {
+        try {
+          await api(`/customers/${created.id}/addresses`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...newAddr, is_default: true }),
+          });
+        } catch { /* non-fatal */ }
+      }
+      setShowCreate(false); setNewName(''); setNewPhone(''); setNewType('residential'); setNewEmail(''); setNewSmsOptIn(false); setNewEmailOptIn(false); setNewAddr({ line1: '', line2: '', city: '', state: '', postal_code: '' });
       await refreshCustomers();
       setQ(''); setSearchResults(null);
     } catch (err) {
@@ -771,76 +780,76 @@ const createCustomer = async () => {
         {/* ── Create customer modal ── */}
         {showCreate && (
           <div className="modal-overlay" onClick={() => setShowCreate(false)}>
-            <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-card cs-new-customer-modal" onClick={e => e.stopPropagation()}>
               <div className="modal-header">
                 <h2>New Customer</h2>
                 <button className="btn btn-ghost btn-sm" onClick={() => setShowCreate(false)} style={{ fontSize: 18, padding: '4px 8px' }}>✕</button>
               </div>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label className="form-label">Phone Number <span style={{ color: 'var(--red-500)' }}>*</span></label>
-                  <input
-                    type="tel"
-                    value={newPhone}
-                    onChange={e => setNewPhone(e.target.value)}
-                    placeholder="(555) 000-0000"
-                    autoFocus
-                  />
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+                {/* Contact */}
+                <div className="cs-modal-section-label">Contact Info</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">Phone <span style={{ color: 'var(--red-500)' }}>*</span></label>
+                    <input type="tel" value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="(555) 000-0000" autoFocus />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">Name</label>
+                    <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Customer name" />
+                  </div>
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Name</label>
-                  <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Customer name" />
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label">Email <span style={{ color: 'var(--gray-400)', fontWeight: 400 }}>(optional)</span></label>
+                  <input type="email" placeholder="customer@example.com" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Account Type</label>
+
+                {/* Account type */}
+                <div>
+                  <div className="cs-modal-section-label">Account Type</div>
                   <div className="cs-type-selector">
-                    <button
-                      className={`cs-type-opt${newType === 'residential' ? ' active' : ''}`}
-                      onClick={() => setNewType('residential')}
-                      type="button"
-                    >
+                    <button className={`cs-type-opt${newType === 'residential' ? ' active' : ''}`} onClick={() => setNewType('residential')} type="button">
                       <span className="cs-type-opt-icon">🏠</span>
                       <span className="cs-type-opt-label">Residential</span>
                       <span className="cs-type-opt-desc">Standard homeowner delivery</span>
                     </button>
-                    <button
-                      className={`cs-type-opt${newType === 'commercial' ? ' active' : ''}`}
-                      onClick={() => setNewType('commercial')}
-                      type="button"
-                    >
+                    <button className={`cs-type-opt${newType === 'commercial' ? ' active' : ''}`} onClick={() => setNewType('commercial')} type="button">
                       <span className="cs-type-opt-icon">🏢</span>
                       <span className="cs-type-opt-label">Commercial</span>
                       <span className="cs-type-opt-desc">Contractor / landscaper</span>
                     </button>
                   </div>
                 </div>
-              <div className="form-group">
-                  <label className="form-label">Email <span style={{ color: 'var(--gray-400)', fontWeight: 400 }}>(optional)</span></label>
-                  <input type="email" placeholder="customer@example.com" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Notification Preferences</label>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                    <button
-                      type="button"
-                      className={`cs-type-opt${newSmsOptIn ? ' active' : ''}`}
-                      style={{ flex: 'none', padding: '8px 16px' }}
-                      onClick={() => setNewSmsOptIn(v => !v)}
-                    >
+
+                {/* Notification prefs */}
+                <div>
+                  <div className="cs-modal-section-label">Notification Preferences</div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" className={`cs-notif-opt${newSmsOptIn ? ' active' : ''}`} onClick={() => setNewSmsOptIn(v => !v)}>
                       {newSmsOptIn ? '✓' : '○'} SMS
                     </button>
-                    <button
-                      type="button"
-                      className={`cs-type-opt${newEmailOptIn ? ' active' : ''}`}
-                      style={{ flex: 'none', padding: '8px 16px' }}
+                    <button type="button" className={`cs-notif-opt${newEmailOptIn ? ' active' : ''}`}
                       onClick={() => { if (newEmail.trim()) setNewEmailOptIn(v => !v); }}
-                      disabled={!newEmail.trim()}
-                      title={!newEmail.trim() ? 'Enter an email address first' : ''}
-                    >
+                      disabled={!newEmail.trim()} title={!newEmail.trim() ? 'Enter an email address first' : ''}>
                       {newEmailOptIn ? '✓' : '○'} Email
                     </button>
                   </div>
                 </div>
+
+                {/* Delivery address */}
+                <div>
+                  <div className="cs-modal-section-label">Primary Delivery Address <span style={{ color: 'var(--gray-400)', fontWeight: 400, textTransform: 'none', fontSize: 11 }}>(optional)</span></div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <input placeholder="Street address" value={newAddr.line1} onChange={e => setNewAddr(a => ({ ...a, line1: e.target.value }))} />
+                    <input placeholder="Apt, suite, etc. (optional)" value={newAddr.line2} onChange={e => setNewAddr(a => ({ ...a, line2: e.target.value }))} />
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 8 }}>
+                      <input placeholder="City" value={newAddr.city} onChange={e => setNewAddr(a => ({ ...a, city: e.target.value }))} />
+                      <input placeholder="State" value={newAddr.state} onChange={e => setNewAddr(a => ({ ...a, state: e.target.value }))} maxLength={2} />
+                      <input placeholder="ZIP" value={newAddr.postal_code} onChange={e => setNewAddr(a => ({ ...a, postal_code: e.target.value }))} />
+                    </div>
+                  </div>
+                </div>
+
               </div>
               <div className="modal-footer">
                 <button className="btn btn-ghost" onClick={() => setShowCreate(false)}>Cancel</button>
@@ -962,5 +971,12 @@ const styles = `
     .cs-type-selector { flex-direction: column; }
     .cs-addr-read { flex-direction: column; }
     .cs-addr-actions { justify-content: flex-start; }
+
+  .cs-new-customer-modal { max-width: 560px; width: 100%; }
+  .cs-modal-section-label { font-family: var(--font-heading); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--gray-400); margin-bottom: 8px; }
+  .cs-notif-opt { padding: 7px 16px; border: 1.5px solid var(--border); border-radius: var(--radius-md); background: var(--surface); font-family: inherit; font-size: 13px; font-weight: 600; color: var(--gray-600); cursor: pointer; transition: all 0.15s; }
+  .cs-notif-opt:hover:not(:disabled) { border-color: var(--green-300); color: var(--green-700); }
+  .cs-notif-opt.active { border-color: var(--green-400); background: var(--green-50); color: var(--green-700); }
+  .cs-notif-opt:disabled { opacity: 0.4; cursor: not-allowed; }
   }
 `;
