@@ -602,11 +602,20 @@ export default function DropRescheduleSlideOver({
                   <div className="so-notif-sub">
                     {dropDetail.notify_sent_at
                       ? `Sent ${new Date(dropDetail.notify_sent_at).toLocaleDateString()}`
-                      : 'Not yet sent'}
+                      : dropDetail.customer_sms_opt_in
+                        ? 'Will send via SMS'
+                        : dropDetail.customer_email && dropDetail.customer_email_opt_in
+                          ? 'Will send via email'
+                          : 'No notification channel — add email or SMS opt-in'}
                   </div>
                 </div>
-                <button className="btn btn-secondary btn-sm" onClick={sendNotification} disabled={notifLoading}>
-                  {notifLoading ? 'Sending…' : '📱 Send'}
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={sendNotification}
+                  disabled={notifLoading || (!dropDetail.customer_sms_opt_in && !(dropDetail.customer_email && dropDetail.customer_email_opt_in))}
+                  title={!dropDetail.customer_sms_opt_in && !(dropDetail.customer_email && dropDetail.customer_email_opt_in) ? 'Customer has no notification channel set up' : ''}
+                >
+                  {notifLoading ? 'Sending…' : dropDetail.customer_sms_opt_in ? '📱 Send' : '✉️ Send'}
                 </button>
               </div>
               {notifMsg && notifMsg !== 'sent' && <div className="so-notif-err">{notifMsg}</div>}
