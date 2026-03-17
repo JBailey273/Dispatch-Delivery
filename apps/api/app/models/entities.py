@@ -210,6 +210,7 @@ class Customer(Base, TenantScopedMixin, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     first_name: Mapped[str] = mapped_column(String(120), nullable=False)
     last_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    company_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)  # legacy — will be removed after full migration
     phone_e164: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
     customer_type: Mapped[CustomerType] = mapped_column(
