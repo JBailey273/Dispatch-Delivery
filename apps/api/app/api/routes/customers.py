@@ -14,7 +14,9 @@ class CustomerIn(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     name: str | None = None  # legacy full name fallback
+    company_name: str | None = None
     phone: str
+    email: str | None = None
     customer_type: str = "residential"
 
 
@@ -27,6 +29,9 @@ class AddressIn(BaseModel):
     postal_code: str
     country: str = "US"
     is_default: bool = False
+
+class CompanyNameIn(BaseModel):
+    company_name: str | None = None
 
 
 # ── Address normalization ─────────────────────────────────────────────────────
@@ -102,6 +107,7 @@ def _customer_dict(c: Customer, last_ordered=None):
         "id": str(c.id),
         "first_name": c.first_name,
         "last_name": c.last_name,
+        "company_name": c.company_name,
         "name": f"{c.first_name} {c.last_name}".strip(),
         "phone_e164": c.phone_e164,
         "customer_type": c.customer_type.value if c.customer_type else "residential",
@@ -245,7 +251,16 @@ def create_customer(
     # Support both split and full name
     first_name = payload.first_name.strip() if hasattr(payload, 'first_name') and payload.first_name else payload.name.strip().split()[0] if payload.name else "Unknown"
     last_name = payload.last_name.strip() if hasattr(payload, 'last_name') and payload.last_name else " ".join(payload.name.strip().split()[1:]) if payload.name and len(payload.name.strip().split()) > 1 else ""
-    customer = Customer(tenant_id=user.tenant_id, name=f"{first_name} {last_name}".strip(), first_name=first_name, last_name=last_name, phone_e164=phone, customer_type=ct)
+    customer = Customer(
+        tenant_id=user.tenant_id,
+        name=f"{first_name} {last_name}".strip(),
+        first_name=first_name,
+        last_name=last_name,
+        company_name=payload.company_name.strip() if payload.company_name else None,
+        email=payload.email.strip().lower() if payload.email else None,
+        phone_e164=phone,
+        customer_type=ct,
+    )
     db.add(customer)
     db.commit()
     db.refresh(customer)
@@ -345,7 +360,18 @@ def update_customer_name(
     db.commit()
     return {"customer_id": customer_id, "first_name": first_name, "last_name": last_name, "name": customer.name}
 
-
+@router.patch("/{customer_id}/company")
+def update_customer_company(
+    customer_id: str,
+    payload: CompanyNameIn,
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)),
+    db: Session = Depends(db_dep),
+):
+    customer = _get_customer_or_404(db, customer_id, user.tenant_id)
+    customer.company_name = payload.company_name.strip() if payload.company_name else None
+    db.commit()
+    return {"company_name": customer.company_name}
+    
 @router.patch("/{customer_id}/phone")
 def update_customer_phone(
     customer_id: str,
