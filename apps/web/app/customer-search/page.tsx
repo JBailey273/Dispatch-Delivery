@@ -245,7 +245,26 @@ export default function CustomerSearchPage() {
       setError((err as ApiError).message || 'Failed to update email');
     } finally { setSavingEmail(false); }
   };
-
+  
+const saveCompany = async (customerId: string) => {
+    setSavingCompany(true);
+    try {
+      await api(`/customers/${customerId}/company`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_name: editCompany.trim() || null }),
+      });
+      const update = (list: CustomerResult[]) =>
+        list.map(c => c.id === customerId ? { ...c, company_name: editCompany.trim() || null } : c);
+      setAllCustomers(update);
+      if (searchResults) setSearchResults(update(searchResults));
+      setEditingCompany(null);
+      setSuccess('Company updated');
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err) {
+      setError((err as ApiError).message || 'Failed to update company');
+    } finally { setSavingCompany(false); }
+  };
+  
   const toggleOptIn = async (customerId: string, field: 'sms_opt_in' | 'email_opt_in', current: boolean) => {
     setTogglingOptIn(`${customerId}_${field}`);
     try {
