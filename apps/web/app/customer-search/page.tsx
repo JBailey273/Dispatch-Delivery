@@ -55,6 +55,9 @@ export default function CustomerSearchPage() {
   const [editEmail, setEditEmail] = useState('');
   const [savingEmail, setSavingEmail] = useState(false);
   const [togglingOptIn, setTogglingOptIn] = useState<string | null>(null);
+  const [editingCompany, setEditingCompany] = useState<string | null>(null);
+  const [editCompany, setEditCompany] = useState('');
+  const [savingCompany, setSavingCompany] = useState(false);
 
   /* ── Address edit/add ── */
   const [editingAddrId, setEditingAddrId] = useState<string | null>(null);  // address id being edited
