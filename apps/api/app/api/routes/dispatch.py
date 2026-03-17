@@ -491,7 +491,7 @@ def send_reschedule_sms(drop_id: str, payload: RescheduleSmsIn, user: AuthUser =
 
     # Send email if opted in
     if customer.email and customer.email_opt_in and drop.scheduled_date:
-        window_label = "9am–1pm" if drop.scheduled_window and drop.scheduled_window.value == "A" else "1pm–5pm" if drop.scheduled_window else "priority"
+        window_label = "Priority Delivery" if drop.is_priority and not drop.scheduled_window else ("Morning (9am–1pm)" if drop.scheduled_window and drop.scheduled_window.value == "A" else "Afternoon (1pm–5pm)")
         date_label = drop.scheduled_date.strftime("%A, %B %d")
         send_reschedule_notification_email(customer.email, customer.name, date_label, window_label)
 
