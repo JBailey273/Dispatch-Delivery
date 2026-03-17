@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, api, requireRole } from '../lib/auth';
 
-type CustomerResult = { id: string; name: string; phone_e164: string; customer_type: string; last_ordered: string | null; email: string | null; sms_opt_in: boolean; email_opt_in: boolean; exact_phone_match?: boolean; };
+type CustomerResult = { id: string; first_name: string; last_name: string; name: string; phone_e164: string; customer_type: string; last_ordered: string | null; email: string | null; sms_opt_in: boolean; email_opt_in: boolean; exact_phone_match?: boolean; };
 type Address = {
   id: string; line1: string; line2?: string | null;
   city: string; state: string; postal_code: string; is_default?: boolean;
@@ -152,7 +152,7 @@ export default function CustomerSearchPage() {
 
   /* ── Inline customer edit ── */
   const startEditName = (c: CustomerResult) => {
-    setEditingName(c.id); setEditName(c.name);
+    setEditingName(c.id); setEditName(`${c.first_name} ${c.last_name}`.trim());
     setEditingPhone(null);
   };
   const startEditPhone = (c: CustomerResult) => {
@@ -164,12 +164,16 @@ export default function CustomerSearchPage() {
     if (!editName.trim()) return;
     setSavingField('name');
     try {
+      const parts = editName.trim().split(' ');
+      const first_name = parts[0] || '';
+      const last_name = parts.slice(1).join(' ');
       await api(`/customers/${customerId}/name`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: editName.trim() }),
+        body: JSON.stringify({ first_name, last_name }),
       });
+      const fullName = `${first_name} ${last_name}`.trim();
       const update = (list: CustomerResult[]) =>
-        list.map(c => c.id === customerId ? { ...c, name: editName.trim() } : c);
+        list.map(c => c.id === customerId ? { ...c, first_name, last_name, name: fullName } : c);
       setAllCustomers(update);
       if (searchResults) setSearchResults(update(searchResults));
       setEditingName(null);
@@ -514,17 +518,18 @@ const createCustomer = async () => {
                                 <div className="cs-section-label">Customer Info</div>
                                 <div className="cs-info-grid">
 
-                                  {/* Name */}
+                                  {/* First Name */}
                                   <div className="cs-info-field">
-                                    <div className="cs-field-label">Name</div>
+                                    <div className="cs-field-label">First Name</div>
                                     {editingName === r.id ? (
                                       <div className="cs-inline-edit">
                                         <input
                                           className="cs-inline-input"
-                                          value={editName}
-                                          onChange={e => setEditName(e.target.value)}
+                                          value={editName.split(' ')[0] || ''}
+                                          onChange={e => setEditName(`${e.target.value} ${editName.split(' ').slice(1).join(' ')}`.trim())}
                                           onKeyDown={e => { if (e.key === 'Enter') saveName(r.id); if (e.key === 'Escape') setEditingName(null); }}
                                           autoFocus
+                                          placeholder="First name"
                                         />
                                         <button className="btn btn-primary btn-xs" disabled={savingField === 'name'} onClick={() => saveName(r.id)}>
                                           {savingField === 'name' ? '…' : 'Save'}
@@ -533,8 +538,28 @@ const createCustomer = async () => {
                                       </div>
                                     ) : (
                                       <div className="cs-field-value">
-                                        {r.name}
-                                        <button className="cs-edit-btn" onClick={e => { e.stopPropagation(); startEditName(r); }}>Edit</button>
+                                        {r.first_name}
+                                        <button className="cs-edit-btn" onClick={e => { e.stopPropagation(); setEditingName(r.id); setEditName(r.name); }}>Edit</button>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Last Name */}
+                                  <div className="cs-info-field">
+                                    <div className="cs-field-label">Last Name</div>
+                                    {editingName === r.id ? (
+                                      <div className="cs-inline-edit">
+                                        <input
+                                          className="cs-inline-input"
+                                          value={editName.split(' ').slice(1).join(' ') || ''}
+                                          onChange={e => setEditName(`${editName.split(' ')[0]} ${e.target.value}`.trim())}
+                                          onKeyDown={e => { if (e.key === 'Enter') saveName(r.id); if (e.key === 'Escape') setEditingName(null); }}
+                                          placeholder="Last name"
+                                        />
+                                      </div>
+                                    ) : (
+                                      <div className="cs-field-value">
+                                        {r.last_name}
                                       </div>
                                     )}
                                   </div>
@@ -793,9 +818,15 @@ const createCustomer = async () => {
                   <label className="form-label">Phone <span style={{ color: 'var(--red-500)' }}>*</span></label>
                   <input type="tel" value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="(555) 000-0000" autoFocus />
                 </div>
-                <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label">Name</label>
-                  <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Customer name" />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">First Name</label>
+                    <input value={newName.split(' ')[0] || ''} onChange={e => setNewName(`${e.target.value} ${newName.split(' ').slice(1).join(' ')}`.trim())} placeholder="First name" />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">Last Name</label>
+                    <input value={newName.split(' ').slice(1).join(' ') || ''} onChange={e => setNewName(`${newName.split(' ')[0]} ${e.target.value}`.trim())} placeholder="Last name" />
+                  </div>
                 </div>
               </div>
               <div className="form-group" style={{ margin: 0 }}>
