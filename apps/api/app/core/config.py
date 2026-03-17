@@ -40,8 +40,8 @@ class Settings(BaseSettings):
     r2_public_url: str = ""
     smtp_host: str = "smtp.office365.com"
     smtp_port: int = 587
-    smtp_user: str = ""
-    smtp_password: str = ""
+    smtp_user: str = "info@eastmeadowgardencenter.com"
+    smtp_password: str = "@EMGC2026"
     smtp_from_name: str = "East Meadow Garden Center"
 
     @field_validator("database_url", mode="before")
