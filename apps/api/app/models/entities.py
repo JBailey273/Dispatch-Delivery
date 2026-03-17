@@ -208,7 +208,9 @@ class Customer(Base, TenantScopedMixin, TimestampMixin):
     __table_args__ = (UniqueConstraint("tenant_id", "phone_e164", name="uq_customer_tenant_phone"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    first_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    last_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)  # legacy — will be removed after full migration
     phone_e164: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
     customer_type: Mapped[CustomerType] = mapped_column(
         Enum(CustomerType, name="customer_type", values_callable=lambda e: [x.value for x in e]),
