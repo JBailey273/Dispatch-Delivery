@@ -566,7 +566,7 @@ const createCustomer = async () => {
                                       </div>
                                     </>
                                   )}
-                                  </div>
+                                </div>
 
                                   {/* Phone */}
                                   <div className="cs-info-field">
