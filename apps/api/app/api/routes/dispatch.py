@@ -19,6 +19,7 @@ from app.api.guardrails import guard_load_editable
 from app.api.services import enqueue_sms_job, log_event, now_utc
 from app.billing.service import ensure_billing_account, get_plan, scheduling_gate
 from app.models.entities import Customer, CustomerAddress, Drop, ExceptionReasonCode, Load, LoadStatus, Location, OperationalBlackout, OptimizationProposal, Tenant, User, UserRole, WindowCapacity, WindowCode
+from app.api.email_service import send_delivery_notification_email, send_reschedule_notification_email
 
 router = APIRouter(prefix="/dispatch", tags=["dispatch"])
 logger = logging.getLogger("dispatch.ops")
@@ -432,6 +433,11 @@ def send_delivery_notification(drop_id: str, user: AuthUser = Depends(require_ro
     dedupe_key = f"notify-{drop.id}-{int(now_utc().timestamp() // 300)}"
     if not enqueue_sms_job(job, dedupe_key=dedupe_key):
         raise HTTPException(status_code=409, detail={"code": "rate_limited", "message": "Notification was already sent recently. Wait a few minutes."})
+    # Send email if opted in
+    if customer.email and customer.email_opt_in:
+        date_label = drop.scheduled_date.strftime("%A, %B %d") if drop.scheduled_date else "your scheduled date"
+        send_delivery_notification_email(customer.email, customer.name, date_label, window_label)
+
     drop.notify_sent_at = now_utc()
     log_event(db, user.tenant_id, "delivery_notification.sent", "api", {"drop_id": drop_id})
     db.commit()
@@ -479,6 +485,12 @@ def send_reschedule_sms(drop_id: str, payload: RescheduleSmsIn, user: AuthUser =
                 "next_step": "Refresh drop details and retry with updated timing or content.",
             },
         )
+
+    # Send email if opted in
+    if customer.email and customer.email_opt_in and drop.scheduled_date:
+        window_label = "9am–1pm" if drop.scheduled_window and drop.scheduled_window.value == "A" else "1pm–5pm" if drop.scheduled_window else "priority"
+        date_label = drop.scheduled_date.strftime("%A, %B %d")
+        send_reschedule_notification_email(customer.email, customer.name, date_label, window_label)
 
     drop.last_reschedule_sms_at = now_utc()
     log_event(db, user.tenant_id, "SMS_SENT", "dispatch", {"drop_id": drop_id, "kind": "reschedule", "preview": payload.message})
