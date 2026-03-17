@@ -12,6 +12,8 @@ from app.api.deps import AuthUser, db_dep, require_roles
 from app.api.services import log_event
 from app.core.config import settings
 from app.models.entities import Drop, Load, UserRole
+import io
+from PIL import Image, ExifTags
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
 
@@ -76,7 +78,23 @@ def create_presigned_upload(
         "expires_at": (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).isoformat(),
     }
 
-
+def _normalize_image_orientation(image_bytes: bytes) -> bytes:
+    """Strip EXIF orientation and bake rotation into pixels so all clients render correctly."""
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        exif = img.getexif()
+        orientation_key = next((k for k, v in ExifTags.TAGS.items() if v == 'Orientation'), None)
+        if orientation_key and orientation_key in exif:
+            orientation = exif[orientation_key]
+            rotations = {3: 180, 6: 270, 8: 90}
+            if orientation in rotations:
+                img = img.rotate(rotations[orientation], expand=True)
+        # Strip all EXIF by saving fresh
+        output = io.BytesIO()
+        img.save(output, format='JPEG', quality=92, optimize=True)
+        return output.getvalue()
+    except Exception:
+        return image_bytes  # fail safe — return original if anything goes wrong
 @router.post("/confirm")
 def confirm_upload(
     payload: ConfirmIn,
@@ -105,6 +123,23 @@ def confirm_upload(
         load.condition_photo_url = _photo_url(payload.object_key)
     else:
         raise HTTPException(status_code=400, detail={"code": "invalid_entity_type", "message": "Unsupported entity_type"})
+
+    # Normalize EXIF orientation so Outlook and other clients render correctly
+    try:
+        s3 = _storage_client()
+        obj = s3.get_object(Bucket=settings.r2_bucket, Key=payload.object_key)
+        original_bytes = obj["Body"].read()
+        normalized_bytes = _normalize_image_orientation(original_bytes)
+        if normalized_bytes != original_bytes:
+            s3.put_object(
+                Bucket=settings.r2_bucket,
+                Key=payload.object_key,
+                Body=normalized_bytes,
+                ContentType="image/jpeg",
+            )
+    except Exception as e:
+        import logging
+        logging.getLogger("dispatch.uploads").warning(f"EXIF normalization failed for {payload.object_key}: {e}")
 
     log_event(db, user.tenant_id, "PHOTO_ATTACHED", "api", payload.model_dump())
     db.commit()
