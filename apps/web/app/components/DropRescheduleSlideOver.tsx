@@ -624,11 +624,17 @@ export default function DropRescheduleSlideOver({
               <div style={{ borderTop: '1px solid var(--border-light)', marginTop: 10, paddingTop: 10 }}>
                 <div className="so-notif-row">
                   <div className="so-notif-info">
-                    <div className="so-notif-title">Reschedule SMS</div>
+                    <div className="so-notif-title">Reschedule Notification</div>
                     <div className="so-notif-sub">
                       {dropDetail.last_reschedule_sms_at
                         ? `Sent ${new Date(dropDetail.last_reschedule_sms_at).toLocaleDateString()}`
-                        : 'Not yet sent'}
+                        : dropDetail.customer_sms_opt_in && dropDetail.customer_email && dropDetail.customer_email_opt_in
+                          ? 'Will send via SMS + email'
+                          : dropDetail.customer_sms_opt_in
+                            ? 'Will send via SMS'
+                            : dropDetail.customer_email && dropDetail.customer_email_opt_in
+                              ? 'Will send via email'
+                              : 'Not yet sent'}
                     </div>
                   </div>
                   {!smsEditing && (
@@ -648,7 +654,7 @@ export default function DropRescheduleSlideOver({
                     {smsMsg && smsMsg !== 'sent' && <div className="so-notif-err">{smsMsg}</div>}
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button className="btn btn-primary btn-sm" onClick={sendSms} disabled={smsSending}>
-                        {smsSending ? 'Sending…' : 'Send SMS'}
+                        {smsSending ? 'Sending…' : 'Send'}
                       </button>
                       <button className="btn btn-ghost btn-sm" onClick={() => { setSmsEditing(false); setSmsText(DEFAULT_SMS); setSmsMsg(''); }}>
                         Cancel
@@ -656,7 +662,7 @@ export default function DropRescheduleSlideOver({
                     </div>
                   </div>
                 )}
-                {smsMsg === 'sent' && <div className="so-notif-success">✓ SMS sent</div>}
+                {smsMsg === 'sent' && <div className="so-notif-success">✓ Notification Sent</div>}
               </div>
               <div style={{ borderTop: '1px solid var(--border-light)', marginTop: 10, paddingTop: 10 }}>
                 <div className="so-notif-row">
