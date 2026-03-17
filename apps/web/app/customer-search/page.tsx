@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, api, requireRole } from '../lib/auth';
 
-type CustomerResult = { id: string; first_name: string; last_name: string; name: string; phone_e164: string; customer_type: string; last_ordered: string | null; email: string | null; sms_opt_in: boolean; email_opt_in: boolean; exact_phone_match?: boolean; };
+type CustomerResult = { id: string; first_name: string; last_name: string; company_name: string | null; name: string; phone_e164: string; customer_type: string; last_ordered: string | null; email: string | null; sms_opt_in: boolean; email_opt_in: boolean; exact_phone_match?: boolean; };
 type Address = {
   id: string; line1: string; line2?: string | null;
   city: string; state: string; postal_code: string; is_default?: boolean;
