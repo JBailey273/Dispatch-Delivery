@@ -303,20 +303,24 @@ export default function DriverPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'delivered' }),
         });
-        showToast('Photo Saved & Delivery Confirmed!');
+        showToast('Photo saved & delivery confirmed!');
+        // Immediately collapse this card
+        setExpandedDrop(null);
         setPhotoTarget(null);
-        const updated = await fetchDrops();
-        // Auto-advance to next active drop (priority first, then assigned)
-        const nextDrop = [...(updated || drops)]
-          .sort((a, b) => {
-            const doneA = ['delivered','cancelled','exception'].includes(getDropStatus(a));
-            const doneB = ['delivered','cancelled','exception'].includes(getDropStatus(b));
+        await fetchDrops();
+        // After fetch, open the next active drop
+        setDrops(prev => {
+          const sorted = [...prev].sort((a, b) => {
+            const doneA = ['delivered', 'cancelled'].includes(getDropStatus(a));
+            const doneB = ['delivered', 'cancelled'].includes(getDropStatus(b));
             if (doneA !== doneB) return doneA ? 1 : -1;
             if (a.is_priority !== b.is_priority) return a.is_priority ? -1 : 1;
             return 0;
-          })
-          .find(d => !['delivered','cancelled'].includes(getDropStatus(d)));
-        setExpandedDrop(nextDrop?.drop_id ?? null);
+          });
+          const next = sorted.find(d => !['delivered', 'cancelled'].includes(getDropStatus(d)));
+          if (next) setExpandedDrop(next.drop_id);
+          return prev;
+        });
         return;
       } else if (photoTarget.type === 'condition') {
         // Don't collapse yet — stay open so driver can optionally add a note
