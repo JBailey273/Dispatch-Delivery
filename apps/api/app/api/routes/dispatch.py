@@ -19,7 +19,7 @@ from app.api.guardrails import guard_load_editable
 from app.api.services import enqueue_sms_job, log_event, now_utc
 from app.billing.service import ensure_billing_account, get_plan, scheduling_gate
 from app.models.entities import Customer, CustomerAddress, Drop, ExceptionReasonCode, Load, LoadStatus, Location, OperationalBlackout, OptimizationProposal, Tenant, User, UserRole, WindowCapacity, WindowCode
-from app.api.email_service import send_delivery_notification_email, send_reschedule_notification_email
+from app.api.email_service import send_on_the_way_email, send_reschedule_notification_email, send_delivery_confirmation_email
 
 router = APIRouter(prefix="/dispatch", tags=["dispatch"])
 logger = logging.getLogger("dispatch.ops")
@@ -439,7 +439,7 @@ def send_delivery_notification(drop_id: str, user: AuthUser = Depends(require_ro
     # Send email if opted in
     if customer.email and customer.email_opt_in:
         date_label = drop.scheduled_date.strftime("%A, %B %d") if drop.scheduled_date else "your scheduled date"
-        send_delivery_notification_email(customer.email, customer.name, date_label, window_label)
+        send_on_the_way_email(customer.email, customer.name, date_label, window_label)
 
     drop.notify_sent_at = now_utc()
     log_event(db, user.tenant_id, "delivery_notification.sent", "api", {"drop_id": drop_id})
