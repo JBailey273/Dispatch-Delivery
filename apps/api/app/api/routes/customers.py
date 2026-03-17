@@ -320,18 +320,30 @@ def update_customer_name(
     db: Session = Depends(db_dep),
 ):
     customer = _get_customer_or_404(db, customer_id, user.tenant_id)
-    old_name = customer.name
-    new_name = payload.get("name", "").strip()
-    if not new_name:
+    old_name = f"{customer.first_name} {customer.last_name}".strip()
+
+    if "first_name" in payload or "last_name" in payload:
+        first_name = payload.get("first_name", customer.first_name or "").strip()
+        last_name = payload.get("last_name", customer.last_name or "").strip()
+    elif "name" in payload:
+        parts = payload.get("name", "").strip().split()
+        first_name = parts[0] if parts else ""
+        last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
+    else:
         raise HTTPException(status_code=400, detail={"code": "invalid_name", "message": "Name required"})
-    mismatch = old_name.strip().lower() != new_name.lower()
-    customer.name = new_name
-    if mismatch:
-        log_event(db, user.tenant_id, "customer.name_changed", "api", {
-            "customer_id": customer_id, "from": old_name, "to": new_name,
-        })
+
+    if not first_name:
+        raise HTTPException(status_code=400, detail={"code": "invalid_name", "message": "First name required"})
+
+    customer.first_name = first_name
+    customer.last_name = last_name
+    customer.name = f"{first_name} {last_name}".strip()
+
+    log_event(db, user.tenant_id, "customer.name_changed", "api", {
+        "customer_id": customer_id, "from": old_name, "to": customer.name,
+    })
     db.commit()
-    return {"customer_id": customer_id, "name": new_name, "name_mismatch": mismatch}
+    return {"customer_id": customer_id, "first_name": first_name, "last_name": last_name, "name": customer.name}
 
 
 @router.patch("/{customer_id}/phone")
