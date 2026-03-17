@@ -191,6 +191,3 @@ def send_delivery_confirmation_email(to: str, customer_name: str, scheduled_date
       <p style="margin:0;font-size:14px;color:#6E6E66;line-height:1.55;">We appreciate your business and look forward to serving you again!</p>
     """
     return send_email(to, subject, _layout(('#0F8530', '#2DB84E'), content))
-    """
-    body_text = f"Hi {first_name}, your delivery has been rescheduled to {scheduled_date} ({window_label}). Contact us with any questions."
-    return send_email(to, subject, body_html, body_text)
