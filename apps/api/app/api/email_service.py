@@ -81,7 +81,7 @@ def _layout(accent_color: str, content: str, preheader_text: str = "") -> str:
 
     <!-- Logo -->
     <tr><td align="center" style="padding-bottom:28px;">
-      <img src="https://pub-2acb2bd410ad4b7094ea64a66e6531f5.r2.dev/logo/Garden%20Center.jpg"
+      <img src="https://pub-2acb2bd410ad4b7094ea64a66e6531f5.r2.dev/logo/Garden%20Center%20PNG.png"
            alt="East Meadow Garden Center"
            width="200"
            style="display:block;height:auto;border:0;outline:none;text-decoration:none;"
