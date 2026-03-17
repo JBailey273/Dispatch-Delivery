@@ -422,9 +422,9 @@ def send_delivery_notification(drop_id: str, user: AuthUser = Depends(require_ro
     drop, customer = row
 
     if drop.is_priority and not drop.scheduled_window:
-        window_label = "priority (early AM)"
+        window_label = "Priority Delivery"
     else:
-        window_label = "9am–1pm" if drop.scheduled_window and drop.scheduled_window.value == "A" else "1pm–5pm"
+        window_label = "Morning (9am–1pm)" if drop.scheduled_window and drop.scheduled_window.value == "A" else "Afternoon (1pm–5pm)"
 
     message = f"Your delivery is scheduled for {drop.scheduled_date.strftime('%A, %B %d')} between {window_label}. Please ensure the delivery area is accessible."
     job = {
