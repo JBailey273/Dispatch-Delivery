@@ -38,11 +38,7 @@ class Settings(BaseSettings):
     r2_secret_access_key: str = ""
     r2_bucket: str = ""
     r2_public_url: str = ""
-    smtp_host: str = "smtp.office365.com"
-    smtp_port: int = 587
-    smtp_user: str = "info@eastmeadowgardencenter.com"
-    smtp_password: str = "@EMGC2026"
-    smtp_from_name: str = "East Meadow Garden Center"
+    resend_api_key: str = "re_KbiB5bm5_GXtSzGBir7b4S71ZeYxShoZure_KbiB5bm5_GXtSzGBir7b4S71ZeYxShoZu"
 
     @field_validator("database_url", mode="before")
     @classmethod
