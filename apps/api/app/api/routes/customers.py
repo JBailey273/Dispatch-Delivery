@@ -100,7 +100,9 @@ def apply_address_normalization(data: dict) -> dict:
 def _customer_dict(c: Customer, last_ordered=None):
     return {
         "id": str(c.id),
-        "name": c.name,
+        "first_name": c.first_name,
+        "last_name": c.last_name,
+        "name": f"{c.first_name} {c.last_name}".strip(),
         "phone_e164": c.phone_e164,
         "customer_type": c.customer_type.value if c.customer_type else "residential",
         "last_ordered": str(last_ordered) if last_ordered else None,
@@ -108,7 +110,6 @@ def _customer_dict(c: Customer, last_ordered=None):
         "sms_opt_in": c.sms_opt_in,
         "email_opt_in": c.email_opt_in,
     }
-
 
 def _get_customer_or_404(db: Session, customer_id: str, tenant_id) -> Customer:
     customer = db.execute(
