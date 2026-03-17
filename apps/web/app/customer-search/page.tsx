@@ -518,50 +518,54 @@ const createCustomer = async () => {
                                 <div className="cs-section-label">Customer Info</div>
                                 <div className="cs-info-grid">
 
-                                  {/* First Name */}
-                                  <div className="cs-info-field">
-                                    <div className="cs-field-label">First Name</div>
-                                    {editingName === r.id ? (
-                                      <div className="cs-inline-edit">
-                                        <input
-                                          className="cs-inline-input"
-                                          value={editName.split(' ')[0] || ''}
-                                          onChange={e => setEditName(`${e.target.value} ${editName.split(' ').slice(1).join(' ')}`.trim())}
-                                          onKeyDown={e => { if (e.key === 'Enter') saveName(r.id); if (e.key === 'Escape') setEditingName(null); }}
-                                          autoFocus
-                                          placeholder="First name"
-                                        />
-                                        <button className="btn btn-primary btn-xs" disabled={savingField === 'name'} onClick={() => saveName(r.id)}>
-                                          {savingField === 'name' ? '…' : 'Save'}
-                                        </button>
-                                        <button className="btn btn-ghost btn-xs" onClick={() => setEditingName(null)}>Cancel</button>
+                                  {/* First Name + Last Name */}
+                                  {editingName === r.id ? (
+                                    <>
+                                      <div className="cs-info-field">
+                                        <div className="cs-field-label">First Name</div>
+                                        <div className="cs-inline-edit">
+                                          <input
+                                            className="cs-inline-input"
+                                            value={editName.split(' ')[0] || ''}
+                                            onChange={e => setEditName(`${e.target.value} ${editName.split(' ').slice(1).join(' ')}`.trim())}
+                                            onKeyDown={e => { if (e.key === 'Enter') saveName(r.id); if (e.key === 'Escape') setEditingName(null); }}
+                                            autoFocus
+                                            placeholder="First name"
+                                          />
+                                        </div>
                                       </div>
-                                    ) : (
-                                      <div className="cs-field-value">
-                                        {r.first_name}
-                                        <button className="cs-edit-btn" onClick={e => { e.stopPropagation(); setEditingName(r.id); setEditName(r.name); }}>Edit</button>
+                                      <div className="cs-info-field">
+                                        <div className="cs-field-label">Last Name</div>
+                                        <div className="cs-inline-edit">
+                                          <input
+                                            className="cs-inline-input"
+                                            value={editName.split(' ').slice(1).join(' ') || ''}
+                                            onChange={e => setEditName(`${editName.split(' ')[0]} ${e.target.value}`.trim())}
+                                            onKeyDown={e => { if (e.key === 'Enter') saveName(r.id); if (e.key === 'Escape') setEditingName(null); }}
+                                            placeholder="Last name"
+                                          />
+                                          <button className="btn btn-primary btn-xs" disabled={savingField === 'name'} onClick={() => saveName(r.id)}>
+                                            {savingField === 'name' ? '…' : 'Save'}
+                                          </button>
+                                          <button className="btn btn-ghost btn-xs" onClick={() => setEditingName(null)}>Cancel</button>
+                                        </div>
                                       </div>
-                                    )}
-                                  </div>
-
-                                  {/* Last Name */}
-                                  <div className="cs-info-field">
-                                    <div className="cs-field-label">Last Name</div>
-                                    {editingName === r.id ? (
-                                      <div className="cs-inline-edit">
-                                        <input
-                                          className="cs-inline-input"
-                                          value={editName.split(' ').slice(1).join(' ') || ''}
-                                          onChange={e => setEditName(`${editName.split(' ')[0]} ${e.target.value}`.trim())}
-                                          onKeyDown={e => { if (e.key === 'Enter') saveName(r.id); if (e.key === 'Escape') setEditingName(null); }}
-                                          placeholder="Last name"
-                                        />
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div className="cs-info-field">
+                                        <div className="cs-field-label">First Name</div>
+                                        <div className="cs-field-value">
+                                          {r.first_name}
+                                          <button className="cs-edit-btn" onClick={e => { e.stopPropagation(); startEditName(r); }}>Edit</button>
+                                        </div>
                                       </div>
-                                    ) : (
-                                      <div className="cs-field-value">
-                                        {r.last_name}
+                                      <div className="cs-info-field">
+                                        <div className="cs-field-label">Last Name</div>
+                                        <div className="cs-field-value">{r.last_name}</div>
                                       </div>
-                                    )}
+                                    </>
+                                  )}
                                   </div>
 
                                   {/* Phone */}
