@@ -884,6 +884,14 @@ const createCustomer = async () => {
                 </div>
               </div>
             </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setShowCreate(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={createCustomer} disabled={creating || !newPhone.trim()}>
+                {creating ? 'Creating…' : 'Create Customer'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
