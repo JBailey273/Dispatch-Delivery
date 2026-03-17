@@ -566,9 +566,27 @@ const createCustomer = async () => {
                                   {/* Company */}
                                   <div className="cs-info-field">
                                     <div className="cs-field-label">Company</div>
-                                    <div className="cs-field-value">
-                                      {r.company_name || <span style={{ color: 'var(--gray-300)' }}>—</span>}
-                                    </div>
+                                    {editingCompany === r.id ? (
+                                      <div className="cs-inline-edit">
+                                        <input
+                                          className="cs-inline-input"
+                                          value={editCompany}
+                                          onChange={e => setEditCompany(e.target.value)}
+                                          onKeyDown={e => { if (e.key === 'Enter') saveCompany(r.id); if (e.key === 'Escape') setEditingCompany(null); }}
+                                          autoFocus
+                                          placeholder="Company name"
+                                        />
+                                        <button className="btn btn-primary btn-xs" disabled={savingCompany} onClick={() => saveCompany(r.id)}>
+                                          {savingCompany ? '…' : 'Save'}
+                                        </button>
+                                        <button className="btn btn-ghost btn-xs" onClick={() => setEditingCompany(null)}>Cancel</button>
+                                      </div>
+                                    ) : (
+                                      <div className="cs-field-value">
+                                        {r.company_name || <span style={{ color: 'var(--gray-300)' }}>—</span>}
+                                        <button className="cs-edit-btn" onClick={e => { e.stopPropagation(); setEditingCompany(r.id); setEditCompany(r.company_name || ''); }}>Edit</button>
+                                      </div>
+                                    )}
                                   </div>
 
                                   {/* Phone */}
