@@ -598,7 +598,7 @@ export default function DropRescheduleSlideOver({
 
               <div className="so-notif-row">
                 <div className="so-notif-info">
-                  <div className="so-notif-title">Delivery notification</div>
+                  <div className="so-notif-title">On the Way</div>
                   <div className="so-notif-sub">
                     {dropDetail.notify_sent_at
                       ? `Sent ${new Date(dropDetail.notify_sent_at).toLocaleDateString()}`
