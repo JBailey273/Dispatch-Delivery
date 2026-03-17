@@ -7,7 +7,7 @@ import { useLocation } from '../lib/location-context';
 
 /* ── Types ── */
 type CatalogItem = { sku: string; name: string; active: boolean; delivery_mode: string; bulk_group: string; unit?: string };
-type CustomerResult = { id: string; name: string; phone_e164: string; customer_type?: string; last_ordered?: string | null; exact_phone_match?: boolean };
+type CustomerResult = { id: string; first_name: string; last_name: string; company_name: string | null; name: string; phone_e164: string; customer_type?: string; last_ordered?: string | null; exact_phone_match?: boolean };
 type Address = { id: string; line1: string; line2?: string; city: string; state: string; postal_code: string; is_default?: boolean };
 type CartItem = { sku: string; qty: number };
 type AvailWindow = { date: string; window: string; used: number; total: number; remaining_capacity: number; available: boolean };
