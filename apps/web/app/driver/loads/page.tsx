@@ -119,8 +119,10 @@ export default function DriverPage() {
   const fetchDrops = useCallback(async () => {
     try {
       const data = await api(`/driver/drops?day=${todayStr()}`);
-      setDrops(data.drops || []);
+      const fetched = data.drops || [];
+      setDrops(fetched);
       setError('');
+      return fetched;
     } catch (err) {
       const apiErr = err as ApiError;
       if (apiErr.code === 'auth_expired' || apiErr.status === 401) {
@@ -301,7 +303,21 @@ export default function DriverPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'delivered' }),
         });
-        showToast('Photo saved & delivery confirmed!');
+        showToast('Photo Saved & Delivery Confirmed!');
+        setPhotoTarget(null);
+        const updated = await fetchDrops();
+        // Auto-advance to next active drop (priority first, then assigned)
+        const nextDrop = [...(updated || drops)]
+          .sort((a, b) => {
+            const doneA = ['delivered','cancelled','exception'].includes(getDropStatus(a));
+            const doneB = ['delivered','cancelled','exception'].includes(getDropStatus(b));
+            if (doneA !== doneB) return doneA ? 1 : -1;
+            if (a.is_priority !== b.is_priority) return a.is_priority ? -1 : 1;
+            return 0;
+          })
+          .find(d => !['delivered','cancelled'].includes(getDropStatus(d)));
+        setExpandedDrop(nextDrop?.drop_id ?? null);
+        return;
       } else if (photoTarget.type === 'condition') {
         // Don't collapse yet — stay open so driver can optionally add a note
         const capturedLoadId = photoTarget.loadId;
