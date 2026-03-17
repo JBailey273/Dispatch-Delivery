@@ -47,6 +47,7 @@ function NewDropPage() {
   const [newCustomerPhone, setNewCustomerPhone] = useState('');
   const [newCustomerName, setNewCustomerName] = useState('');
   const [newCustomerEmail, setNewCustomerEmail] = useState('');
+  const [newCustomerCompany, setNewCustomerCompany] = useState('');
   const [newCustomerType, setNewCustomerType] = useState<'residential' | 'commercial'>('residential');
   const [newCustomerSmsOptIn, setNewCustomerSmsOptIn] = useState(false);
   const [newCustomerEmailOptIn, setNewCustomerEmailOptIn] = useState(false);
@@ -213,6 +214,7 @@ function NewDropPage() {
     setNewCustomerName('');
     setNewCustomerType('residential');
     setNewCustomerEmail('');
+    setNewCustomerCompany('');
     setIsPriority(false);
     setNewCustomerSmsOptIn(false);
     setNewCustomerEmailOptIn(false);
@@ -222,16 +224,11 @@ function NewDropPage() {
     if (!newCustomerPhone.trim()) { setError('Phone number is required to create a customer.'); return; }
     setError('');
     try {
-      const c = await api('/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ first_name: newCustomerName.split(' ')[0] || 'Walk-in', last_name: newCustomerName.split(' ').slice(1).join(' ') || 'Customer', phone: newCustomerPhone.trim(), customer_type: newCustomerType }) });
+      const parts = newCustomerName.trim().split(/\s+/);
+      const first_name = parts[0] || 'Unknown';
+      const last_name = parts.slice(1).join(' ');
+      const c = await api('/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ first_name, last_name, company_name: newCustomerCompany.trim() || null, email: newCustomerEmail.trim() || null, phone: newCustomerPhone.trim(), customer_type: newCustomerType }) });
       const created = c.customer || c;
-      if (newCustomerEmail.trim()) {
-        try {
-          await api(`/customers/${created.id}/email`, {
-            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: newCustomerEmail.trim() }),
-          });
-        } catch { /* non-fatal */ }
-      }
       if (newCustomerEmail.trim() || newCustomerSmsOptIn) {
         try {
           await api(`/customers/${created.id}/opt-ins`, {
@@ -493,57 +490,59 @@ function NewDropPage() {
 
             {!customer && showNewCustomerForm && (
               <div className="nd-new-customer-form">
+                {/* Name row */}
                 <div className="nd-row-2">
                   <div className="form-group">
-                    <label className="form-label">Phone Number *</label>
-                    <input type="tel" placeholder="(516) 555-0142" value={newCustomerPhone} onChange={e => setNewCustomerPhone(e.target.value)} autoFocus />
+                    <label className="form-label">First Name <span style={{ color: 'var(--red-500)' }}>*</span></label>
+                    <input placeholder="First name" value={newCustomerName.split(' ')[0] || ''} onChange={e => setNewCustomerName(`${e.target.value} ${newCustomerName.split(' ').slice(1).join(' ')}`.trim())} autoFocus />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">First Name</label>
-                    <input placeholder="First name" value={newCustomerName.split(' ')[0] || ''} onChange={e => setNewCustomerName(`${e.target.value} ${newCustomerName.split(' ').slice(1).join(' ')}`.trim())} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Last Name</label>
-                    <input placeholder="Last name (optional)" value={newCustomerName.split(' ').slice(1).join(' ') || ''} onChange={e => setNewCustomerName(`${newCustomerName.split(' ')[0]} ${e.target.value}`.trim())} />
+                    <label className="form-label">Last Name <span style={{ color: 'var(--red-500)' }}>*</span></label>
+                    <input placeholder="Last name" value={newCustomerName.split(' ').slice(1).join(' ') || ''} onChange={e => setNewCustomerName(`${newCustomerName.split(' ')[0]} ${e.target.value}`.trim())} />
                   </div>
                 </div>
+                {/* Company */}
                 <div className="form-group" style={{ marginTop: 8 }}>
-                  <label className="form-label">Email <span style={{ color: 'var(--gray-400)', fontWeight: 400 }}>(optional)</span></label>
+                  <label className="form-label">Company Name <span style={{ color: 'var(--gray-400)', fontWeight: 400 }}>(optional)</span></label>
+                  <input placeholder="Company or business name" value={newCustomerCompany} onChange={e => setNewCustomerCompany(e.target.value)} />
+                </div>
+                {/* Email */}
+                <div className="form-group" style={{ marginTop: 8 }}>
+                  <label className="form-label">Email <span style={{ color: 'var(--red-500)' }}>*</span></label>
                   <input type="email" placeholder="customer@example.com" value={newCustomerEmail} onChange={e => setNewCustomerEmail(e.target.value)} />
                 </div>
+                {/* Phone */}
+                <div className="form-group" style={{ marginTop: 8 }}>
+                  <label className="form-label">Phone <span style={{ color: 'var(--red-500)' }}>*</span></label>
+                  <input type="tel" placeholder="(555) 000-0000" value={newCustomerPhone} onChange={e => setNewCustomerPhone(e.target.value)} />
+                </div>
+                {/* Account type */}
                 <div className="form-group" style={{ marginTop: 8 }}>
                   <label className="form-label">Customer Type</label>
                   <div className="nd-type-toggle">
                     <button className={`nd-type-btn${newCustomerType === 'residential' ? ' active' : ''}`} onClick={() => setNewCustomerType('residential')} type="button">
-                      {'\uD83C\uDFE0'} Residential
+                      {'🏠'} Residential
                     </button>
                     <button className={`nd-type-btn${newCustomerType === 'commercial' ? ' active' : ''}`} onClick={() => setNewCustomerType('commercial')} type="button">
-                      {'\uD83C\uDFE2'} Commercial
+                      {'🏢'} Commercial
                     </button>
                   </div>
                 </div>
+                {/* Notification prefs */}
                 <div className="form-group" style={{ marginTop: 8 }}>
                   <label className="form-label">Notification Preferences</label>
                   <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                    <button
-                      type="button"
-                      className={`nd-type-btn${newCustomerSmsOptIn ? ' active' : ''}`}
-                      onClick={() => setNewCustomerSmsOptIn(v => !v)}
-                    >
+                    <button type="button" className={`nd-type-btn${newCustomerSmsOptIn ? ' active' : ''}`} onClick={() => setNewCustomerSmsOptIn(v => !v)}>
                       {newCustomerSmsOptIn ? '✓' : '○'} SMS
                     </button>
-                    <button
-                      type="button"
-                      className={`nd-type-btn${newCustomerEmailOptIn ? ' active' : ''}`}
+                    <button type="button" className={`nd-type-btn${newCustomerEmailOptIn ? ' active' : ''}`}
                       onClick={() => { if (newCustomerEmail.trim()) setNewCustomerEmailOptIn(v => !v); }}
-                      disabled={!newCustomerEmail.trim()}
-                      title={!newCustomerEmail.trim() ? 'Enter an email address first' : ''}
-                    >
+                      disabled={!newCustomerEmail.trim()} title={!newCustomerEmail.trim() ? 'Enter an email address first' : ''}>
                       {newCustomerEmailOptIn ? '✓' : '○'} Email
                     </button>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                   <button className="btn btn-primary btn-sm" onClick={createCustomer}>Create Customer</button>
                   <button className="btn btn-ghost btn-sm" onClick={() => { setShowNewCustomerForm(false); setError(''); }}>Back to Search</button>
                 </div>
