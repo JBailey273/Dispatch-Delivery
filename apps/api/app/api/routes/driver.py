@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import AuthUser, db_dep, require_roles
 from app.api.services import enqueue_sms_job, log_event, now_utc
 from app.models.entities import Customer, CustomerAddress, Drop, ExceptionReasonCode, Load, LoadStatus, UserRole
+from app.api.email_service import send_on_the_way_email, send_delivery_confirmation_email
 
 router = APIRouter(prefix="/driver", tags=["driver"])
 
@@ -301,10 +302,35 @@ def update_load_status(
     if requested == LoadStatus.EXCEPTION:
         load.exception_reason_code = payload.reason_code
         load.exception_notes = payload.notes
-        # Auto-flag the parent drop for rescheduling
         drop = db.execute(select(Drop).where(Drop.id == load.drop_id).with_for_update()).scalar_one_or_none()
         if drop:
             drop.needs_reschedule = True
+
+    # ── Email notifications ──
+    if requested in (LoadStatus.LOADED_LEAVING, LoadStatus.DELIVERED):
+        try:
+            drop = db.execute(
+                select(Drop).where(Drop.id == load.drop_id, Drop.tenant_id == user.tenant_id)
+            ).scalar_one_or_none()
+            if drop:
+                from app.models.entities import Customer, User as UserModel
+                customer = db.execute(
+                    select(Customer).where(Customer.id == drop.customer_id, Customer.tenant_id == user.tenant_id)
+                ).scalar_one_or_none()
+                if customer and customer.email and customer.email_opt_in:
+                    date_label = drop.scheduled_date.strftime("%A, %B %d") if drop.scheduled_date else "today"
+                    window_label = "9am–1pm" if drop.scheduled_window and drop.scheduled_window.value == "A" else "1pm–5pm" if drop.scheduled_window else "priority"
+                    if requested == LoadStatus.LOADED_LEAVING:
+                        driver = db.execute(
+                            select(UserModel).where(UserModel.id == user.user_id)
+                        ).scalar_one_or_none()
+                        driver_name = driver.display_name if driver else None
+                        send_on_the_way_email(customer.email, customer.name, date_label, window_label, driver_name)
+                    elif requested == LoadStatus.DELIVERED:
+                        send_delivery_confirmation_email(customer.email, customer.name, date_label, load.pod_photo_url)
+        except Exception as e:
+            import logging
+            logging.getLogger("dispatch.email").error(f"Email trigger failed for load {load_id}: {e}")
 
     log_event(
         db,
