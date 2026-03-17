@@ -11,7 +11,9 @@ router = APIRouter(prefix="/customers", tags=["customers"])
 
 
 class CustomerIn(BaseModel):
-    name: str
+    first_name: str | None = None
+    last_name: str | None = None
+    name: str | None = None  # legacy full name fallback
     phone: str
     customer_type: str = "residential"
 
@@ -239,7 +241,10 @@ def create_customer(
         return {"existing": True, "customer": _customer_dict(existing)}
 
     ct = CustomerType.COMMERCIAL if payload.customer_type == "commercial" else CustomerType.RESIDENTIAL
-    customer = Customer(tenant_id=user.tenant_id, name=payload.name, phone_e164=phone, customer_type=ct)
+    # Support both split and full name
+    first_name = payload.first_name.strip() if hasattr(payload, 'first_name') and payload.first_name else payload.name.strip().split()[0] if payload.name else "Unknown"
+    last_name = payload.last_name.strip() if hasattr(payload, 'last_name') and payload.last_name else " ".join(payload.name.strip().split()[1:]) if payload.name and len(payload.name.strip().split()) > 1 else ""
+    customer = Customer(tenant_id=user.tenant_id, name=f"{first_name} {last_name}".strip(), first_name=first_name, last_name=last_name, phone_e164=phone, customer_type=ct)
     db.add(customer)
     db.commit()
     db.refresh(customer)
