@@ -125,13 +125,15 @@ def _detail_card(bg: str, border: str, label_color: str, label: str, rows: list[
         <p style="margin:5px 0 0;font-family:Outfit,Arial,sans-serif;font-size:18px;font-weight:700;color:#2c2c2c;">{r[1]}</p>
       </td></tr>""" for i, r in enumerate(rows))
     return f"""
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;border-spacing:0;">
+      <tr><td height="24" style="font-size:0;line-height:0;mso-line-height-rule:exactly;">&nbsp;</td></tr>
+      <tr><td style="padding:0;">
       <tr><td class="detail-card" style="background-color:{bg};border:1px solid {border};border-radius:10px;padding:22px 26px;">
         <p style="margin:0 0 14px;font-family:Outfit,Arial,sans-serif;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:{label_color};">{label}</p>
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">{rows_html}</table>
       </td></tr>
-    </table>"""
-
+      <tr><td height="24" style="font-size:0;line-height:0;mso-line-height-rule:exactly;">&nbsp;</td></tr>
+    </td></tr></table>"""
 
 def _info_box(text: str) -> str:
     return f"""
@@ -147,10 +149,10 @@ def send_on_the_way_email(to: str, customer_name: str, scheduled_date: str, wind
     subject = "Your Delivery is On the Way!"
     driver_line = f"<strong>{driver_name}</strong> is" if driver_name else "Your driver is"
     content = f"""
-      <h1 style="margin:0 0 12px;font-family:Outfit,Arial,sans-serif;font-size:26px;font-weight:800;color:#2c2c2c;letter-spacing:-0.02em;line-height:1.25;mso-line-height-rule:exactly;">Your delivery is on the way! &#x1F69A;</h1>
-      <p style="margin:0;font-family:Arial,sans-serif;font-size:16px;color:#666666;line-height:1.65;">Hi {first_name} &#8212; {driver_line} headed your way now. Please make sure the delivery area is clear and accessible.</p>
+      <h1 style="margin:0 0 12px;font-family:Outfit,Arial,sans-serif;font-size:26px;font-weight:800;color:#2c2c2c;letter-spacing:-0.02em;line-height:1.25;mso-line-height-rule:exactly;text-align:center;">Your delivery is on the way! &#x1F69A;</h1>
+      <p style="margin:0;font-family:Arial,sans-serif;font-size:16px;color:#666666;line-height:1.65;text-align:center;">Hi {first_name} &#8212; {driver_line} headed your way now and should arrive within the next 30 minutes.</p>
       {_detail_card('#f4f8f4', '#c8dfc8', '#3d5a45', 'Delivery Details', [('Date', scheduled_date), ('Arrival Window', window_label)])}
-      {_info_box('Please ensure your <strong>delivery area is clear and accessible</strong>. Our driver will arrive within your scheduled window.')}
+      {_info_box('&#x1F3E1; &nbsp;Please ensure your <strong>delivery area is clear and accessible</strong> before the driver arrives.')}
       <p style="margin:20px 0 0;font-family:Arial,sans-serif;font-size:14px;color:#999999;line-height:1.65;">Have questions? Just reply to this email and we&#8217;ll get back to you right away.</p>
     """
     return send_email(to, subject, _layout('#4a7052', content, f"Your delivery from East Meadow Garden Center is on the way — {scheduled_date}"))
