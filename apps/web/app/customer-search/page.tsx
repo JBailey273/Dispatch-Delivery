@@ -81,6 +81,7 @@ export default function CustomerSearchPage() {
   const [newEmailOptIn, setNewEmailOptIn] = useState(false);
   const [newAddr, setNewAddr] = useState({ line1: '', line2: '', city: '', state: '', postal_code: '' });
   const [creating, setCreating] = useState(false);
+  const [newCompany, setNewCompany] = useState('');
 
   /* ── Debounce timer ── */
   const [debounceTimer, setDebounceTimer] = useState<NodeJS.Timeout | null>(null);
@@ -346,19 +347,14 @@ const createCustomer = async () => {
     if (!newPhone.trim()) return;
     setCreating(true); setError('');
     try {
+      const parts = newName.trim().split(/\s+/);
+      const first_name = parts[0] || 'Unknown';
+      const last_name = parts.slice(1).join(' ');
       const c = await api('/customers', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newName || 'Walk-in Customer', phone: newPhone, customer_type: newType }),
+        body: JSON.stringify({ first_name, last_name, company_name: newCompany.trim() || null, email: newEmail.trim() || null, phone: newPhone, customer_type: newType }),
       });
       const created = c.customer || c;
-      if (newEmail.trim()) {
-        try {
-          await api(`/customers/${created.id}/email`, {
-            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: newEmail.trim() }),
-          });
-        } catch { /* non-fatal */ }
-      }
       if (newSmsOptIn || newEmailOptIn) {
         try {
           await api(`/customers/${created.id}/opt-ins`, {
@@ -375,7 +371,7 @@ const createCustomer = async () => {
           });
         } catch { /* non-fatal */ }
       }
-      setShowCreate(false); setNewName(''); setNewPhone(''); setNewType('residential'); setNewEmail(''); setNewSmsOptIn(false); setNewEmailOptIn(false); setNewAddr({ line1: '', line2: '', city: '', state: '', postal_code: '' });
+      setShowCreate(false); setNewName(''); setNewPhone(''); setNewType('residential'); setNewEmail(''); setNewSmsOptIn(false); setNewEmailOptIn(false); setNewCompany(''); setNewAddr({ line1: '', line2: '', city: '', state: '', postal_code: '' });
       await refreshCustomers();
       setQ(''); setSearchResults(null);
     } catch (err) {
@@ -566,6 +562,14 @@ const createCustomer = async () => {
                                       </div>
                                     </>
                                   )}
+
+                                  {/* Company */}
+                                  <div className="cs-info-field">
+                                    <div className="cs-field-label">Company</div>
+                                    <div className="cs-field-value">
+                                      {r.company_name || <span style={{ color: 'var(--gray-300)' }}>—</span>}
+                                    </div>
+                                  </div>
 
                                   {/* Phone */}
                                   <div className="cs-info-field">
@@ -819,23 +823,25 @@ const createCustomer = async () => {
               <div className="cs-modal-section-label">Contact Info</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label">Phone <span style={{ color: 'var(--red-500)' }}>*</span></label>
-                  <input type="tel" value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="(555) 000-0000" autoFocus />
+                  <label className="form-label">First Name <span style={{ color: 'var(--red-500)' }}>*</span></label>
+                  <input value={newName.split(' ')[0] || ''} onChange={e => setNewName(`${e.target.value} ${newName.split(' ').slice(1).join(' ')}`.trim())} placeholder="First name" autoFocus />
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">First Name</label>
-                    <input value={newName.split(' ')[0] || ''} onChange={e => setNewName(`${e.target.value} ${newName.split(' ').slice(1).join(' ')}`.trim())} placeholder="First name" />
-                  </div>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Last Name</label>
-                    <input value={newName.split(' ').slice(1).join(' ') || ''} onChange={e => setNewName(`${newName.split(' ')[0]} ${e.target.value}`.trim())} placeholder="Last name" />
-                  </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label">Last Name <span style={{ color: 'var(--red-500)' }}>*</span></label>
+                  <input value={newName.split(' ').slice(1).join(' ') || ''} onChange={e => setNewName(`${newName.split(' ')[0]} ${e.target.value}`.trim())} placeholder="Last name" />
                 </div>
               </div>
               <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">Email <span style={{ color: 'var(--gray-400)', fontWeight: 400 }}>(optional)</span></label>
+                <label className="form-label">Company Name <span style={{ color: 'var(--gray-400)', fontWeight: 400 }}>(optional)</span></label>
+                <input value={newCompany} onChange={e => setNewCompany(e.target.value)} placeholder="Company or business name" />
+              </div>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Email <span style={{ color: 'var(--red-500)' }}>*</span></label>
                 <input type="email" placeholder="customer@example.com" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
+              </div>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Phone <span style={{ color: 'var(--red-500)' }}>*</span></label>
+                <input type="tel" value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="(555) 000-0000" />
               </div>
               <div>
                 <div className="cs-modal-section-label">Account Type</div>
@@ -878,14 +884,6 @@ const createCustomer = async () => {
                 </div>
               </div>
             </div>
-            <div className="modal-footer">
-              <button className="btn btn-ghost" onClick={() => setShowCreate(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={createCustomer} disabled={creating || !newPhone.trim()}>
-                {creating ? 'Creating…' : 'Create Customer'}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </>
   );
