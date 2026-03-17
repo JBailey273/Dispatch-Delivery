@@ -222,7 +222,7 @@ function NewDropPage() {
     if (!newCustomerPhone.trim()) { setError('Phone number is required to create a customer.'); return; }
     setError('');
     try {
-      const c = await api('/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newCustomerName.trim() || 'Walk-in Customer', phone: newCustomerPhone.trim(), customer_type: newCustomerType }) });
+      const c = await api('/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ first_name: newCustomerName.split(' ')[0] || 'Walk-in', last_name: newCustomerName.split(' ').slice(1).join(' ') || 'Customer', phone: newCustomerPhone.trim(), customer_type: newCustomerType }) });
       const created = c.customer || c;
       if (newCustomerEmail.trim()) {
         try {
@@ -499,8 +499,12 @@ function NewDropPage() {
                     <input type="tel" placeholder="(516) 555-0142" value={newCustomerPhone} onChange={e => setNewCustomerPhone(e.target.value)} autoFocus />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Customer Name</label>
-                    <input placeholder="Customer name (optional)" value={newCustomerName} onChange={e => setNewCustomerName(e.target.value)} />
+                    <label className="form-label">First Name</label>
+                    <input placeholder="First name" value={newCustomerName.split(' ')[0] || ''} onChange={e => setNewCustomerName(`${e.target.value} ${newCustomerName.split(' ').slice(1).join(' ')}`.trim())} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Last Name</label>
+                    <input placeholder="Last name (optional)" value={newCustomerName.split(' ').slice(1).join(' ') || ''} onChange={e => setNewCustomerName(`${newCustomerName.split(' ')[0]} ${e.target.value}`.trim())} />
                   </div>
                 </div>
                 <div className="form-group" style={{ marginTop: 8 }}>
