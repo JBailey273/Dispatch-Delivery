@@ -256,7 +256,7 @@ export default function DropRescheduleSlideOver({
   const sendNotification = async () => {
     setNotifLoading(true); setNotifMsg('');
     try {
-      const r = await api(`/dispatch/drops/${dropId}/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const r = await api(`/dispatch/drops/${dropId}/send-delivery-notification`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
       setNotifMsg(r.already_sent ? 'Already sent' : 'sent');
       await refreshDetail();
     } catch (err) { setNotifMsg((err as ApiError).message || 'Failed'); }
