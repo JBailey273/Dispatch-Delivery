@@ -319,7 +319,7 @@ def update_load_status(
                 ).scalar_one_or_none()
                 if customer and customer.email and customer.email_opt_in:
                     date_label = drop.scheduled_date.strftime("%A, %B %d") if drop.scheduled_date else "today"
-                    window_label = "9am–1pm" if drop.scheduled_window and drop.scheduled_window.value == "A" else "1pm–5pm" if drop.scheduled_window else "priority"
+                    window_label = "Priority Delivery" if drop.is_priority and not drop.scheduled_window else ("Morning (9am–1pm)" if drop.scheduled_window and drop.scheduled_window.value == "A" else "Afternoon (1pm–5pm)")
                     if requested == LoadStatus.LOADED_LEAVING:
                         driver = db.execute(
                             select(UserModel).where(UserModel.id == user.user_id)
