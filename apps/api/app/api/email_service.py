@@ -29,6 +29,7 @@ def send_email(to: str, subject: str, body_html: str, body_text: str | None = No
         headers={
             "Authorization": f"Bearer {settings.resend_api_key}",
             "Content-Type": "application/json",
+            "User-Agent": "dispatch-app/1.0",
         },
         method="POST",
     )
