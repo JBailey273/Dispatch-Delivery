@@ -513,7 +513,7 @@ const createCustomer = async () => {
                           <td colSpan={5} style={{ padding: 0 }}>
                             <div className="cs-expand-panel">
 
-                              {/* Customer info edit */}
+                             {/* Customer info edit */}
                               <div className="cs-section">
                                 <div className="cs-section-label">Customer Info</div>
                                 <div className="cs-info-grid">
@@ -566,7 +566,6 @@ const createCustomer = async () => {
                                       </div>
                                     </>
                                   )}
-                                </div>
 
                                   {/* Phone */}
                                   <div className="cs-info-field">
@@ -601,6 +600,7 @@ const createCustomer = async () => {
                                       {r.last_ordered ? fmtDate(r.last_ordered) : <span style={{ color: 'var(--gray-400)' }}>No orders yet</span>}
                                     </div>
                                   </div>
+
                                   {/* Email */}
                                   <div className="cs-info-field">
                                     <div className="cs-field-label">Email</div>
@@ -649,9 +649,9 @@ const createCustomer = async () => {
                                       </button>
                                     </div>
                                   </div>
-                                </div>
-                              </div>
 
+                                </div>{/* end cs-info-grid */}
+                              </div>{/* end cs-section */}
                               {/* Addresses */}
                               <div className="cs-section">
                                 <div className="cs-section-label">Delivery Addresses</div>
