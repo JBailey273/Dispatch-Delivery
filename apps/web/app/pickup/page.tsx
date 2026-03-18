@@ -80,7 +80,7 @@ export default function PickupQueuePage() {
   };
 
   const fulfill = async (drop: PickupDrop) => {
-    if (!confirm(`Mark Order #${drop.order_number || drop.drop_id.slice(0, 8)} as fulfilled?\n\nThis will remove it from the queue and mark it complete in WooCommerce.`)) return;
+    if (!confirm(`Mark Order #${drop.order_number || drop.drop_id.slice(0, 8)} as fulfilled?\n\nThis will remove it from the queue and mark it complete on the website.`)) return;
     setActionLoading(`fulfill-${drop.drop_id}`);
     try {
       await api(`/pickup/${drop.drop_id}/fulfill`, { method: 'POST' });
@@ -142,7 +142,7 @@ export default function PickupQueuePage() {
             <div className="empty-state">
               <div className="empty-state-icon">🛻</div>
               <div className="empty-state-title">No pickups waiting</div>
-              <div className="empty-state-desc">Pickup orders from WooCommerce will appear here when received.</div>
+              <div className="empty-state-desc">Pickup orders from the website will appear here when received.</div>
             </div>
           </div>
         )}
