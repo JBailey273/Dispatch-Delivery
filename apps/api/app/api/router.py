@@ -18,6 +18,7 @@ from app.api.routes import (
     tenant,
     uploads,
     users,
+    webhooks,
 )
 
 api_router = APIRouter()
@@ -40,3 +41,4 @@ api_router.include_router(operations.admin_router)
 
 api_router.include_router(platform_admin.router)
 api_router.include_router(schedule.router)  # add after the other include_router lines
+api_router.include_router(webhooks.router)
