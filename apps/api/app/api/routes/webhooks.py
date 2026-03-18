@@ -1,17 +1,14 @@
-import hashlib
-import hmac
+import json
 import logging
-
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 from app.api.deps import db_dep
 from app.api.services import log_event, now_utc
-from app.api.email_service import send_pickup_ready_email
 from app.models.entities import (
     Channel, ChannelType, Customer, CustomerAddress,
-    Drop, Load, Location, ProductCatalogItem, Tenant,
+    Drop, Location, ProductCatalogItem,
 )
 
 logger = logging.getLogger("dispatch.webhooks")
@@ -31,7 +28,6 @@ def _normalize_phone(raw: str) -> str | None:
 
 
 def _next_order_number(db: Session, tenant_id) -> int:
-    from sqlalchemy import func
     current_max = db.execute(
         select(func.coalesce(func.max(Drop.order_number), 0)).where(Drop.tenant_id == tenant_id)
     ).scalar_one()
@@ -42,22 +38,20 @@ def _next_order_number(db: Session, tenant_id) -> int:
 async def woocommerce_webhook(
     request: Request,
     x_wc_webhook_topic: str | None = Header(default=None),
-    x_wc_webhook_source: str | None = Header(default=None),
     db: Session = Depends(db_dep),
 ):
     body = await request.body()
-    import json
     try:
         payload = json.loads(body)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    # Only handle order.updated and order.created
+    # Only handle order topics
     topic = x_wc_webhook_topic or ""
     if not topic.startswith("order."):
         return {"status": "ignored", "topic": topic}
 
-    # Find the WooCommerce channel
+    # Find the active WooCommerce channel
     channel = db.execute(
         select(Channel).where(
             Channel.channel_type == ChannelType.WOOCOMMERCE,
@@ -69,6 +63,11 @@ async def woocommerce_webhook(
         raise HTTPException(status_code=400, detail="No active WooCommerce channel")
 
     tenant_id = channel.tenant_id
+
+    # Only process paid statuses
+    wc_status = payload.get("status", "")
+    if wc_status not in ("processing", "completed"):
+        return {"status": "ignored", "reason": f"order status is '{wc_status}'"}
 
     # Skip if already ingested
     external_order_id = str(payload.get("id", ""))
@@ -83,11 +82,6 @@ async def woocommerce_webhook(
     ).scalar_one_or_none()
     if existing:
         return {"status": "already_ingested", "drop_id": str(existing.id)}
-
-    # Only process paid statuses
-    wc_status = payload.get("status", "")
-    if wc_status not in ("processing", "completed"):
-        return {"status": "ignored", "reason": f"order status is {wc_status}"}
 
     # Resolve location
     location = db.execute(
@@ -107,14 +101,14 @@ async def woocommerce_webhook(
             delivery_method = "pickup"
             break
 
-    # Get address
+    # Use billing address for pickup, shipping address for delivery
     billing  = payload.get("billing", {})
     shipping = payload.get("shipping", {})
     addr     = billing if delivery_method == "pickup" else shipping
 
-    # Upsert customer
+    # Upsert customer — match on phone first, then email
     phone = _normalize_phone(billing.get("phone", ""))
-    email = billing.get("email", "")
+    email = billing.get("email", "").strip().lower() or None
 
     customer = None
     if phone:
@@ -132,22 +126,25 @@ async def woocommerce_webhook(
             )
         ).scalar_one_or_none()
     if not customer:
+        first = billing.get("first_name", "").strip()
+        last  = billing.get("last_name", "").strip()
         customer = Customer(
             tenant_id=tenant_id,
-            name=f"{billing.get('first_name', '')} {billing.get('last_name', '')}".strip(),
+            name=f"{first} {last}".strip(),
+            first_name=first,
+            last_name=last,
             phone_e164=phone,
-            email=email or None,
-            first_name=billing.get("first_name", ""),
-            last_name=billing.get("last_name", ""),
+            email=email,
         )
         db.add(customer)
         db.flush()
 
     # Upsert address
-    line1       = addr.get("address_1", "")
-    city        = addr.get("city", "")
-    state       = addr.get("state", "")
-    postal_code = addr.get("postcode", "")
+    line1       = addr.get("address_1", "").strip()
+    line2       = addr.get("address_2", "").strip() or None
+    city        = addr.get("city", "").strip()
+    state       = addr.get("state", "").strip()
+    postal_code = addr.get("postcode", "").strip()
 
     address = db.execute(
         select(CustomerAddress).where(
@@ -164,7 +161,7 @@ async def woocommerce_webhook(
             tenant_id=tenant_id,
             customer_id=customer.id,
             line1=line1,
-            line2=addr.get("address_2") or None,
+            line2=line2,
             city=city,
             state=state,
             postal_code=postal_code,
@@ -173,11 +170,13 @@ async def woocommerce_webhook(
         )
         db.add(address)
         db.flush()
+    else:
+        address.last_used_at = now_utc()
 
-    # Resolve SKUs to catalog items and build loads
-    line_items = payload.get("line_items", [])
-    loads_to_create = []
-    skipped_skus = []
+    # Match line items to catalog SKUs
+    line_items     = payload.get("line_items", [])
+    matched_items  = []
+    skipped_skus   = []
 
     for item in line_items:
         sku = (item.get("sku") or "").strip()
@@ -193,12 +192,12 @@ async def woocommerce_webhook(
             )
         ).scalar_one_or_none()
         if catalog_item:
-            loads_to_create.append((catalog_item, qty))
+            matched_items.append((catalog_item, qty))
         else:
             skipped_skus.append(sku)
-            logger.warning(f"woocommerce_webhook: SKU '{sku}' not found in catalog — skipping")
+            logger.warning(f"woocommerce_webhook: SKU '{sku}' not in catalog — skipping")
 
-    if not loads_to_create:
+    if not matched_items:
         logger.warning(f"woocommerce_webhook: order {external_order_id} has no matching SKUs — not creating drop")
         log_event(db, tenant_id, "webhook.woocommerce.no_skus", "webhook", {
             "external_order_id": external_order_id,
@@ -207,7 +206,13 @@ async def woocommerce_webhook(
         db.commit()
         return {"status": "ignored", "reason": "no matching SKUs", "skipped_skus": skipped_skus}
 
-    # Create drop
+    # Build notes from matched items so dispatcher can see what was ordered
+    item_lines = [f"{qty}x {cat.name}" for cat, qty in matched_items]
+    items_note = "Items: " + ", ".join(item_lines)
+    customer_note = payload.get("customer_note", "") or ""
+    notes = "\n".join(filter(None, [customer_note, items_note]))
+
+    # Create drop — unscheduled, dispatcher will assign date/window
     drop = Drop(
         tenant_id=tenant_id,
         location_id=location.id,
@@ -220,25 +225,11 @@ async def woocommerce_webhook(
         is_priority=False,
         scheduled_date=None,
         scheduled_window=None,
-        notes=payload.get("customer_note", "") or "",
+        notes=notes,
         drop_photos=[],
     )
     db.add(drop)
     db.flush()
-
-    # Create loads
-    for catalog_item, qty in loads_to_create:
-        load = Load(
-            tenant_id=tenant_id,
-            drop_id=drop.id,
-            bulk_group_snapshot=catalog_item.bulk_group,
-            material_name_snapshot=catalog_item.name,
-            qty=qty,
-            unit=catalog_item.unit,
-            route_date=now_utc().date(),
-            route_window=None,
-        )
-        db.add(load)
 
     log_event(db, tenant_id, "webhook.woocommerce.ingested", "webhook", {
         "external_order_id": external_order_id,
