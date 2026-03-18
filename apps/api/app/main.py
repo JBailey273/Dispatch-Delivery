@@ -11,6 +11,7 @@ from sqlalchemy import text
 from app.api.router import api_router
 from app.core.config import settings
 from app.db.session import SessionLocal
+from app.api.routes.pickup import router as pickup_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dispatch.api")
@@ -30,6 +31,7 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix=settings.api_prefix)
+app.include_router(pickup_router, prefix="/api/v1")
 
 
 @app.middleware("http")
