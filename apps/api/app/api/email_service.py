@@ -188,7 +188,38 @@ def send_delivery_confirmation_email(to: str, customer_name: str, scheduled_date
       <p style="margin:0;font-family:Arial,sans-serif;font-size:16px;color:#666666;line-height:1.65;">Hi {first_name} &#8212; great news! Your delivery from East Meadow Garden Center has been successfully completed.</p>
       {_detail_card('#f4f8f4', '#c8dfc8', '#3d5a45', 'Delivery Summary', [('Delivered On', scheduled_date)])}
       {pod_section}
-      {_info_box('Thank you for choosing East Meadow Garden Center! We hope everything arrived in perfect condition. If you have any concerns, please reply to this email.')}
+      {_info_box('Thank you for choosing East Meadow Garden Center! We hope everything arrived as expected. If you have any concerns, please reply to this email.')}
       <p style="margin:20px 0 0;font-family:Arial,sans-serif;font-size:14px;color:#999999;line-height:1.65;">We appreciate your business and look forward to serving you again!</p>
     """
-    return send_email(to, subject, _layout('#4a7052', content, "Your East Meadow Garden Center delivery has been completed — thank you!"))
+    return send_email(to, subject, _layout('#4a7052', content, "Your East Meadow Garden Center Delivery has been Completed — Thank You!"))
+
+
+def send_pickup_ready_email(
+    to: str,
+    customer_name: str,
+    order_number: int | None,
+    items: list[str],
+    store_address: str = "651 Hempstead Turnpike, East Meadow, NY 11554",
+) -> bool:
+    first_name = customer_name.split()[0] if customer_name else "there"
+    order_label = f"Order #{order_number}" if order_number else "Your Order"
+    subject = f"{order_label} is Ready for Pickup!"
+    items_html = "".join(
+        f'<tr><td style="padding:6px 0;font-family:Arial,sans-serif;font-size:14px;color:#444444;border-bottom:1px solid #e8f0e8;">{item}</td></tr>'
+        for item in items
+    )
+    content = f"""
+      <h1 style="margin:0 0 12px;font-family:Outfit,Arial,sans-serif;font-size:26px;font-weight:800;color:#2c2c2c;letter-spacing:-0.02em;line-height:1.25;">{order_label} is ready for pickup! &#x1F33F;</h1>
+      <p style="margin:0 0 20px;font-family:Arial,sans-serif;font-size:16px;color:#666666;line-height:1.65;">Hi {first_name} &#8212; your order is available for pickup at East Meadow Garden Center, {store_address}.</p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;border:1px solid #e8f0e8;border-radius:8px;overflow:hidden;">
+        <tr><td style="padding:10px 16px;background:#f4f8f4;font-family:Outfit,Arial,sans-serif;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#3d5a45;">Your Items</td></tr>
+        <tr><td style="padding:4px 16px 8px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            {items_html}
+          </table>
+        </td></tr>
+      </table>
+      {_info_box('&#x1F4CD; &nbsp;Head to the <strong>yard desk</strong> when you arrive and let us know your name or order number. We will get you loaded and on your way promptly.')}
+      <p style="margin:20px 0 0;font-family:Arial,sans-serif;font-size:14px;color:#999999;line-height:1.65;">See you soon! &#8212; The East Meadow Team</p>
+    """
+    return send_email(to, subject, _layout('#4a7052', content, f"{order_label} is ready for pickup at East Meadow Garden Center"))
