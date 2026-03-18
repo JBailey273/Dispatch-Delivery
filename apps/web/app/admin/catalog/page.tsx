@@ -152,7 +152,7 @@ export default function AdminCatalogPage() {
                 <tr>
                   <th>SKU</th>
                   <th>Product Name</th>
-                  <th>Mode</th>
+                  <th style={{ width: 110 }}>Mode</th>
                   <th>Unit</th>
                   <th>Bulk Group</th>
                   <th>Status</th>
@@ -164,7 +164,7 @@ export default function AdminCatalogPage() {
                   <tr key={item.id} style={{ opacity: item.active ? 1 : 0.5 }}>
                     <td><span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 600 }}>{item.sku}</span></td>
                     <td style={{ fontWeight: 600, color: 'var(--gray-900)' }}>{item.name}</td>
-                    <td><span className={`pill ${MODE_PILL[item.delivery_mode] || 'pill-gray'}`}>{MODE_LABEL[item.delivery_mode] || item.delivery_mode}</span></td>
+                    <td style={{ whiteSpace: 'nowrap' }}><span className={`pill ${MODE_PILL[item.delivery_mode] || 'pill-gray'}`} style={{ whiteSpace: 'nowrap' }}>{MODE_LABEL[item.delivery_mode] || item.delivery_mode}</span></td>
                     <td>{item.unit}</td>
                     <td style={{ fontSize: 13, color: 'var(--gray-500)' }}>{item.bulk_group}</td>
                     <td>{item.active ? <span className="pill pill-green"><span className="pill-dot" />Active</span> : <span className="pill pill-gray">Inactive</span>}</td>
