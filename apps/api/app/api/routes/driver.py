@@ -336,6 +336,41 @@ def update_load_status(
             import logging
             logging.getLogger("dispatch.email").error(f"Email trigger failed for load {load_id}: {e}")
 
+    # ── WooCommerce sync — mark order completed when all loads delivered ──
+    if requested == LoadStatus.DELIVERED:
+        try:
+            from app.api.woocommerce_service import sync_order_status
+            from app.models.entities import Channel, ChannelType
+            all_drop_loads = db.execute(
+                select(Load).where(Load.drop_id == load.drop_id, Load.tenant_id == user.tenant_id)
+            ).scalars().all()
+            all_delivered = all(
+                l.status == LoadStatus.DELIVERED or str(l.id) == str(load.id)
+                for l in all_drop_loads
+            )
+            if all_delivered:
+                drop_row = db.execute(
+                    select(Drop).where(Drop.id == load.drop_id, Drop.tenant_id == user.tenant_id)
+                ).scalar_one_or_none()
+                if drop_row and drop_row.external_order_id:
+                    wc_channel = db.execute(
+                        select(Channel).where(
+                            Channel.tenant_id == user.tenant_id,
+                            Channel.channel_type == ChannelType.WOOCOMMERCE,
+                            Channel.is_active == True,
+                        )
+                    ).scalar_one_or_none()
+                    if wc_channel and wc_channel.wc_store_url and wc_channel.wc_consumer_key:
+                        sync_order_status(
+                            wc_channel.wc_store_url,
+                            wc_channel.wc_consumer_key,
+                            wc_channel.wc_consumer_secret,
+                            drop_row.external_order_id,
+                            "completed",
+                        )
+        except Exception:
+            logger.exception("woocommerce_sync_failed on delivery — continuing")
+
     log_event(
         db,
         user.tenant_id,
