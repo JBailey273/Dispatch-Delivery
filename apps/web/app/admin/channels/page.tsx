@@ -8,9 +8,6 @@ type ChannelUsage = { channel_id: string; last_request_at?: string | null; recen
 type WcForm = { wc_store_url: string; wc_consumer_key: string; wc_consumer_secret: string };
 
 const TYPE_LABEL: Record<string, string> = { manual: 'Manual', woocommerce: 'WooCommerce' };
-const [wcModal, setWcModal] = useState<ChannelItem | null>(null);
-const [wcForm, setWcForm] = useState<WcForm>({ wc_store_url: '', wc_consumer_key: '', wc_consumer_secret: '' });
-const [wcSaving, setWcSaving] = useState(false);
 
 export default function ChannelsPage() {
   const [channels, setChannels] = useState<ChannelItem[]>([]);
@@ -23,6 +20,10 @@ export default function ChannelsPage() {
   const [createForm, setCreateForm] = useState({ name: '', type: 'woocommerce' });
   const [saving, setSaving] = useState(false);
 
+  // WooCommerce credentials
+  const [wcModal, setWcModal] = useState<ChannelItem | null>(null);
+  const [wcForm, setWcForm] = useState<WcForm>({ wc_store_url: '', wc_consumer_key: '', wc_consumer_secret: '' });
+  const [wcSaving, setWcSaving] = useState(false);
   // Key reveal
   const [revealedKey, setRevealedKey] = useState<{ channelName: string; key: string } | null>(null);
 
