@@ -41,12 +41,15 @@ async def woocommerce_webhook(
     db: Session = Depends(db_dep),
 ):
     body = await request.body()
+    if not body:
+        return {"status": "ok", "ping": True}
     try:
         payload = json.loads(body)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
+        return {"status": "ok", "ping": True}
 
     # Only handle order topics
+    # Return 200 for WooCommerce ping/test requests
     topic = x_wc_webhook_topic or ""
     if not topic.startswith("order."):
         return {"status": "ignored", "topic": topic}
