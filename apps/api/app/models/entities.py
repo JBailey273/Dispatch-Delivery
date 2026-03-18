@@ -411,6 +411,9 @@ class Channel(Base, TenantScopedMixin, TimestampMixin):
     api_key_hash: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     last_called_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    wc_store_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    wc_consumer_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    wc_consumer_secret: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class BillingPlan(Base, TimestampMixin):
