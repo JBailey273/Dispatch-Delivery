@@ -23,3 +23,10 @@ def downgrade() -> None:
     op.drop_column("channels", "wc_consumer_secret")
     op.drop_column("channels", "wc_consumer_key")
     op.drop_column("channels", "wc_store_url")
+```
+
+---
+
+**STEP 3 — Run both migrations**
+```
+PYTHONPATH=/opt/render/project/src/apps/api alembic upgrade head
