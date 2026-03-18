@@ -16,7 +16,36 @@ router = APIRouter(prefix="/channels", tags=["channels"])
 class CreateChannelIn(BaseModel):
     name: str
     type: ChannelType
+    wc_store_url: str | None = None
+    wc_consumer_key: str | None = None
+    wc_consumer_secret: str | None = None
 
+class UpdateChannelIn(BaseModel):
+    wc_store_url: str | None = None
+    wc_consumer_key: str | None = None
+    wc_consumer_secret: str | None = None
+
+@router.patch("/{channel_id}")
+def update_channel(
+    channel_id: str,
+    payload: UpdateChannelIn,
+    user: AuthUser = Depends(require_roles(UserRole.ADMIN)),
+    db: Session = Depends(db_dep),
+):
+    channel = db.execute(
+        select(Channel).where(Channel.id == channel_id, Channel.tenant_id == user.tenant_id)
+    ).scalar_one_or_none()
+    if not channel:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Channel not found"})
+    if payload.wc_store_url is not None:
+        channel.wc_store_url = payload.wc_store_url
+    if payload.wc_consumer_key is not None:
+        channel.wc_consumer_key = payload.wc_consumer_key
+    if payload.wc_consumer_secret is not None:
+        channel.wc_consumer_secret = payload.wc_consumer_secret
+    log_event(db, user.tenant_id, "channel.updated", "api", {"channel_id": channel_id})
+    db.commit()
+    return {"status": "ok"}
 
 @router.post("")
 def create_channel(payload: CreateChannelIn, user: AuthUser = Depends(require_roles(UserRole.ADMIN)), db: Session = Depends(db_dep)):
@@ -27,6 +56,9 @@ def create_channel(payload: CreateChannelIn, user: AuthUser = Depends(require_ro
         channel_type=payload.type,
         api_key_hash=sha256(api_key.encode("utf-8")).hexdigest(),
         is_active=True,
+        wc_store_url=payload.wc_store_url,
+        wc_consumer_key=payload.wc_consumer_key,
+        wc_consumer_secret=payload.wc_consumer_secret,
     )
     db.add(channel)
     log_event(db, user.tenant_id, "channel.created", "api", {"name": payload.name, "type": payload.type.value})
