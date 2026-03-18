@@ -1,8 +1,8 @@
-import logging
-import urllib.request
-import urllib.error
-import json
 import base64
+import json
+import logging
+import urllib.error
+import urllib.request
 
 logger = logging.getLogger("dispatch.woocommerce")
 
@@ -12,11 +12,11 @@ def sync_order_status(
     wc_consumer_key: str,
     wc_consumer_secret: str,
     external_order_id: str,
-    wc_status: str,  # e.g. "completed"
+    wc_status: str,
 ) -> bool:
     """
     Update a WooCommerce order status via the REST API.
-    Returns True on success, False on any failure (non-fatal — caller should log and continue).
+    Non-fatal — returns True on success, False on any failure.
     """
     if not all([wc_store_url, wc_consumer_key, wc_consumer_secret, external_order_id]):
         logger.warning("woocommerce_sync skipped — missing credentials or order id")
@@ -41,17 +41,11 @@ def sync_order_status(
 
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
-            logger.info(
-                f"WooCommerce order {external_order_id} set to '{wc_status}' "
-                f"(HTTP {resp.status})"
-            )
+            logger.info(f"WooCommerce order {external_order_id} → '{wc_status}' (HTTP {resp.status})")
             return True
     except urllib.error.HTTPError as e:
         body = e.read().decode()
-        logger.error(
-            f"WooCommerce sync failed for order {external_order_id}: "
-            f"HTTP {e.code} — {body}"
-        )
+        logger.error(f"WooCommerce sync failed for order {external_order_id}: HTTP {e.code} — {body}")
         return False
     except Exception as e:
         logger.error(f"WooCommerce sync error for order {external_order_id}: {e}")
