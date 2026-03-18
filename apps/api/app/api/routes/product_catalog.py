@@ -19,6 +19,7 @@ class ProductIn(BaseModel):
     active: bool = True
     category: str | None = None
     bulk_group: str | None = None
+    location_id: str | None = None
 
 
 @router.post("/import")
@@ -72,9 +73,33 @@ async def import_product_catalog(
 
 @router.post("")
 def create_product(payload: ProductIn, user: AuthUser = Depends(require_roles(UserRole.ADMIN)), db: Session = Depends(db_dep)):
-    payload_data = payload.model_dump(exclude_none=True)
-    payload_data["bulk_group"] = payload.bulk_group or payload.sku
-    item = ProductCatalogItem(tenant_id=user.tenant_id, **payload_data)
+    # Resolve location
+    from app.models.entities import Location
+    if payload.location_id:
+        location = db.execute(
+            select(Location).where(Location.id == payload.location_id, Location.tenant_id == user.tenant_id)
+        ).scalar_one_or_none()
+        if not location:
+            raise HTTPException(status_code=404, detail={"code": "location_not_found", "message": "Location not found"})
+    else:
+        location = db.execute(
+            select(Location).where(Location.tenant_id == user.tenant_id, Location.is_active == True)
+            .order_by(Location.created_at)
+        ).scalars().first()
+        if not location:
+            raise HTTPException(status_code=400, detail={"code": "no_location", "message": "No active location found"})
+
+    item = ProductCatalogItem(
+        tenant_id=user.tenant_id,
+        location_id=location.id,
+        sku=payload.sku,
+        name=payload.name,
+        delivery_mode=payload.delivery_mode,
+        unit=payload.unit,
+        active=payload.active,
+        category=payload.category,
+        bulk_group=payload.bulk_group or payload.sku,
+    )
     db.add(item)
     try:
         db.commit()
