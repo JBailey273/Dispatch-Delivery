@@ -22,6 +22,7 @@ type OrderRow = {
   status: string;
   driver_name: string | null;
   delivery_method: string | null;
+  created_at: string | null;
 };
 type Driver = { id: string; name: string };
 
@@ -33,6 +34,11 @@ function fmtDate(ds: string | null) {
   if (!ds) return '—';
   const d = new Date(ds + 'T12:00:00');
   return `${DAYS[d.getDay()].slice(0, 3)}, ${FULL_MONTHS[d.getMonth()].slice(0, 3)} ${d.getDate()}`;
+}
+function fmtDateTime(iso: string | null) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return `${DAYS[d.getDay()].slice(0, 3)}, ${FULL_MONTHS[d.getMonth()].slice(0, 3)} ${d.getDate()} · ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
 }
 
 const STATUS_OPTIONS = [
@@ -62,6 +68,7 @@ export default function AllOrdersPage() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [activeTab, setActiveTab] = useState<'deliveries' | 'pickups'>('deliveries');
 
   // Filters
   const defaultStart = useMemo(() => {
@@ -77,7 +84,7 @@ export default function AllOrdersPage() {
   const [customerSearch, setCustomerSearch] = useState('');
   const [materialFilter, setMaterialFilter] = useState('');
 
-  // Sort
+  // Sort — deliveries sort by date desc, pickups sort by created_at desc
   const [sortCol, setSortCol] = useState<'date' | 'customer' | 'status' | 'driver' | 'material'>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
@@ -86,10 +93,8 @@ export default function AllOrdersPage() {
     else { setSortCol(col); setSortDir(col === 'date' ? 'desc' : 'asc'); }
   };
 
-  // Location context
   const { activeLocation } = useLocation();
 
-  // Fetch
   const fetchOrders = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -113,15 +118,18 @@ export default function AllOrdersPage() {
     api('/dispatch/drivers').then(d => setDrivers(d.drivers || [])).catch(() => null);
   }, []);
 
-  // Get unique materials for filter dropdown
-  const materialOptions = useMemo(() => {
-    const mats = new Set(orders.map(o => o.material).filter(Boolean));
-    return Array.from(mats).sort();
-  }, [orders]);
+  // Split by tab
+  const deliveryOrders = useMemo(() => orders.filter(o => o.delivery_method !== 'pickup'), [orders]);
+  const pickupOrders = useMemo(() => orders.filter(o => o.delivery_method === 'pickup'), [orders]);
+  const tabOrders = activeTab === 'deliveries' ? deliveryOrders : pickupOrders;
 
-  // Client-side filtering for customer search and material (fast, no API call needed)
+  const materialOptions = useMemo(() => {
+    const mats = new Set(tabOrders.map(o => o.material).filter(Boolean));
+    return Array.from(mats).sort();
+  }, [tabOrders]);
+
   const filtered = useMemo(() => {
-    let result = orders;
+    let result = tabOrders;
     if (customerSearch.trim()) {
       const q = customerSearch.toLowerCase();
       result = result.filter(o =>
@@ -134,15 +142,18 @@ export default function AllOrdersPage() {
       result = result.filter(o => o.material === materialFilter);
     }
     return result;
-  }, [orders, customerSearch, materialFilter]);
+  }, [tabOrders, customerSearch, materialFilter]);
 
-  // Sort
   const sorted = useMemo(() => {
     const arr = [...filtered];
     const dir = sortDir === 'asc' ? 1 : -1;
     arr.sort((a, b) => {
       switch (sortCol) {
-        case 'date': return dir * ((a.scheduled_date ?? '') + (a.window ?? '')).localeCompare((b.scheduled_date ?? '') + (b.window ?? ''));
+        case 'date':
+          if (activeTab === 'pickups') {
+            return dir * (a.created_at ?? '').localeCompare(b.created_at ?? '');
+          }
+          return dir * ((a.scheduled_date ?? '') + (a.window ?? '')).localeCompare((b.scheduled_date ?? '') + (b.window ?? ''));
         case 'customer': return dir * (a.customer_name || '').localeCompare(b.customer_name || '');
         case 'status': return dir * (a.status || '').localeCompare(b.status || '');
         case 'driver': return dir * (a.driver_name || 'zzz').localeCompare(b.driver_name || 'zzz');
@@ -151,9 +162,8 @@ export default function AllOrdersPage() {
       }
     });
     return arr;
-  }, [filtered, sortCol, sortDir]);
+  }, [filtered, sortCol, sortDir, activeTab]);
 
-  // Stats
   const totalCount = filtered.length;
   const deliveredCount = filtered.filter(o => ['DELIVERED', 'delivered'].includes(o.status)).length;
   const exceptionCount = filtered.filter(o => ['EXCEPTION', 'exception'].includes(o.status)).length;
@@ -172,7 +182,10 @@ export default function AllOrdersPage() {
         <div className="ao-top">
           <div>
             <h1>All Orders</h1>
-            <p className="ao-sub">{totalCount} deliveries{customerSearch || statusFilter || driverFilter || materialFilter ? ' (filtered)' : ''}</p>
+            <p className="ao-sub">
+              {totalCount} {activeTab === 'pickups' ? 'pickup' : 'delivery'} order{totalCount !== 1 ? 's' : ''}
+              {customerSearch || statusFilter || driverFilter || materialFilter ? ' (filtered)' : ''}
+            </p>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-secondary btn-sm" onClick={fetchOrders}>Refresh</button>
@@ -180,31 +193,53 @@ export default function AllOrdersPage() {
           </div>
         </div>
 
+        {/* ── Tabs ── */}
+        <div className="ao-tabs">
+          <button
+            className={`ao-tab ${activeTab === 'deliveries' ? 'ao-tab-active' : ''}`}
+            onClick={() => setActiveTab('deliveries')}
+          >
+            Deliveries
+            <span className="ao-tab-count">{deliveryOrders.length}</span>
+          </button>
+          <button
+            className={`ao-tab ${activeTab === 'pickups' ? 'ao-tab-active' : ''}`}
+            onClick={() => setActiveTab('pickups')}
+          >
+            Pickups
+            <span className="ao-tab-count">{pickupOrders.length}</span>
+          </button>
+        </div>
+
         {/* ── Filters ── */}
         <div className="ao-filters card">
           <div className="ao-filter-row">
-            <div className="ao-filter-group">
-              <label className="ao-filter-label">From</label>
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="ao-date-input" />
-            </div>
-            <div className="ao-filter-group">
-              <label className="ao-filter-label">To</label>
-              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="ao-date-input" />
-            </div>
-            <div className="ao-filter-group">
-              <label className="ao-filter-label">Status</label>
-              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="ao-select">
-                {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-              </select>
-            </div>
-            <div className="ao-filter-group">
-              <label className="ao-filter-label">Driver</label>
-              <select value={driverFilter} onChange={e => setDriverFilter(e.target.value)} className="ao-select">
-                <option value="">All Drivers</option>
-                <option value="Unassigned">Unassigned</option>
-                {drivers.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-              </select>
-            </div>
+            {activeTab === 'deliveries' && (
+              <>
+                <div className="ao-filter-group">
+                  <label className="ao-filter-label">From</label>
+                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="ao-date-input" />
+                </div>
+                <div className="ao-filter-group">
+                  <label className="ao-filter-label">To</label>
+                  <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="ao-date-input" />
+                </div>
+                <div className="ao-filter-group">
+                  <label className="ao-filter-label">Status</label>
+                  <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="ao-select">
+                    {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  </select>
+                </div>
+                <div className="ao-filter-group">
+                  <label className="ao-filter-label">Driver</label>
+                  <select value={driverFilter} onChange={e => setDriverFilter(e.target.value)} className="ao-select">
+                    <option value="">All Drivers</option>
+                    <option value="Unassigned">Unassigned</option>
+                    {drivers.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                  </select>
+                </div>
+              </>
+            )}
             <div className="ao-filter-group ao-filter-grow">
               <label className="ao-filter-label">Customer</label>
               <input
@@ -236,19 +271,28 @@ export default function AllOrdersPage() {
 
         {/* ── Summary ── */}
         <div className="ao-summary">
-          <span>{totalCount} load{totalCount !== 1 ? 's' : ''}</span>
-          <span className="ao-summary-sep">{'\u00B7'}</span>
-          <span style={{ color: 'var(--green-600)' }}>{deliveredCount} delivered</span>
-          {exceptionCount > 0 && (
+          <span>{totalCount} order{totalCount !== 1 ? 's' : ''}</span>
+          {activeTab === 'deliveries' && (
             <>
               <span className="ao-summary-sep">{'\u00B7'}</span>
-              <span style={{ color: 'var(--red-600)' }}>{exceptionCount} exception{exceptionCount !== 1 ? 's' : ''}</span>
+              <span style={{ color: 'var(--green-600)' }}>{deliveredCount} delivered</span>
+              {exceptionCount > 0 && (
+                <>
+                  <span className="ao-summary-sep">{'\u00B7'}</span>
+                  <span style={{ color: 'var(--red-600)' }}>{exceptionCount} exception{exceptionCount !== 1 ? 's' : ''}</span>
+                </>
+              )}
+            </>
+          )}
+          {activeTab === 'pickups' && (
+            <>
+              <span className="ao-summary-sep">{'\u00B7'}</span>
+              <span style={{ color: 'var(--green-600)' }}>{deliveredCount} fulfilled</span>
             </>
           )}
         </div>
 
         {error && <div className="alert alert-error" style={{ marginBottom: 16 }}><span>{'\u26A0'}</span> {error}</div>}
-
         {loading && <div style={{ textAlign: 'center', padding: 40 }}><div className="spinner spinner-lg" style={{ margin: '0 auto' }} /></div>}
 
         {/* ── Table ── */}
@@ -256,51 +300,75 @@ export default function AllOrdersPage() {
           <div className="ao-table-wrap card">
             {sorted.length === 0 ? (
               <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 14 }}>
-                No orders found for the selected filters.
+                No {activeTab === 'pickups' ? 'pickup ' : ''}orders found for the selected filters.
               </div>
             ) : (
               <div className="ao-table-scroll">
                 <table className="ao-table">
                   <thead>
                     <tr>
-                      <th className="ao-th ao-th-sort" onClick={() => toggleSort('date')}>Date{sortIcon('date')}</th>
-                      <th className="ao-th">Window</th>
+                      <th className="ao-th ao-th-sort" onClick={() => toggleSort('date')}>
+                        {activeTab === 'pickups' ? 'Order Received' : 'Date'}{sortIcon('date')}
+                      </th>
+                      {activeTab === 'deliveries' && <th className="ao-th">Window</th>}
+                      {activeTab === 'pickups' && <th className="ao-th">Order #</th>}
                       <th className="ao-th ao-th-sort" onClick={() => toggleSort('customer')}>Customer{sortIcon('customer')}</th>
-                      <th className="ao-th ao-hide-mobile">Address</th>
+                      <th className="ao-th ao-hide-mobile">{activeTab === 'pickups' ? 'Contact' : 'Address'}</th>
                       <th className="ao-th ao-th-sort" onClick={() => toggleSort('material')}>Material{sortIcon('material')}</th>
                       <th className="ao-th ao-hide-sm">Qty</th>
                       <th className="ao-th ao-th-sort" onClick={() => toggleSort('status')}>Status{sortIcon('status')}</th>
-                      <th className="ao-th ao-th-sort ao-hide-mobile" onClick={() => toggleSort('driver')}>Driver{sortIcon('driver')}</th>
+                      {activeTab === 'deliveries' && (
+                        <th className="ao-th ao-th-sort ao-hide-mobile" onClick={() => toggleSort('driver')}>Driver{sortIcon('driver')}</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
                     {sorted.map((o, i) => (
                       <tr key={`${o.load_id}-${i}`} className="ao-row" onClick={() => window.location.href = `/dispatch/drops/${o.drop_id}`}>
-                        <td className="ao-td ao-td-date">{fmtDate(o.scheduled_date)}</td>
-                        <td className="ao-td">
-                          {o.is_priority ? (
-                            <span className="ao-win-badge" style={{ background: 'rgba(37,99,235,0.08)', color: 'var(--blue-700)' }}>⚡ Priority</span>
-                          ) : (
-                            <span className={`ao-win-badge ${o.window === 'A' ? 'ao-win-am' : 'ao-win-pm'}`}>
-                              {o.window === 'A' ? 'Morning' : 'Afternoon'}
-                            </span>
-                          )}
+                        <td className="ao-td ao-td-date">
+                          {activeTab === 'pickups' ? fmtDateTime(o.created_at) : fmtDate(o.scheduled_date)}
                         </td>
+                        {activeTab === 'deliveries' && (
+                          <td className="ao-td">
+                            {o.is_priority ? (
+                              <span className="ao-win-badge" style={{ background: 'rgba(37,99,235,0.08)', color: 'var(--blue-700)' }}>⚡ Priority</span>
+                            ) : (
+                              <span className={`ao-win-badge ${o.window === 'A' ? 'ao-win-am' : 'ao-win-pm'}`}>
+                                {o.window === 'A' ? 'Morning' : 'Afternoon'}
+                              </span>
+                            )}
+                          </td>
+                        )}
+                        {activeTab === 'pickups' && (
+                          <td className="ao-td" style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 13 }}>
+                            {o.order_ref}
+                          </td>
+                        )}
                         <td className="ao-td">
                           <div className="ao-customer-name">{o.customer_name}</div>
                           <div className="ao-customer-phone">{o.customer_phone}</div>
                         </td>
-                        <td className="ao-td ao-hide-mobile ao-td-addr">{o.address_short}</td>
+                        <td className="ao-td ao-hide-mobile ao-td-addr">
+                          {activeTab === 'pickups' ? (
+                            <span style={{ fontSize: 12, color: 'var(--gray-500)' }}>{o.customer_phone}</span>
+                          ) : (
+                            o.address_short
+                          )}
+                        </td>
                         <td className="ao-td ao-td-material">{o.material}</td>
                         <td className="ao-td ao-hide-sm">{o.qty} {o.unit}</td>
                         <td className="ao-td">
                           <span className="ao-status" style={{ color: STATUS_COLORS[o.status] || 'var(--gray-500)' }}>
-                            {STATUS_LABELS[o.status] || o.status}
+                            {activeTab === 'pickups' && o.status.toLowerCase() === 'assigned'
+                              ? 'Pending Pickup'
+                              : STATUS_LABELS[o.status] || o.status}
                           </span>
                         </td>
-                        <td className="ao-td ao-hide-mobile">
-                          {o.driver_name || <span style={{ color: 'var(--amber-500)', fontWeight: 600 }}>Unassigned</span>}
-                        </td>
+                        {activeTab === 'deliveries' && (
+                          <td className="ao-td ao-hide-mobile">
+                            {o.driver_name || <span style={{ color: 'var(--amber-500)', fontWeight: 600 }}>Unassigned</span>}
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -319,6 +387,46 @@ const pageStyles = `
   .ao-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
   .ao-top h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
   .ao-sub { color: var(--gray-500); font-size: 14px; margin-top: 2px; }
+
+  /* Tabs */
+  .ao-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 16px;
+    border-bottom: 2px solid var(--border-light);
+  }
+  .ao-tab {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    font-family: var(--font-heading);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--gray-500);
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .ao-tab:hover { color: var(--gray-800); }
+  .ao-tab-active { color: var(--green-700); border-bottom-color: var(--green-600); }
+  .ao-tab-count {
+    font-size: 11px;
+    font-weight: 800;
+    background: var(--gray-100);
+    color: var(--gray-500);
+    border-radius: 10px;
+    padding: 1px 7px;
+    min-width: 20px;
+    text-align: center;
+  }
+  .ao-tab-active .ao-tab-count {
+    background: var(--green-50);
+    color: var(--green-700);
+  }
 
   /* Filters */
   .ao-filters { padding: 16px 20px; margin-bottom: 12px; }
