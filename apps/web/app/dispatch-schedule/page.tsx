@@ -260,6 +260,7 @@ function DispatchSchedulePage() {
   const closeDrop = () => { setSlideDropId(null); setSlideDropDetail(null); };
 
   const handleRescheduled = async () => {
+    setCapData({});
     await fetchSchedule();
     await fetchCapacity();
     fetchMonthSummary();
