@@ -20,6 +20,7 @@ from app.models.entities import (
     SchedulingToken,
     Tenant,
     UserRole,
+    WindowCapacity,
     WindowCode,
 )
 
@@ -169,6 +170,38 @@ def confirm_schedule(token: str, payload: ConfirmScheduleIn, db: Session = Depen
     )
     if remaining < required_loads:
         raise HTTPException(status_code=409, detail={"code": "capacity_conflict", "message": "That date and window is no longer available. Please choose another."})
+
+    # Release old capacity if drop was already scheduled
+    if drop.scheduled_date and drop.scheduled_window and not drop.is_priority:
+        old_cap = db.execute(
+            select(WindowCapacity).where(
+                WindowCapacity.tenant_id == drop.tenant_id,
+                WindowCapacity.service_date == drop.scheduled_date,
+                WindowCapacity.window_code == drop.scheduled_window,
+            ).with_for_update()
+        ).scalar_one_or_none()
+        if old_cap:
+            old_cap.capacity_used = max(0, old_cap.capacity_used - required_loads)
+
+    # Reserve new capacity
+    new_cap = db.execute(
+        select(WindowCapacity).where(
+            WindowCapacity.tenant_id == drop.tenant_id,
+            WindowCapacity.service_date == payload.scheduled_date,
+            WindowCapacity.window_code == window,
+        ).with_for_update()
+    ).scalar_one_or_none()
+    if new_cap:
+        new_cap.capacity_used += required_loads
+    else:
+        db.add(WindowCapacity(
+            tenant_id=drop.tenant_id,
+            location_id=drop.location_id,
+            service_date=payload.scheduled_date,
+            window_code=window,
+            capacity_total=location.capacity_per_window,
+            capacity_used=required_loads,
+        ))
 
     # Update the drop
     drop.scheduled_date = payload.scheduled_date
