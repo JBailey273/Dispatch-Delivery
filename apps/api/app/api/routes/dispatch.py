@@ -306,9 +306,10 @@ def list_orders(
             "material": load.material_name_snapshot,
             "qty": load.qty,
             "unit": load.unit,
-            "status": load.status.value,
+            "status": "fulfilled" if drop.fulfilled_at else load.status.value,
             "driver_name": driver_display,
             "is_priority": drop.is_priority,
+            "created_at": drop.created_at.isoformat() if drop.created_at else None,
         })
 
     return {"orders": orders}
