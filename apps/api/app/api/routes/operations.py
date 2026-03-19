@@ -572,6 +572,8 @@ def anomalies(auto_fix: bool = Query(default=True), location_id: str | None = Qu
     drop_q = (
         select(Drop.id, Drop.scheduled_date, Drop.scheduled_window)
         .where(Drop.tenant_id == user.tenant_id)
+        .where(Drop.delivery_method == "delivery")
+        .where(Drop.scheduled_date.isnot(None))
         .where(~Drop.id.in_(select(Load.drop_id).where(Load.tenant_id == user.tenant_id)))
     )
     if loc_id:
@@ -602,6 +604,8 @@ def anomalies(auto_fix: bool = Query(default=True), location_id: str | None = Qu
         assigned_q = assigned_q.where(Drop.location_id == loc_id)
     assigned = db.execute(assigned_q).scalars().all()
     for load in assigned:
+        if not load.route_date or not load.route_window:
+            continue
         window_end = datetime.combine(load.route_date, window_ends[load.route_window].timetz(), tzinfo=tz)
         if window_end < now:
             anomalies_out.append({"type": "load_stuck_assigned", "load_id": str(load.id), "drop_id": str(load.drop_id), "route_date": str(load.route_date), "route_window": load.route_window.value, "status": load.status.value})
