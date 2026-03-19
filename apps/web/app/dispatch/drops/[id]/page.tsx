@@ -70,20 +70,6 @@ const EXCEPTION_LABELS: Record<string, string> = {
   OTHER: 'Other',
 };
 
-const [deleting, setDeleting] = useState(false);
-const [confirmDelete, setConfirmDelete] = useState(false);
-};
-
-const handleDelete = async () => {
-  setDeleting(true);
-  try {
-    await api(`/drops/${id}`, { method: 'DELETE' });
-    router.replace('/dispatch-schedule');
-  } catch (err) {
-    setError((err as ApiError).message || 'Failed to delete order.');
-    setDeleting(false);
-    setConfirmDelete(false);
-  }
 
 function toSlideOverDetail(drop: DropDetail): SlideOverDropDetail {
   return {
@@ -128,7 +114,21 @@ function DispatchDropDetailPage() {
   const [showPanel, setShowPanel] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const { activeLocation } = useLocation();
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
+  const handleDelete = async () => {
+  setDeleting(true);
+  try {
+    await api(`/drops/${id}`, { method: 'DELETE' });
+    router.replace('/dispatch-schedule');
+  } catch (err) {
+    setError((err as ApiError).message || 'Failed to delete order.');
+    setDeleting(false);
+    setConfirmDelete(false);
+  }
+};   
+  
   const fetchDrop = useCallback(async () => {
     setLoading(true);
     try {
