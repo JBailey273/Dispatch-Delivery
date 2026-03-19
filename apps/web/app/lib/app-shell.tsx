@@ -141,17 +141,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => { setMounted(true); }, []);
 
+  const isPublic = pathname === '/login' || pathname === '/schedule' || pathname === '/schedule-embed';
+
   useEffect(() => {
     if (!mounted) return;
-    if (pathname === '/login') return;
+    if (isPublic) return;
     const nextSession = getSession();
     if (!nextSession) { router.replace('/login'); return; }
     setSession(nextSession);
-  }, [mounted, pathname, router]);
+  }, [mounted, pathname, router, isPublic]);
 
-  const isLogin = pathname === '/login';
   if (!mounted) return null;
-  if (isLogin) return <>{children}</>;
+  if (isPublic) return <>{children}</>;
   if (!session) return null;
 
   const isDispatcherOrAdmin = session.role === 'dispatcher' || session.role === 'admin';
