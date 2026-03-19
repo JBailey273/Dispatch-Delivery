@@ -244,6 +244,7 @@ async def woocommerce_webhook(
             tenant_id=tenant_id,
             drop_id=drop.id,
             status=LoadStatus.ASSIGNED,
+            bulk_group_snapshot=catalog_item.bulk_group or catalog_item.sku,
             material_name_snapshot=catalog_item.name,
             qty=qty,
             unit=catalog_item.unit or "unit",
