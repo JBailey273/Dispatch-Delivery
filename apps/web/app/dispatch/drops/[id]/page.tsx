@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { ApiError, api, requireRole } from '../../../lib/auth';
 import { useLocation } from '../../../lib/location-context';
@@ -105,7 +105,7 @@ export default function DispatchDropDetailPageWrapper() {
 function DispatchDropDetailPage() {
   const { id } = useParams<{ id: string }>();
   const searchParams = useSearchParams();
-
+  const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [drop, setDrop] = useState<DropDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -207,7 +207,7 @@ function DispatchDropDetailPage() {
 
         {/* Header */}
         <div className="dd-header">
-          <Link href="/dispatch-schedule" className="dd-back">← Back to Schedule</Link>
+          <button className="dd-back" onClick={() => router.back()}>← Back</button>
           <div className="dd-title-row">
             <h1 className="dd-title">
               Order <span className="dd-ref">#{drop?.ref || '…'}</span>
