@@ -705,7 +705,7 @@ const schedulerStyles = `
   .mc-bar { height: 4px; border-radius: 2px; transition: width 0.3s var(--ease-out); }
 
 /* ── Unscheduled Queue ── */
-  .uq-section { background: #fffbeb; border-top: 2px solid #f59e0b; border-bottom: 1px solid #fde68a; margin: 12px 16px; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px #fde68a; }
+  .uq-section { background: #fffbeb; border-top: 2px solid #f59e0b; border-bottom: 1px solid #fde68a; margin: 12px 16px; border-radius: 10px; box-shadow: 0 0 0 1px #fde68a; }
   .uq-head { display: flex; align-items: center; gap: 8px; padding: 10px 16px 8px; font-family: var(--font-heading); font-size: 13px; font-weight: 800; color: #92400e; text-transform: uppercase; letter-spacing: 0.05em; }
   .uq-icon { font-size: 15px; }
   .uq-count { margin-left: auto; background: #d97706; color: #fff; border-radius: 10px; font-size: 11px; font-weight: 800; padding: 1px 7px; }
