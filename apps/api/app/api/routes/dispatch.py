@@ -263,8 +263,10 @@ def list_orders(
         .outerjoin(User, User.id == Load.driver_user_id)
         .where(
             Load.tenant_id == user.tenant_id,
-            Load.route_date >= start_date,
-            Load.route_date <= end_date,
+        )
+        .where(
+            (Load.route_date.is_(None)) |
+            ((Load.route_date >= start_date) & (Load.route_date <= end_date))
         )
     )
     if location_id:
@@ -294,8 +296,9 @@ def list_orders(
             "drop_id": str(drop.id),
             "load_id": str(load.id),
             "order_ref": _build_order_ref(drop),
-            "scheduled_date": str(load.route_date),
-            "window": load.route_window.value if load.route_window else "P",
+            "scheduled_date": str(load.route_date) if load.route_date else None,
+            "window": load.route_window.value if load.route_window else None,
+            "delivery_method": drop.delivery_method,
             "customer_name": customer.name,
             "customer_phone": customer.phone_e164,
             "address_short": f"{address.line1}, {address.city}",
