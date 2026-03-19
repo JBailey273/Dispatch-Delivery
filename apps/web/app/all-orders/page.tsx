@@ -55,12 +55,14 @@ const STATUS_LABELS: Record<string, string> = {
   DELIVERED: 'Delivered', EXCEPTION: 'Exception', CANCELLED: 'Cancelled',
   new: 'Pending', assigned: 'Assigned', loaded_leaving: 'Out for Delivery',
   delivered: 'Delivered', exception: 'Exception', cancelled: 'Cancelled',
+  fulfilled: 'Fulfilled',
 };
 const STATUS_COLORS: Record<string, string> = {
   NEW: 'var(--amber-600)', ASSIGNED: 'var(--blue-600)', LOADED_LEAVING: 'var(--amber-600)',
   DELIVERED: 'var(--green-600)', EXCEPTION: 'var(--red-600)', CANCELLED: 'var(--gray-400)',
   new: 'var(--amber-600)', assigned: 'var(--blue-600)', loaded_leaving: 'var(--amber-600)',
   delivered: 'var(--green-600)', exception: 'var(--red-600)', cancelled: 'var(--gray-400)',
+  fulfilled: 'var(--green-600)',
 };
 
 export default function AllOrdersPage() {
