@@ -523,8 +523,8 @@ export default function DropRescheduleSlideOver({
                       </div>
                       <div className="so-load-right">
                         {msg === 'saved' && <span className="so-load-saved">✓</span>}
-                        <span className={`pill pill-sm ${statusPill(load.status)}`}>
-                          <span className="pill-dot" />{statusLabel(load.status)}
+                        <span className={`pill pill-sm ${load.status === 'assigned' && !load.driver_user_id ? 'pill-amber' : statusPill(load.status)}`}>
+                          <span className="pill-dot" />{load.status === 'assigned' && !load.driver_user_id ? 'Pending' : statusLabel(load.status)}
                         </span>
                         {!isTerminal && (
                           <button
