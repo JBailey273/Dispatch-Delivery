@@ -409,3 +409,49 @@ def reschedule_drop(drop_id: str, payload: RescheduleIn, user: AuthUser = Depend
     })
     db.commit()
     return {"status": "rescheduled", "is_priority": new_is_priority}
+
+
+@router.delete("/{drop_id}")
+def delete_drop(
+    drop_id: str,
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)),
+    db: Session = Depends(db_dep),
+):
+    drop = db.execute(
+        select(Drop).where(Drop.id == drop_id, Drop.tenant_id == user.tenant_id).with_for_update()
+    ).scalar_one_or_none()
+    if not drop:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
+
+    # Block deletion if any load is out for delivery or delivered
+    loads = db.execute(select(Load).where(Load.drop_id == drop.id)).scalars().all()
+    active_statuses = [LoadStatus.LOADED_LEAVING, LoadStatus.DELIVERED]
+    if any(l.status in active_statuses for l in loads):
+        raise HTTPException(status_code=409, detail={
+            "code": "drop_active",
+            "message": "Cannot delete an order that is out for delivery or already delivered.",
+        })
+
+    # Release capacity if scheduled and not priority
+    if drop.scheduled_date and drop.scheduled_window and not drop.is_priority:
+        cap = db.execute(
+            select(WindowCapacity).where(
+                WindowCapacity.tenant_id == user.tenant_id,
+                WindowCapacity.service_date == drop.scheduled_date,
+                WindowCapacity.window_code == drop.scheduled_window,
+            ).with_for_update()
+        ).scalar_one_or_none()
+        if cap:
+            cap.capacity_used = max(0, cap.capacity_used - len(loads))
+
+    log_event(db, user.tenant_id, "drop.deleted", "api", {
+        "drop_id": drop_id,
+        "scheduled_date": str(drop.scheduled_date) if drop.scheduled_date else None,
+    })
+
+    # Delete loads first, then drop
+    for load in loads:
+        db.delete(load)
+    db.delete(drop)
+    db.commit()
+    return {"deleted": True, "drop_id": drop_id}
