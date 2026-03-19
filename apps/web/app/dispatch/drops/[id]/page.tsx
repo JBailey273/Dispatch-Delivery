@@ -262,6 +262,15 @@ function DispatchDropDetailPage() {
                       </span> : null}
                 </div>
                 <div className="dd-hero-loads">{drop.required_loads} load{drop.required_loads !== 1 ? 's' : ''}</div>
+                {!drop.scheduled_date && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{ marginTop: 12 }}
+                    onClick={() => setShowPanel(true)}
+                  >
+                    🔗 Send Scheduling Link
+                  </button>
+                )}
               </div>
             </div>
 
@@ -310,8 +319,8 @@ function DispatchDropDetailPage() {
                             : <span className="dd-unassigned">⚠ Unassigned</span>}
                         </td>
                         <td>
-                          <span className={`pill pill-sm ${STATUS_PILL[l.status] || 'pill-gray'}`}>
-                            <span className="pill-dot" />{STATUS_LABEL[l.status] || l.status}
+                          <span className={`pill pill-sm ${l.status === 'assigned' && !l.driver_user_id ? 'pill-amber' : STATUS_PILL[l.status] || 'pill-gray'}`}>
+                            <span className="pill-dot" />{l.status === 'assigned' && !l.driver_user_id ? 'Pending' : STATUS_LABEL[l.status] || l.status}
                           </span>
                         </td>
                       </tr>
