@@ -242,7 +242,6 @@ async def woocommerce_webhook(
     for catalog_item, qty in matched_items:
         load = Load(
             tenant_id=tenant_id,
-            location_id=location.id,
             drop_id=drop.id,
             status=LoadStatus.ASSIGNED,
             material_name_snapshot=catalog_item.name,
