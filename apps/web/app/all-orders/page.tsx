@@ -140,7 +140,7 @@ export default function AllOrdersPage() {
     const dir = sortDir === 'asc' ? 1 : -1;
     arr.sort((a, b) => {
       switch (sortCol) {
-        case 'date': return dir * (a.scheduled_date + a.window).localeCompare(b.scheduled_date + b.window);
+        case 'date': return dir * ((a.scheduled_date ?? '') + (a.window ?? '')).localeCompare((b.scheduled_date ?? '') + (b.window ?? ''));
         case 'customer': return dir * (a.customer_name || '').localeCompare(b.customer_name || '');
         case 'status': return dir * (a.status || '').localeCompare(b.status || '');
         case 'driver': return dir * (a.driver_name || 'zzz').localeCompare(b.driver_name || 'zzz');
