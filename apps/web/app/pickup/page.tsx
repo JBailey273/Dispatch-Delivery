@@ -46,6 +46,7 @@ function printPickTicket(drop: PickupDrop) {
   const dateStr = fmtDateLong(drop.created_at);
   const timeStr = fmtTime(drop.created_at);
   const itemRows = drop.items.map(item => `<tr><td class="pt-item">${item}</td></tr>`).join('');
+  const customerNote = drop.notes && !drop.notes.startsWith('Items:') ? drop.notes : null;
 
   const html = `<!DOCTYPE html>
 <html>
@@ -112,7 +113,7 @@ function printPickTicket(drop: PickupDrop) {
     <tbody>${itemRows}</tbody>
   </table>
 
-  ${drop.notes ? `<div class="pt-notes"><div class="pt-notes-label">Notes</div>${drop.notes}</div>` : ''}
+  ${customerNote ? `<div class="pt-notes"><div class="pt-notes-label">Notes</div>${customerNote}</div>` : ''}
 
   <div class="pt-sigs">
     <div>
@@ -151,8 +152,8 @@ function DetailSlideOver({
   const notifyBusy = actionLoading === `notify-${drop.drop_id}`;
   const fulfillBusy = actionLoading === `fulfill-${drop.drop_id}`;
   const hasNotifyChannel = drop.customer_sms_opt_in || !!drop.customer_email_opt_in;
+  const customerNote = drop.notes && !drop.notes.startsWith('Items:') ? drop.notes : null;
 
-  // Close on backdrop click
   const handleBackdrop = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target === e.currentTarget) onClose();
   };
@@ -215,11 +216,11 @@ function DetailSlideOver({
             </div>
           </div>
 
-          {/* Notes */}
-          {drop.notes && (
+          {/* Notes — only real customer notes, not the old Items: fallback */}
+          {customerNote && (
             <div className="so-section">
               <div className="so-section-label">Notes</div>
-              <div className="so-notes">{drop.notes}</div>
+              <div className="so-notes">{customerNote}</div>
             </div>
           )}
 
@@ -264,7 +265,6 @@ function DetailSlideOver({
     </div>
   );
 }
-
 // ── Main Page ────────────────────────────────────────────────────────────────
 export default function PickupQueuePage() {
   const [mounted, setMounted] = useState(false);
@@ -436,7 +436,7 @@ export default function PickupQueuePage() {
                   </div>
 
                   {/* ── Notes ── */}
-                  {drop.notes && (
+                  {drop.notes && !drop.notes.startsWith('Items:') && (
                     <div className="pq-notes">📝 {drop.notes}</div>
                   )}
 
