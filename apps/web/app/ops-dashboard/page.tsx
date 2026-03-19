@@ -196,7 +196,7 @@ export default function DashboardPage() {
               <span className="dash-section-title">Needs Action</span>
               {actionCount > 0
                 ? <span className="dash-action-badge">{actionCount}</span>
-                : <span className="dash-all-clear">✓ All clear</span>}
+                : <span className="dash-all-clear">✓ All Clear</span>}
             </div>
 
             {actionCount === 0 && (
@@ -276,7 +276,7 @@ export default function DashboardPage() {
                 {unscheduled.map((item, i) => (
                   <Link
                     key={item.drop_id}
-                    href={`/dispatch-schedule`}
+                    href={`/dispatch-schedule?drop=${item.drop_id}`}
                     className={`dash-action-row ${i < unscheduled.length - 1 ? 'dash-action-row--border' : ''}`}
                   >
                     <div className="dash-action-row-main">
