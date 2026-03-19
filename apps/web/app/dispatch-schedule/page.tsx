@@ -567,7 +567,7 @@ function DispatchSchedulePage() {
               )}
 
               {/* AM Window */}
-              <div className="window-section">
+              <div className="window-section am">
                 <div className="window-head">
                   <div className="window-title">Morning Window (9am – 1pm)</div>
                   <span className={`pill pill-sm pill-${capColor(amCap.used ?? 0, amCap.total ?? 0) === 'red' ? 'red' : capColor(amCap.used ?? 0, amCap.total ?? 0) === 'amber' ? 'amber' : 'green'}`}>
@@ -583,7 +583,7 @@ function DispatchSchedulePage() {
               </div>
 
               {/* PM Window */}
-              <div className="window-section">
+              <div className="window-section pm">
                 <div className="window-head">
                   <div className="window-title">Afternoon Window (1pm – 5pm)</div>
                   <span className={`pill pill-sm pill-${capColor(pmCap.used ?? 0, pmCap.total ?? 0) === 'red' ? 'red' : capColor(pmCap.used ?? 0, pmCap.total ?? 0) === 'amber' ? 'amber' : 'green'}`}>
@@ -735,13 +735,18 @@ const schedulerStyles = `
   .detail-header { padding: 24px; border-bottom: 1px solid var(--border-light); }
   .detail-date { font-family: var(--font-heading); font-size: 24px; font-weight: 800; color: var(--gray-900); letter-spacing: -0.025em; }
   .detail-sub { font-size: 14px; color: var(--gray-500); margin-top: 4px; }
-  .window-section { padding: 18px 24px; border-bottom: 1px solid var(--border-light); }
+  .window-section { padding: 18px 24px; border-bottom: 1px solid var(--border-light); border-left: 4px solid transparent; }
+  .window-section.am { background: rgba(26,158,58,0.05); border-left-color: var(--green-500); }
+  .window-section.am .window-title { color: var(--green-800, #166534); }
+  .window-section.pm { background: rgba(37,99,235,0.05); border-left-color: var(--blue-500); }
+  .window-section.pm .window-title { color: #1e40af; }
   .window-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
   .window-title { font-family: var(--font-heading); font-size: 15px; font-weight: 700; color: var(--gray-800); }
   .window-bar { height: 8px; border-radius: 4px; background: var(--gray-100); overflow: hidden; margin-bottom: 14px; }
   .window-fill { height: 100%; border-radius: 4px; transition: width 0.3s var(--ease-out); }
   .no-loads { font-size: 14px; color: var(--gray-400); padding: 8px 0; font-style: italic; }
-  .priority-section { background: var(--amber-25, #fffbeb); border-left: 4px solid var(--amber-500, #f59e0b); }
+  .priority-section { background: rgba(245,158,11,0.07); border-left: 4px solid var(--amber-500, #f59e0b); }
+  .priority-section .window-title { color: #92400e; }
 
   /* ── Load cards ── */
   .order-row { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: var(--radius-lg); cursor: pointer; transition: all 0.15s var(--ease-out); border: 1px solid var(--border-light); margin-bottom: 6px; background: var(--surface); }
