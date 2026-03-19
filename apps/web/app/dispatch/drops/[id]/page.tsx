@@ -70,6 +70,21 @@ const EXCEPTION_LABELS: Record<string, string> = {
   OTHER: 'Other',
 };
 
+const [deleting, setDeleting] = useState(false);
+const [confirmDelete, setConfirmDelete] = useState(false);
+
+const handleDelete = async () => {
+  setDeleting(true);
+  try {
+    await api(`/drops/${id}`, { method: 'DELETE' });
+    router.replace('/dispatch-schedule');
+  } catch (err) {
+    setError((err as ApiError).message || 'Failed to delete order.');
+    setDeleting(false);
+    setConfirmDelete(false);
+  }
+};
+
 function toSlideOverDetail(drop: DropDetail): SlideOverDropDetail {
   return {
     id: drop.id, ref: drop.ref, source: drop.source,
@@ -219,9 +234,27 @@ function DispatchDropDetailPage() {
               )}
             </h1>
             {drop && (
-              <button className="btn btn-primary dd-manage-btn" onClick={() => setShowPanel(true)}>
-                Manage Order
-              </button>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {confirmDelete ? (
+                <>
+                  <span style={{ fontSize: 13, color: 'var(--red-600)', fontWeight: 600 }}>Delete this order?</span>
+                  <button className="btn btn-sm" style={{ background: 'var(--red-600)', color: '#fff', borderColor: 'var(--red-600)' }} onClick={handleDelete} disabled={deleting}>
+                    {deleting ? 'Deleting…' : 'Yes, delete'}
+                  </button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDelete(false)}>Cancel</button>
+                </>
+              ) : (
+                <>
+                  <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red-500)' }} onClick={() => setConfirmDelete(true)}>
+                    Delete
+                  </button>
+                  <button className="btn btn-primary dd-manage-btn" onClick={() => setShowPanel(true)}>
+                    Manage Order
+                  </button>
+                </>
+              )}
+            </div>
+          )}
             )}
           </div>
         </div>
