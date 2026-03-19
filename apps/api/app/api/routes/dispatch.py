@@ -387,6 +387,7 @@ def get_unscheduled_drops(
         .where(
             Drop.tenant_id == user.tenant_id,
             Drop.scheduled_date.is_(None),
+            Drop.delivery_method == "delivery",
         )
         .order_by(Drop.created_at.asc())
     )
