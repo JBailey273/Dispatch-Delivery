@@ -72,6 +72,7 @@ const EXCEPTION_LABELS: Record<string, string> = {
 
 const [deleting, setDeleting] = useState(false);
 const [confirmDelete, setConfirmDelete] = useState(false);
+};
 
 const handleDelete = async () => {
   setDeleting(true);
@@ -83,7 +84,6 @@ const handleDelete = async () => {
     setDeleting(false);
     setConfirmDelete(false);
   }
-};
 
 function toSlideOverDetail(drop: DropDetail): SlideOverDropDetail {
   return {
