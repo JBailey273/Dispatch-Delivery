@@ -255,7 +255,6 @@ function DispatchDropDetailPage() {
               )}
             </div>
           )}
-            )}
           </div>
         </div>
 
