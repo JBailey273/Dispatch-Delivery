@@ -10,17 +10,18 @@ type OrderRow = {
   drop_id: string;
   load_id: string;
   order_ref: string;
-  scheduled_date: string;
-  window: string;
+  scheduled_date: string | null;
+  window: string | null;
   is_priority: boolean;
   customer_name: string;
-  customer_phone: string;
+  customer_phone: string | null;
   address_short: string;
   material: string;
   qty: number;
   unit: string;
   status: string;
   driver_name: string | null;
+  delivery_method: string | null;
 };
 type Driver = { id: string; name: string };
 
@@ -28,7 +29,8 @@ type Driver = { id: string; name: string };
 const FULL_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 function toKey(d: Date) { return d.toISOString().slice(0, 10); }
-function fmtDate(ds: string) {
+function fmtDate(ds: string | null) {
+  if (!ds) return '—';
   const d = new Date(ds + 'T12:00:00');
   return `${DAYS[d.getDay()].slice(0, 3)}, ${FULL_MONTHS[d.getMonth()].slice(0, 3)} ${d.getDate()}`;
 }
