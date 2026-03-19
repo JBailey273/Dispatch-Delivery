@@ -8,7 +8,7 @@ from app.api.deps import db_dep
 from app.api.services import log_event, now_utc
 from app.models.entities import (
     Channel, ChannelType, Customer, CustomerAddress,
-    Drop, Location, ProductCatalogItem,
+    Drop, Load, LoadStatus, Location, ProductCatalogItem,
 )
 
 logger = logging.getLogger("dispatch.webhooks")
@@ -215,6 +215,10 @@ async def woocommerce_webhook(
     customer_note = payload.get("customer_note", "") or ""
     notes = "\n".join(filter(None, [customer_note, items_note]))
 
+    # Only keep customer note — items will be stored as Load rows
+    customer_note = payload.get("customer_note", "") or ""
+    notes = customer_note.strip() or None
+
     # Create drop — unscheduled, dispatcher will assign date/window
     drop = Drop(
         tenant_id=tenant_id,
@@ -233,6 +237,20 @@ async def woocommerce_webhook(
     )
     db.add(drop)
     db.flush()
+
+    # Create Load rows for each matched item
+    for catalog_item, qty in matched_items:
+        load = Load(
+            tenant_id=tenant_id,
+            location_id=location.id,
+            drop_id=drop.id,
+            status=LoadStatus.ASSIGNED,
+            material_name_snapshot=catalog_item.name,
+            qty=qty,
+            unit=catalog_item.unit or "unit",
+            driver_user_id=None,
+        )
+        db.add(load)
 
     log_event(db, tenant_id, "webhook.woocommerce.ingested", "webhook", {
         "external_order_id": external_order_id,
