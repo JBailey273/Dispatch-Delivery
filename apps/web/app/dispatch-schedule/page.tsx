@@ -1,7 +1,9 @@
 'use client';
 
 import Link from 'next/link';
+import { Suspense } from 'react';
 import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { ApiError, api, requireRole } from '../lib/auth';
 import { useLocation } from '../lib/location-context';
 import DropRescheduleSlideOver from '../components/DropRescheduleSlideOver';
@@ -88,7 +90,16 @@ const ALL_STATUSES = [
 /* ════════════════════════════════════════════════════════
    MAIN PAGE
    ════════════════════════════════════════════════════════ */
-export default function DispatchSchedulePage() {
+export default function DispatchSchedulePageWrapper() {
+  return (
+    <Suspense fallback={<div style={{ height: '100vh' }} />}>
+      <DispatchSchedulePage />
+    </Suspense>
+  );
+}
+
+function DispatchSchedulePage() {
+  const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);
   const today = useMemo(() => new Date(), []);
   const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
@@ -96,6 +107,11 @@ export default function DispatchSchedulePage() {
   const [navOffset, setNavOffset] = useState(0);
 
   useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    const dropId = searchParams.get('drop');
+    if (dropId && mounted) openDrop(dropId);
+  }, [mounted, searchParams]);
 
   const [capData, setCapData] = useState<Record<string, { A: CapWindow | null; B: CapWindow | null }>>({});
   const [monthSummary, setMonthSummary] = useState<Record<string, { drop_id: string; order_ref: string; customer_name: string; materials: string; window: string; status: string }[]>>({});
