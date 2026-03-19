@@ -578,7 +578,7 @@ def anomalies(auto_fix: bool = Query(default=True), location_id: str | None = Qu
         drop_q = drop_q.where(Drop.location_id == loc_id)
     drops_with_zero_loads = db.execute(drop_q).all()
     for drop_id, scheduled_date, scheduled_window in drops_with_zero_loads:
-        anomalies_out.append({"type": "drop_without_loads", "drop_id": str(drop_id), "scheduled_date": str(scheduled_date), "scheduled_window": scheduled_window.value})
+        anomalies_out.append({"type": "drop_without_loads", "drop_id": str(drop_id), "scheduled_date": str(scheduled_date), "scheduled_window": scheduled_window.value if scheduled_window else None})
 
     now = now_utc()
     try:
