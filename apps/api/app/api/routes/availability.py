@@ -104,6 +104,11 @@ class IngestOrderIn(ConfirmOrderIn):
     hold_token: str
 
 
+class EmbedScheduleIn(BaseModel):
+    scheduled_date: date
+    scheduled_window: WindowCode
+
+
 def _required_loads(db: Session, tenant_id, location_id, items: list[CartItemIn]) -> tuple[int, dict[str, dict]]:
     if not items:
         raise HTTPException(status_code=400, detail={"code": "invalid_items", "message": "At least one item is required"})
@@ -470,4 +475,180 @@ def ingestion_failures_diagnostics(
     return {
         "recent_failures": [{"event_type": evt, "payload": payload, "created_at": created.isoformat()} for evt, payload, created in rows],
         "most_common_reasons": [{"reason": reason, "count": count} for reason, count in reasons.most_common(10)],
+    }
+
+@router.get("/embed/order/{order_id}")
+def get_embed_order(
+    order_id: str,
+    channel: ChannelAuth = Depends(require_channel),
+    db: Session = Depends(db_dep),
+):
+    """
+    Look up a drop by WooCommerce external_order_id.
+    Returns customer name, items, current schedule status, and available dates.
+    Used by the scheduling iframe embed on the WC order confirmation page.
+    """
+    drop = db.execute(
+        select(Drop)
+        .where(
+            Drop.tenant_id == channel.tenant_id,
+            Drop.external_order_id == order_id,
+            Drop.delivery_method == "delivery",
+        )
+    ).scalar_one_or_none()
+ 
+    if not drop:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "order_not_found", "message": "Order not found or not eligible for scheduling."},
+        )
+ 
+    customer = db.execute(
+        select(Customer).where(Customer.id == drop.customer_id)
+    ).scalar_one_or_none()
+ 
+    loads = db.execute(
+        select(Load).where(Load.drop_id == drop.id)
+    ).scalars().all()
+ 
+    items = [f"{l.qty} {l.unit} {l.material_name_snapshot}" for l in loads]
+ 
+    # Get available dates using existing availability logic
+    today = date.today()
+    look_ahead_days = 60
+    avail_dates = []
+ 
+    for i in range(1, look_ahead_days + 1):
+        check_date = today + timedelta(days=i)
+        windows = []
+        for window_code in [WindowCode.A, WindowCode.B]:
+            if _is_blacked_out(db, channel.tenant_id, drop.location_id, check_date, window_code):
+                continue
+            cap = db.execute(
+                select(WindowCapacity).where(
+                    WindowCapacity.tenant_id == channel.tenant_id,
+                    WindowCapacity.location_id == drop.location_id,
+                    WindowCapacity.service_date == check_date,
+                    WindowCapacity.window_code == window_code,
+                )
+            ).scalar_one_or_none()
+            if cap and cap.capacity_used >= cap.capacity_total:
+                continue
+            label = "Morning" if window_code == WindowCode.A else "Afternoon"
+            time_range = "9am – 1pm" if window_code == WindowCode.A else "1pm – 5pm"
+            windows.append({
+                "window": window_code.value,
+                "label": label,
+                "time_range": time_range,
+            })
+        if windows:
+            avail_dates.append({"date": str(check_date), "windows": windows})
+ 
+    return {
+        "drop_id": str(drop.id),
+        "customer_name": customer.name if customer else "Customer",
+        "items": items,
+        "already_scheduled": drop.scheduled_date is not None,
+        "scheduled_date": str(drop.scheduled_date) if drop.scheduled_date else None,
+        "scheduled_window": drop.scheduled_window.value if drop.scheduled_window else None,
+        "available_dates": avail_dates,
+    }
+ 
+ 
+@router.post("/embed/order/{order_id}/schedule")
+def schedule_embed_order(
+    order_id: str,
+    payload: EmbedScheduleIn,
+    channel: ChannelAuth = Depends(require_channel),
+    db: Session = Depends(db_dep),
+):
+    """
+    Schedule a delivery order from the iframe embed.
+    Sets scheduled_date and scheduled_window on the drop and its loads.
+    """
+    drop = db.execute(
+        select(Drop)
+        .where(
+            Drop.tenant_id == channel.tenant_id,
+            Drop.external_order_id == order_id,
+            Drop.delivery_method == "delivery",
+        )
+        .with_for_update()
+    ).scalar_one_or_none()
+ 
+    if not drop:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "order_not_found", "message": "Order not found or not eligible for scheduling."},
+        )
+ 
+    if _is_blacked_out(db, channel.tenant_id, drop.location_id, payload.scheduled_date, payload.scheduled_window):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "window_blacked_out", "message": "That date and window is not available. Please choose another."},
+        )
+ 
+    # Check capacity
+    cap = db.execute(
+        select(WindowCapacity).where(
+            WindowCapacity.tenant_id == channel.tenant_id,
+            WindowCapacity.location_id == drop.location_id,
+            WindowCapacity.service_date == payload.scheduled_date,
+            WindowCapacity.window_code == payload.scheduled_window,
+        ).with_for_update()
+    ).scalar_one_or_none()
+ 
+    loads = db.execute(
+        select(Load).where(Load.drop_id == drop.id)
+    ).scalars().all()
+ 
+    required = len(loads)
+ 
+    if cap and (cap.capacity_used + required) > cap.capacity_total:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "no_capacity", "message": "That window is now full. Please choose another date or time."},
+        )
+ 
+    # Update capacity
+    if cap:
+        cap.capacity_used += required
+    else:
+        # Auto-create capacity row using tenant default
+        tenant = db.execute(select(Tenant).where(Tenant.id == channel.tenant_id)).scalar_one_or_none()
+        default_cap = tenant.capacity_per_window if tenant else 10
+        new_cap = WindowCapacity(
+            tenant_id=channel.tenant_id,
+            location_id=drop.location_id,
+            service_date=payload.scheduled_date,
+            window_code=payload.scheduled_window,
+            capacity_total=default_cap,
+            capacity_used=required,
+        )
+        db.add(new_cap)
+ 
+    # Schedule the drop
+    drop.scheduled_date = payload.scheduled_date
+    drop.scheduled_window = payload.scheduled_window
+ 
+    # Update all loads
+    for load in loads:
+        load.route_date = payload.scheduled_date
+        load.route_window = payload.scheduled_window
+ 
+    window_label = "Morning (9am–1pm)" if payload.scheduled_window == WindowCode.A else "Afternoon (1pm–5pm)"
+ 
+    log_event(db, channel.tenant_id, "embed.order_scheduled", "channel", {
+        "external_order_id": order_id,
+        "drop_id": str(drop.id),
+        "scheduled_date": str(payload.scheduled_date),
+        "scheduled_window": payload.scheduled_window.value,
+    })
+    db.commit()
+ 
+    return {
+        "drop_id": str(drop.id),
+        "scheduled_date": str(drop.scheduled_date),
+        "scheduled_window": drop.scheduled_window.value,
+        "window_label": window_label,
     }
