@@ -89,8 +89,8 @@ class DropIn(BaseModel):
     address: AddressIn
     notes: str | None = None
     photos: list[str] | None = None
-    requested_date: date
-    requested_window: WindowCode
+    requested_date: date | None = None
+    requested_window: WindowCode | None = None
 
 
 class ConfirmOrderIn(BaseModel):
