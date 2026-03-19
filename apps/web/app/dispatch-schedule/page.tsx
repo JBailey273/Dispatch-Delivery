@@ -731,7 +731,7 @@ const schedulerStyles = `
   .na-row-action { font-size: 12px; font-weight: 700; color: #e11d48; white-space: nowrap; flex-shrink: 0; }
 
   /* ── Right detail panel ── */
-  .detail-panel { width: 420px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--bg-primary); overflow-y: auto; border-left: 1px solid var(--border-light); height: calc(100vh - var(--nav-height)); position: sticky; top: 0; }
+  .detail-panel { width: 420px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--bg-primary); overflow-y: auto; border-left: 1px solid var(--border-light); max-height: calc(100vh - var(--nav-height)); align-self: flex-start; position: sticky; top: 0; }
   .detail-header { padding: 24px; border-bottom: 1px solid var(--border-light); }
   .detail-date { font-family: var(--font-heading); font-size: 24px; font-weight: 800; color: var(--gray-900); letter-spacing: -0.025em; }
   .detail-sub { font-size: 14px; color: var(--gray-500); margin-top: 4px; }
