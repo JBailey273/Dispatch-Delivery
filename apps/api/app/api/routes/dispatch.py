@@ -183,6 +183,7 @@ def needs_attention(
             "scheduled_date": str(drop.scheduled_date) if drop.scheduled_date else None,
             "scheduled_window": drop.scheduled_window.value if drop.scheduled_window else None,
             "is_priority": drop.is_priority,
+            "created_at": drop.created_at.isoformat() if drop.created_at else None,
         })
     return {"drops": out}
 
