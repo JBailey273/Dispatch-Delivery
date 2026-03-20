@@ -24,6 +24,8 @@ app.add_middleware(
         "http://localhost:3000",
         "https://app.eastmeadowgardencenter.com",
         "https://dispatch-web-b6qc.onrender.com",
+        "https://www.eastmeadowgardencenter.com",   # ← add this
+        "https://eastmeadowgardencenter.com", 
     ],
     allow_credentials=True,
     allow_methods=["*"],
