@@ -159,25 +159,29 @@ export default function SchedulePage() {
       let photoUrl: string | null = null;
 
       if (sitePhoto) {
-        // Get presigned URL
-        const uploadRes = await fetch(`${API_BASE}/schedule/${token}/photo-upload-url`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content_type: sitePhoto.type || 'image/jpeg' }),
-        });
-        const uploadData = await uploadRes.json();
-        if (uploadRes.ok) {
-          // Upload directly to R2
-          await fetch(uploadData.upload_url, {
-            method: 'PUT',
-            headers: { 'Content-Type': sitePhoto.type || 'image/jpeg' },
-            body: sitePhoto,
-          });
-          photoUrl = uploadData.photo_url;
-        }
+  try {
+    const uploadRes = await fetch(`${API_BASE}/embed/order/${orderId}/photo-upload-url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Channel-Key': channelKey },
+      body: JSON.stringify({ content_type: sitePhoto.type || 'image/jpeg' }),
+    });
+    const uploadData = await uploadRes.json();
+    if (uploadRes.ok) {
+      const putRes = await fetch(uploadData.upload_url, {
+        method: 'PUT',
+        headers: { 'Content-Type': sitePhoto.type || 'image/jpeg' },
+        body: sitePhoto,
+      });
+      if (putRes.ok) {
+        photoUrl = uploadData.photo_url;
       }
+    }
+  } catch {
+    // Photo upload failed — continue without photo so site-info still saves
+  }
+}
 
-      await fetch(`${API_BASE}/schedule/${token}/site-info`, {
+await fetch(`${API_BASE}/embed/order/${orderId}/site-info`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
