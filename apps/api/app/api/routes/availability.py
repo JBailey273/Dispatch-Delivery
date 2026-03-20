@@ -2,7 +2,9 @@ import logging
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 from secrets import token_urlsafe
+from uuid import uuid4
 
+import boto3
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import func, or_, select
@@ -11,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import AuthUser, ChannelAuth, db_dep, require_channel, require_roles
 from app.api.guardrails import CapacityMutationContext, locked_capacity_row, mutate_capacity_or_409
 from app.api.services import log_event, normalize_us_phone, now_utc
+from app.core.config import settings
 from app.models.entities import (
     CapacityHold,
     Customer,
@@ -30,7 +33,6 @@ from app.models.entities import (
 
 router = APIRouter(tags=["availability"])
 logger = logging.getLogger("dispatch.availability")
-
 
 class CartItemIn(BaseModel):
     sku: str
@@ -652,3 +654,81 @@ def schedule_embed_order(
         "scheduled_window": drop.scheduled_window.value,
         "window_label": window_label,
     }
+
+class EmbedSiteInfoIn(BaseModel):
+    note: str | None = None
+    photo_url: str | None = None
+
+
+@router.post("/embed/order/{order_id}/site-info")
+def embed_save_site_info(
+    order_id: str,
+    payload: EmbedSiteInfoIn,
+    channel: ChannelAuth = Depends(require_channel),
+    db: Session = Depends(db_dep),
+):
+    """Customer submits site info after scheduling via embed. Uses channel key auth."""
+    drop = db.execute(
+        select(Drop).where(
+            Drop.tenant_id == channel.tenant_id,
+            Drop.external_order_id == order_id,
+            Drop.delivery_method == "delivery",
+        )
+    ).scalar_one_or_none()
+    if not drop:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Order not found."})
+
+    if payload.note and payload.note.strip():
+        existing = drop.notes or ""
+        separator = "\n\n" if existing else ""
+        drop.notes = existing + separator + f"[Customer note] {payload.note.strip()}"
+
+    if payload.photo_url and payload.photo_url.strip():
+        photos = list(drop.drop_photos or [])
+        photos.append(payload.photo_url.strip())
+        drop.drop_photos = photos
+
+    log_event(db, drop.tenant_id, "embed.site_info.saved", "api", {
+        "drop_id": str(drop.id),
+        "has_note": bool(payload.note),
+        "has_photo": bool(payload.photo_url),
+    })
+    db.commit()
+    return {"status": "ok"}
+
+
+class EmbedPhotoUploadRequestIn(BaseModel):
+    content_type: str = "image/jpeg"
+
+
+@router.post("/embed/order/{order_id}/photo-upload-url")
+def embed_get_photo_upload_url(
+    order_id: str,
+    payload: EmbedPhotoUploadRequestIn,
+    channel: ChannelAuth = Depends(require_channel),
+    db: Session = Depends(db_dep),
+):
+    """Return presigned R2 URL for customer photo upload via embed."""
+    drop = db.execute(
+        select(Drop).where(
+            Drop.tenant_id == channel.tenant_id,
+            Drop.external_order_id == order_id,
+            Drop.delivery_method == "delivery",
+        )
+    ).scalar_one_or_none()
+    if not drop:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Order not found."})
+
+    object_key = f"{drop.tenant_id}/customer-site/{drop.id}/{uuid4()}.jpg"
+    url = _schedule_storage_client().generate_presigned_url(
+        "put_object",
+        Params={
+            "Bucket": settings.r2_bucket,
+            "Key": object_key,
+            "ContentType": payload.content_type,
+        },
+        ExpiresIn=600,
+        HttpMethod="PUT",
+    )
+    photo_url = f"{settings.r2_endpoint_url}/{settings.r2_bucket}/{object_key}"
+    return {"upload_url": url, "photo_url": photo_url}
