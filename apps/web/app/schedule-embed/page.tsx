@@ -42,8 +42,6 @@ function weekLabel(ds: string): string {
   startOfWeekAfter.setDate(startOfNextWeek.getDate() + 7);
   if (d < startOfNextWeek) return 'This week';
   if (d < startOfWeekAfter) return 'Next week';
-
-  // Find the Sunday that starts this date's week
   const weekStart = new Date(d);
   weekStart.setDate(d.getDate() - d.getDay());
   return `Week of ${MONTHS[weekStart.getMonth()]} ${weekStart.getDate()}`;
@@ -72,7 +70,20 @@ export default function ScheduleEmbedPage() {
   const [confirming, setConfirming] = useState(false);
   const [confirmed, setConfirmed] = useState<{ date: string; window_label: string } | null>(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  // Site info step
+  const [showSiteInfo, setShowSiteInfo] = useState(false);
+  const [siteNote, setSiteNote] = useState('');
+  const [sitePhoto, setSitePhoto] = useState<File | null>(null);
+  const [sitePhotoPreview, setSitePhotoPreview] = useState<string | null>(null);
+  const [siteInfoSaving, setSiteInfoSaving] = useState(false);
+  const [siteInfoDone, setSiteInfoDone] = useState(false);
+
   const loaderRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const MAX_RETRIES = 8;
+  const RETRY_DELAY_MS = 3000;
+  const retryRef = useRef(0);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -87,10 +98,6 @@ export default function ScheduleEmbedPage() {
     setChannelKey(key);
   }, []);
 
-  const MAX_RETRIES = 8;
-  const RETRY_DELAY_MS = 3000;
-  const retryRef = useRef(0);
-
   useEffect(() => {
     if (!orderId || !channelKey) return;
     retryRef.current = 0;
@@ -101,12 +108,8 @@ export default function ScheduleEmbedPage() {
         headers: { 'X-Channel-Key': channelKey },
       })
         .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject({ status: r.status, ...e })))
-        .then(data => {
-          setCtx(data);
-          setLoading(false);
-        })
+        .then(data => { setCtx(data); setLoading(false); })
         .catch(e => {
-          // Only retry on 404 (order not ingested yet) — fail immediately on anything else
           if (e?.status === 404 && retryRef.current < MAX_RETRIES) {
             retryRef.current += 1;
             setTimeout(attempt, RETRY_DELAY_MS);
@@ -120,7 +123,6 @@ export default function ScheduleEmbedPage() {
     attempt();
   }, [orderId, channelKey]);
 
-  // Infinite scroll
   useEffect(() => {
     const el = loaderRef.current;
     if (!el) return;
@@ -138,24 +140,66 @@ export default function ScheduleEmbedPage() {
     try {
       const r = await fetch(`${API_BASE}/embed/order/${orderId}/schedule`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Channel-Key': channelKey,
-        },
-        body: JSON.stringify({
-          scheduled_date: selectedDate,
-          scheduled_window: selectedWindow,
-        }),
+        headers: { 'Content-Type': 'application/json', 'X-Channel-Key': channelKey },
+        body: JSON.stringify({ scheduled_date: selectedDate, scheduled_window: selectedWindow }),
       });
       const data = await r.json();
       if (!r.ok) throw data;
       setConfirmed({ date: data.scheduled_date, window_label: data.window_label });
+      setShowSiteInfo(true); // go to step 2
     } catch (e: any) {
       setError(e?.detail?.message || 'Something went wrong. Please try again.');
     } finally {
       setConfirming(false);
     }
   }, [orderId, channelKey, selectedDate, selectedWindow]);
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSitePhoto(file);
+    setSitePhotoPreview(URL.createObjectURL(file));
+  };
+
+  const submitSiteInfo = async (skip = false) => {
+    if (skip) { setSiteInfoDone(true); return; }
+    if (!orderId || !channelKey) return;
+    setSiteInfoSaving(true);
+    try {
+      let photoUrl: string | null = null;
+
+      if (sitePhoto) {
+        const uploadRes = await fetch(`${API_BASE}/embed/order/${orderId}/photo-upload-url`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Channel-Key': channelKey },
+          body: JSON.stringify({ content_type: sitePhoto.type || 'image/jpeg' }),
+        });
+        const uploadData = await uploadRes.json();
+        if (uploadRes.ok) {
+          await fetch(uploadData.upload_url, {
+            method: 'PUT',
+            headers: { 'Content-Type': sitePhoto.type || 'image/jpeg' },
+            body: sitePhoto,
+          });
+          photoUrl = uploadData.photo_url;
+        }
+      }
+
+      await fetch(`${API_BASE}/embed/order/${orderId}/site-info`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Channel-Key': channelKey },
+        body: JSON.stringify({
+          note: siteNote.trim() || null,
+          photo_url: photoUrl,
+        }),
+      });
+    } catch {
+      // Non-fatal — don't block the customer
+    } finally {
+      setSiteInfoSaving(false);
+      setSiteInfoDone(true);
+    }
+  };
 
   const visibleDates = (ctx?.available_dates ?? []).slice(0, visibleCount);
   const weekGroups = groupByWeek(visibleDates);
@@ -164,8 +208,8 @@ export default function ScheduleEmbedPage() {
     .find(d => d.date === selectedDate)
     ?.windows.find(w => w.window === selectedWindow);
 
-  // ── Confirmed ──
-  if (confirmed) {
+  // ── Final confirmed screen ────────────────────────────────────────────────
+  if (confirmed && siteInfoDone) {
     const d = parseLocalDate(confirmed.date);
     return (
       <>
@@ -188,15 +232,100 @@ export default function ScheduleEmbedPage() {
     );
   }
 
-  // ── Loading ──
+  // ── Site info step ────────────────────────────────────────────────────────
+  if (confirmed && showSiteInfo) {
+    const d = parseLocalDate(confirmed.date);
+    return (
+      <>
+        <style>{styles}</style>
+        <div className="se-shell">
+
+          {/* Booked banner */}
+          <div className="se-booked-banner">
+            <div className="se-booked-check">✓</div>
+            <div>
+              <div className="se-booked-title">Delivery booked!</div>
+              <div className="se-booked-date">
+                {DAYS[d.getDay()]}, {MONTHS[d.getMonth()]} {d.getDate()} · {confirmed.window_label}
+              </div>
+            </div>
+          </div>
+
+          {/* Site info card */}
+          <div className="se-site-card">
+            <div className="se-site-heading">📍 Help your driver find the spot</div>
+            <p className="se-site-sub">Gate codes, driveway notes, where to drop — totally optional.</p>
+
+            <textarea
+              className="se-site-textarea"
+              placeholder="e.g. Gate code is 1234, drop near the side gate on the left…"
+              value={siteNote}
+              onChange={e => setSiteNote(e.target.value)}
+              rows={4}
+            />
+
+            <div className="se-photo-section">
+              {sitePhotoPreview ? (
+                <div className="se-photo-preview-wrap">
+                  <img src={sitePhotoPreview} alt="Site preview" className="se-photo-preview" />
+                  <button
+                    className="se-photo-remove"
+                    onClick={() => { setSitePhoto(null); setSitePhotoPreview(null); }}
+                  >
+                    ✕ Remove photo
+                  </button>
+                </div>
+              ) : (
+                <button
+                  className="se-photo-btn"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  📷 Add a photo of the drop location
+                </button>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                style={{ display: 'none' }}
+                onChange={handlePhotoChange}
+              />
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="se-site-actions">
+            <button
+              className="se-confirm-btn se-site-submit"
+              disabled={siteInfoSaving}
+              onClick={() => submitSiteInfo(false)}
+            >
+              {siteInfoSaving ? 'Saving…' : 'Submit & finish'}
+            </button>
+            <button
+              className="se-skip-btn"
+              disabled={siteInfoSaving}
+              onClick={() => submitSiteInfo(true)}
+            >
+              Skip for now
+            </button>
+          </div>
+
+        </div>
+      </>
+    );
+  }
+
+  // ── Loading ───────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <>
         <style>{styles}</style>
         <div className="se-shell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300 }}>
           <div style={{ textAlign: 'center' }}>
-            <div className="spinner spinner-lg" style={{ margin: '0 auto 16px' }} />
-            <div style={{ fontSize: 15, color: 'var(--gray-600)', fontWeight: 500 }}>
+            <div className="se-spinner" style={{ margin: '0 auto 16px' }} />
+            <div style={{ fontSize: 15, color: '#666', fontWeight: 500 }}>
               {retryRef.current > 0 ? 'Getting your order ready…' : 'Loading…'}
             </div>
           </div>
@@ -205,7 +334,7 @@ export default function ScheduleEmbedPage() {
     );
   }
 
-  // ── Error ──
+  // ── Error ─────────────────────────────────────────────────────────────────
   if (error && !ctx) {
     return (
       <>
@@ -222,7 +351,7 @@ export default function ScheduleEmbedPage() {
     );
   }
 
-  // ── Already scheduled ──
+  // ── Already scheduled ─────────────────────────────────────────────────────
   if (ctx?.already_scheduled && ctx.scheduled_date) {
     const d = parseLocalDate(ctx.scheduled_date);
     const windowLabel = ctx.scheduled_window === 'A' ? 'Morning (9am–1pm)' : 'Afternoon (1pm–5pm)';
@@ -245,13 +374,12 @@ export default function ScheduleEmbedPage() {
     );
   }
 
-  // ── Main scheduling UI ──
+  // ── Main scheduling UI ────────────────────────────────────────────────────
   return (
     <>
       <style>{styles}</style>
       <div className="se-shell">
 
-        {/* Header */}
         <div className="se-header">
           <h2 className="se-title">Schedule Your Delivery</h2>
           <p className="se-subtitle">
@@ -259,7 +387,6 @@ export default function ScheduleEmbedPage() {
           </p>
         </div>
 
-        {/* Order summary */}
         {ctx && ctx.items.length > 0 && (
           <div className="se-order-summary">
             <div className="se-summary-label">Your Order</div>
@@ -272,12 +399,8 @@ export default function ScheduleEmbedPage() {
           </div>
         )}
 
-        {/* Error inline */}
-        {error && (
-          <div className="se-inline-error">{error}</div>
-        )}
+        {error && <div className="se-inline-error">{error}</div>}
 
-        {/* Date list */}
         <div className="se-dates">
           {weekGroups.length === 0 && (
             <div className="se-no-dates">
@@ -333,18 +456,13 @@ export default function ScheduleEmbedPage() {
           {hasMore && <div ref={loaderRef} style={{ height: 40 }} />}
         </div>
 
-        {/* Confirm footer */}
         {selectedDate && selectedWindow && (
           <div className="se-confirm-bar">
             <div className="se-confirm-summary">
               <div className="se-confirm-date">{fmtDate(selectedDate)}</div>
               <div className="se-confirm-window">{selectedWindowObj?.label} · {selectedWindowObj?.time_range}</div>
             </div>
-            <button
-              className="se-confirm-btn"
-              onClick={confirm}
-              disabled={confirming}
-            >
+            <button className="se-confirm-btn" onClick={confirm} disabled={confirming}>
               {confirming ? 'Scheduling…' : 'Confirm Delivery Date'}
             </button>
           </div>
@@ -370,343 +488,238 @@ const styles = `
     -webkit-font-smoothing: antialiased;
   }
 
-  /* Header */
-  .se-header {
-    text-align: center;
-    padding: 28px 16px 20px;
-  }
+  .se-header { text-align: center; padding: 28px 16px 20px; }
   .se-title {
     font-family: 'Outfit', sans-serif;
-    font-size: 26px;
-    font-weight: 800;
-    color: #3d5a45;
-    letter-spacing: -0.02em;
-    margin: 0 0 8px;
-    line-height: 1.2;
+    font-size: 26px; font-weight: 800; color: #3d5a45;
+    letter-spacing: -0.02em; margin: 0 0 8px; line-height: 1.2;
   }
-  .se-subtitle {
-    font-size: 15px;
-    color: #666;
-    margin: 0;
-  }
+  .se-subtitle { font-size: 15px; color: #666; margin: 0; }
 
-  /* Order summary */
   .se-order-summary {
     background: #f4f8f4;
     border: 1px solid rgba(74,112,82,0.15);
-    border-radius: 14px;
-    padding: 14px 18px;
-    margin: 0 0 20px;
+    border-radius: 14px; padding: 14px 18px; margin: 0 0 20px;
   }
   .se-summary-label {
     font-family: 'Outfit', sans-serif;
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: #4a7052;
-    margin-bottom: 8px;
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    color: #4a7052; margin-bottom: 8px;
   }
   .se-summary-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 14px;
-    color: #444;
-    padding: 3px 0;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 14px; color: #444; padding: 3px 0;
   }
   .se-summary-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #4a7052;
-    flex-shrink: 0;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #4a7052; flex-shrink: 0;
   }
 
-  /* Week groups */
   .se-dates { display: flex; flex-direction: column; gap: 0; }
   .se-week-group { margin-bottom: 20px; }
   .se-week-label {
     font-family: 'Outfit', sans-serif;
-    font-size: 12px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: #4a7052;
-    padding: 0 4px 8px;
+    font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    color: #4a7052; padding: 0 4px 8px;
   }
 
-  /* Date card */
   .se-date-card {
     border: 1.5px solid rgba(74,112,82,0.15);
-    border-radius: 14px;
-    margin-bottom: 8px;
-    background: #fff;
-    overflow: hidden;
+    border-radius: 14px; margin-bottom: 8px;
+    background: #fff; overflow: hidden;
     transition: border-color 0.15s, box-shadow 0.15s;
   }
-  .se-date-card:hover {
-    border-color: rgba(74,112,82,0.35);
-    box-shadow: 0 4px 16px rgba(74,112,82,0.1);
-  }
-  .se-date-card--selected {
-    border-color: #4a7052;
-    box-shadow: 0 4px 20px rgba(74,112,82,0.15);
-  }
+  .se-date-card:hover { border-color: rgba(74,112,82,0.35); box-shadow: 0 4px 16px rgba(74,112,82,0.1); }
+  .se-date-card--selected { border-color: #4a7052; box-shadow: 0 4px 20px rgba(74,112,82,0.15); }
   .se-date-btn {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 14px 18px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    text-align: left;
-    font-family: inherit;
+    width: 100%; display: flex; align-items: center; gap: 12px;
+    padding: 14px 18px; background: none; border: none;
+    cursor: pointer; text-align: left; font-family: inherit;
   }
   .se-date-name {
     font-family: 'Outfit', sans-serif;
-    font-size: 16px;
-    font-weight: 700;
-    color: #2c2c2c;
-    flex: 1;
+    font-size: 16px; font-weight: 700; color: #2c2c2c; flex: 1;
   }
-  .se-date-slots {
-    font-size: 13px;
-    color: #4a7052;
-    font-weight: 600;
-  }
-  .se-date-chev {
-    font-size: 11px;
-    color: #999;
-    flex-shrink: 0;
-  }
+  .se-date-slots { font-size: 13px; color: #4a7052; font-weight: 600; }
+  .se-date-chev { font-size: 11px; color: #999; flex-shrink: 0; }
 
-  /* Windows */
-  .se-windows {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: 0 14px 14px;
-  }
+  .se-windows { display: flex; flex-direction: column; gap: 6px; padding: 0 14px 14px; }
   .se-window-btn {
-    display: flex;
-    align-items: center;
-    gap: 12px;
+    display: flex; align-items: center; gap: 12px;
     padding: 12px 16px;
     border: 1.5px solid rgba(74,112,82,0.2);
-    border-radius: 10px;
-    background: #f9fcf9;
-    cursor: pointer;
-    font-family: inherit;
-    text-align: left;
+    border-radius: 10px; background: #f9fcf9;
+    cursor: pointer; font-family: inherit; text-align: left;
     transition: all 0.15s;
   }
-  .se-window-btn:hover {
-    border-color: #4a7052;
-    background: #f0f7f1;
-  }
-  .se-window-btn--selected {
-    border-color: #4a7052;
-    background: linear-gradient(135deg, #f0f7f1 0%, #e8f5ea 100%);
-  }
-  .se-window-label {
-    font-family: 'Outfit', sans-serif;
-    font-size: 15px;
-    font-weight: 700;
-    color: #2c2c2c;
-    flex: 1;
-  }
-  .se-window-time {
-    font-size: 13px;
-    color: #666;
-  }
-  .se-window-check {
-    font-size: 14px;
-    color: #4a7052;
-    font-weight: 700;
-    flex-shrink: 0;
-  }
+  .se-window-btn:hover { border-color: #4a7052; background: #f0f7f1; }
+  .se-window-btn--selected { border-color: #4a7052; background: linear-gradient(135deg, #f0f7f1 0%, #e8f5ea 100%); }
+  .se-window-label { font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 700; color: #2c2c2c; flex: 1; }
+  .se-window-time { font-size: 13px; color: #666; }
+  .se-window-check { font-size: 14px; color: #4a7052; font-weight: 700; flex-shrink: 0; }
 
-  /* Confirm bar */
   .se-confirm-bar {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: #fff;
-    border-top: 1.5px solid rgba(74,112,82,0.2);
-    padding: 14px 20px;
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    box-shadow: 0 -4px 20px rgba(0,0,0,0.08);
-    z-index: 100;
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: #fff; border-top: 1.5px solid rgba(74,112,82,0.2);
+    padding: 14px 20px; display: flex; align-items: center; gap: 14px;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.08); z-index: 100;
   }
   .se-confirm-summary { flex: 1; min-width: 0; }
   .se-confirm-date {
-    font-family: 'Outfit', sans-serif;
-    font-size: 14px;
-    font-weight: 700;
-    color: #2c2c2c;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-family: 'Outfit', sans-serif; font-size: 14px; font-weight: 700;
+    color: #2c2c2c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .se-confirm-window {
-    font-size: 12px;
-    color: #4a7052;
-    font-weight: 600;
-  }
+  .se-confirm-window { font-size: 12px; color: #4a7052; font-weight: 600; }
   .se-confirm-btn {
     background: linear-gradient(135deg, #4a7052 0%, #3d5a45 100%);
-    color: #fff;
-    border: none;
-    border-radius: 999px;
-    padding: 12px 24px;
-    font-family: 'Outfit', sans-serif;
-    font-size: 15px;
-    font-weight: 700;
-    cursor: pointer;
-    white-space: nowrap;
-    box-shadow: 0 4px 16px rgba(74,112,82,0.3);
-    transition: all 0.2s;
-    flex-shrink: 0;
+    color: #fff; border: none; border-radius: 999px;
+    padding: 12px 24px; font-family: 'Outfit', sans-serif;
+    font-size: 15px; font-weight: 700; cursor: pointer;
+    white-space: nowrap; box-shadow: 0 4px 16px rgba(74,112,82,0.3);
+    transition: all 0.2s; flex-shrink: 0;
   }
   .se-confirm-btn:hover:not(:disabled) {
     background: linear-gradient(135deg, #3d5a45 0%, #2d4433 100%);
-    transform: translateY(-1px);
-    box-shadow: 0 6px 20px rgba(74,112,82,0.35);
+    transform: translateY(-1px); box-shadow: 0 6px 20px rgba(74,112,82,0.35);
   }
   .se-confirm-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
-  /* Confirmed */
+  /* Site info step */
+  .se-booked-banner {
+    display: flex; align-items: center; gap: 12px;
+    background: #eef6e8; border-bottom: 1px solid #c6e0b8;
+    padding: 14px 20px;
+  }
+  .se-booked-check {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: #4a7052; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: 700; flex-shrink: 0;
+  }
+  .se-booked-title { font-size: 14px; font-weight: 700; color: #1a4d10; }
+  .se-booked-date { font-size: 13px; color: #4a7052; margin-top: 2px; }
+
+  .se-site-card {
+    background: #fff;
+    border: 1.5px solid rgba(74,112,82,0.15);
+    border-radius: 16px; margin: 16px 0; padding: 20px;
+  }
+  .se-site-heading { font-family: 'Outfit', sans-serif; font-size: 17px; font-weight: 700; color: #2c2c2c; margin-bottom: 6px; }
+  .se-site-sub { font-size: 13px; color: #666; margin-bottom: 14px; line-height: 1.5; }
+
+  .se-site-textarea {
+    width: 100%; border: 1.5px solid rgba(74,112,82,0.2);
+    border-radius: 10px; padding: 12px 14px;
+    font-size: 14px; font-family: inherit; color: #2c2c2c;
+    resize: none; outline: none; transition: border-color 0.15s;
+    background: #fafcfa;
+  }
+  .se-site-textarea:focus { border-color: #4a7052; }
+
+  .se-photo-section { margin-top: 12px; }
+  .se-photo-btn {
+    width: 100%; padding: 12px;
+    border: 1.5px dashed rgba(74,112,82,0.3); border-radius: 10px;
+    background: #f4f8f4; color: #4a7052;
+    font-size: 14px; font-weight: 500; cursor: pointer;
+    font-family: inherit; transition: border-color 0.15s;
+  }
+  .se-photo-btn:active { opacity: 0.8; }
+  .se-photo-preview-wrap { position: relative; }
+  .se-photo-preview {
+    width: 100%; max-height: 200px; object-fit: cover;
+    border-radius: 10px; display: block;
+  }
+  .se-photo-remove {
+    margin-top: 8px; background: none; border: none;
+    color: #dc2626; font-size: 13px; font-weight: 500;
+    cursor: pointer; padding: 0; font-family: inherit;
+  }
+
+  .se-site-actions {
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 0 0 24px;
+  }
+  .se-site-submit {
+    width: 100%; border-radius: 12px !important;
+    padding: 14px 24px !important; font-size: 15px !important;
+  }
+  .se-skip-btn {
+    width: 100%; background: none; border: none;
+    color: #888; font-size: 14px; font-weight: 500;
+    cursor: pointer; padding: 8px; font-family: inherit;
+  }
+  .se-skip-btn:disabled { opacity: 0.4; }
+
+  /* Confirmed final */
   .se-confirmed-card {
-    text-align: center;
-    padding: 48px 28px 40px;
+    text-align: center; padding: 48px 28px 40px;
     background: linear-gradient(135deg, #fff 0%, #f4f8f4 100%);
     border: 1.5px solid rgba(74,112,82,0.2);
-    border-radius: 20px;
-    margin: 20px 0;
+    border-radius: 20px; margin: 20px 0;
   }
   .se-confirmed-check {
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
+    width: 64px; height: 64px; border-radius: 50%;
     background: linear-gradient(135deg, #4a7052 0%, #3d5a45 100%);
-    color: #fff;
-    font-size: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto 20px;
-    box-shadow: 0 8px 24px rgba(74,112,82,0.3);
+    color: #fff; font-size: 28px;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 20px; box-shadow: 0 8px 24px rgba(74,112,82,0.3);
   }
   .se-confirmed-title {
-    font-family: 'Outfit', sans-serif;
-    font-size: 26px;
-    font-weight: 800;
-    color: #3d5a45;
-    margin: 0 0 8px;
-    letter-spacing: -0.02em;
+    font-family: 'Outfit', sans-serif; font-size: 26px; font-weight: 800;
+    color: #3d5a45; margin: 0 0 8px; letter-spacing: -0.02em;
   }
   .se-confirmed-sub { font-size: 15px; color: #666; margin: 0 0 12px; }
   .se-confirmed-date {
-    font-family: 'Outfit', sans-serif;
-    font-size: 22px;
-    font-weight: 800;
-    color: #2c2c2c;
-    margin-bottom: 6px;
-    letter-spacing: -0.02em;
+    font-family: 'Outfit', sans-serif; font-size: 22px; font-weight: 800;
+    color: #2c2c2c; margin-bottom: 6px; letter-spacing: -0.02em;
   }
-  .se-confirmed-window {
-    font-size: 15px;
-    font-weight: 600;
-    color: #4a7052;
-    margin-bottom: 20px;
-  }
+  .se-confirmed-window { font-size: 15px; font-weight: 600; color: #4a7052; margin-bottom: 20px; }
   .se-confirmed-note { font-size: 14px; color: #888; line-height: 1.6; margin: 0; }
 
   /* Already scheduled */
   .se-already-card {
-    text-align: center;
-    padding: 40px 28px;
-    background: #fff;
-    border: 1.5px solid rgba(74,112,82,0.15);
-    border-radius: 20px;
-    margin: 20px 0;
+    text-align: center; padding: 40px 28px; background: #fff;
+    border: 1.5px solid rgba(74,112,82,0.15); border-radius: 20px; margin: 20px 0;
   }
   .se-already-icon { font-size: 36px; margin-bottom: 14px; }
-  .se-already-title {
-    font-family: 'Outfit', sans-serif;
-    font-size: 22px;
-    font-weight: 800;
-    color: #3d5a45;
-    margin: 0 0 8px;
-  }
+  .se-already-title { font-family: 'Outfit', sans-serif; font-size: 22px; font-weight: 800; color: #3d5a45; margin: 0 0 8px; }
   .se-already-sub { font-size: 15px; color: #666; margin: 0 0 16px; }
-  .se-already-date {
-    font-family: 'Outfit', sans-serif;
-    font-size: 20px;
-    font-weight: 800;
-    color: #2c2c2c;
-    margin-bottom: 6px;
-  }
+  .se-already-date { font-family: 'Outfit', sans-serif; font-size: 20px; font-weight: 800; color: #2c2c2c; margin-bottom: 6px; }
   .se-already-window { font-size: 15px; color: #4a7052; font-weight: 600; margin-bottom: 20px; }
   .se-already-note { font-size: 14px; color: #888; }
   .se-already-note a { color: #4a7052; }
 
   /* Error */
   .se-error-card {
-    text-align: center;
-    padding: 40px 24px;
-    background: #fff;
-    border: 1.5px solid #fecaca;
-    border-radius: 20px;
-    margin: 20px 0;
+    text-align: center; padding: 40px 24px; background: #fff;
+    border: 1.5px solid #fecaca; border-radius: 20px; margin: 20px 0;
   }
   .se-error-icon { font-size: 36px; margin-bottom: 14px; }
   .se-error-card h2 { font-family: 'Outfit', sans-serif; font-size: 20px; color: #2c2c2c; margin: 0 0 10px; }
   .se-error-card p { font-size: 14px; color: #666; margin: 0 0 8px; }
   .se-error-contact a { color: #4a7052; font-weight: 600; }
 
-  /* Inline error */
   .se-inline-error {
-    background: #fef2f2;
-    border: 1px solid #fecaca;
-    border-radius: 10px;
-    padding: 10px 14px;
-    font-size: 13px;
-    color: #dc2626;
-    margin-bottom: 16px;
+    background: #fef2f2; border: 1px solid #fecaca;
+    border-radius: 10px; padding: 10px 14px;
+    font-size: 13px; color: #dc2626; margin-bottom: 16px;
   }
 
-  /* Spinner */
-  .se-spinner-wrap {
-    text-align: center;
-    padding: 60px 20px;
-  }
   .se-spinner {
-    width: 36px;
-    height: 36px;
+    width: 36px; height: 36px;
     border: 3px solid rgba(74,112,82,0.15);
-    border-top-color: #4a7052;
-    border-radius: 50%;
+    border-top-color: #4a7052; border-radius: 50%;
     animation: se-spin 0.7s linear infinite;
-    margin: 0 auto 16px;
   }
   @keyframes se-spin { to { transform: rotate(360deg); } }
-  .se-spinner-text { font-size: 14px; color: #888; }
 
-  /* No dates */
   .se-no-dates {
-    text-align: center;
-    padding: 32px 20px;
-    font-size: 14px;
-    color: #666;
-    background: #f9f9f9;
-    border-radius: 14px;
+    text-align: center; padding: 32px 20px;
+    font-size: 14px; color: #666;
+    background: #f9f9f9; border-radius: 14px;
   }
   .se-no-dates a { color: #4a7052; font-weight: 600; }
 
