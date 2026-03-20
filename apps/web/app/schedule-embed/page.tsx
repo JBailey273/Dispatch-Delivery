@@ -344,7 +344,7 @@ export default function ScheduleEmbedPage() {
             <div className="se-error-icon">⚠️</div>
             <h2>Unable to load scheduling</h2>
             <p>{error}</p>
-            <p className="se-error-contact">Please call us at <a href="tel:+15168265050">(516) 826-5050</a> and we'll get you scheduled.</p>
+            <p className="se-error-contact">Please call us at <a href="tel:+14135668733">(413) 566-8733</a> and we'll get you scheduled.</p>
           </div>
         </div>
       </>
@@ -366,7 +366,7 @@ export default function ScheduleEmbedPage() {
             <div className="se-already-date">{DAYS[d.getDay()]}, {MONTHS[d.getMonth()]} {d.getDate()}</div>
             <div className="se-already-window">{windowLabel}</div>
             <p className="se-already-note">
-              Need to change your date? Call us at <a href="tel:+15168265050">(516) 826-5050</a>.
+              Need to change your date? Call us at <a href="tel:+14135668733">(413) 566-8733</a>.
             </p>
           </div>
         </div>
@@ -404,7 +404,7 @@ export default function ScheduleEmbedPage() {
         <div className="se-dates">
           {weekGroups.length === 0 && (
             <div className="se-no-dates">
-              No available delivery dates found. Please call us at <a href="tel:+15168265050">(516) 826-5050</a>.
+              No available delivery dates found. Please call us at <a href="tel:+14135668733">(413) 566-8733</a>.
             </div>
           )}
 
