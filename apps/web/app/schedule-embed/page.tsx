@@ -42,7 +42,11 @@ function weekLabel(ds: string): string {
   startOfWeekAfter.setDate(startOfNextWeek.getDate() + 7);
   if (d < startOfNextWeek) return 'This week';
   if (d < startOfWeekAfter) return 'Next week';
-  return `Week of ${MONTHS[d.getMonth()]} ${d.getDate() - d.getDay()}`;
+
+  // Find the Sunday that starts this date's week
+  const weekStart = new Date(d);
+  weekStart.setDate(d.getDate() - d.getDay());
+  return `Week of ${MONTHS[weekStart.getMonth()]} ${weekStart.getDate()}`;
 }
 
 type WeekGroup = { label: string; dates: DateOption[] };
