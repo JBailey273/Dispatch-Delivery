@@ -836,7 +836,7 @@ export default function DropRescheduleSlideOver({
    ══════════════════════════════════════════ */
 const panelStyles = `
   .so-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 200; animation: soFadeIn 0.2s ease; backdrop-filter: blur(2px); }
-  .so-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 440px; max-width: 100%; background: var(--bg-primary); border-left: 1px solid var(--border); box-shadow: -8px 0 40px rgba(0,0,0,0.15); z-index: 201; display: flex; flex-direction: column; animation: soSlideIn 0.25s cubic-bezier(0.32,0.72,0,1); overflow: hidden; }
+  .so-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 440px; max-width: 100%; background: var(--bg-primary); border-left: 1px solid var(--border); box-shadow: -8px 0 40px rgba(0,0,0,0.15); z-index: 201; display: flex; flex-direction: column; animation: soSlideIn 0.25s cubic-bezier(0.32,0.72,0,1); }
   @keyframes soFadeIn { from { opacity: 0; } to { opacity: 1; } }
   @keyframes soSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
 
