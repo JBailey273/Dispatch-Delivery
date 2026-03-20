@@ -1,16 +1,18 @@
 import secrets
 import uuid
 from datetime import date, timedelta
+from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException
+import boto3
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from fastapi import Depends
 
 from app.api.deps import AuthUser, db_dep, require_roles
+from app.api.routes.availability import _is_blacked_out, _remaining_slots, _schedule_storage_client
 from app.api.services import log_event, now_utc
-from app.api.routes.availability import _is_blacked_out, _remaining_slots
+from app.core.config import settings
 from app.models.entities import (
     Customer,
     CustomerAddress,
@@ -229,3 +231,78 @@ def confirm_schedule(token: str, payload: ConfirmScheduleIn, db: Session = Depen
         "scheduled_window": window.value,
         "window_label": "Morning" if window == WindowCode.A else "Afternoon",
     }
+
+def _schedule_storage_client():
+    return boto3.client(
+        "s3",
+        endpoint_url=settings.r2_endpoint_url,
+        aws_access_key_id=settings.r2_access_key_id,
+        aws_secret_access_key=settings.r2_secret_access_key,
+    )
+
+def _resolve_drop_for_site_info(token_str: str, db: Session) -> Drop:
+    """Like _resolve_token but allows already-used tokens — site info can be added after confirm."""
+    token = db.execute(
+        select(SchedulingToken).where(SchedulingToken.token == token_str)
+    ).scalar_one_or_none()
+    if not token:
+        raise HTTPException(status_code=404, detail={"code": "invalid_token", "message": "This scheduling link is invalid."})
+    drop = db.execute(
+        select(Drop).where(Drop.id == token.drop_id)
+    ).scalar_one_or_none()
+    if not drop:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Delivery not found."})
+    return drop
+
+
+class SiteInfoIn(BaseModel):
+    note: str | None = None
+    photo_url: str | None = None
+
+
+@router.post("/{token}/site-info")
+def save_site_info(token: str, payload: SiteInfoIn, db: Session = Depends(db_dep)):
+    """Customer submits delivery site notes and/or photo after scheduling. No auth required."""
+    drop = _resolve_drop_for_site_info(token, db)
+
+    if payload.note and payload.note.strip():
+        existing = drop.notes or ""
+        separator = "\n\n" if existing else ""
+        drop.notes = existing + separator + f"[Customer note] {payload.note.strip()}"
+
+    if payload.photo_url and payload.photo_url.strip():
+        photos = list(drop.drop_photos or [])
+        photos.append(payload.photo_url.strip())
+        drop.drop_photos = photos
+
+    log_event(db, drop.tenant_id, "schedule.site_info.saved", "api", {
+        "drop_id": str(drop.id),
+        "has_note": bool(payload.note),
+        "has_photo": bool(payload.photo_url),
+    })
+    db.commit()
+    return {"status": "ok"}
+
+
+class PhotoUploadRequestIn(BaseModel):
+    content_type: str = "image/jpeg"
+
+
+@router.post("/{token}/photo-upload-url")
+def get_photo_upload_url(token: str, payload: PhotoUploadRequestIn, db: Session = Depends(db_dep)):
+    """Return a presigned R2 URL for direct customer photo upload. No auth required."""
+    drop = _resolve_drop_for_site_info(token, db)
+
+    object_key = f"{drop.tenant_id}/customer-site/{drop.id}/{uuid4()}.jpg"
+    url = _schedule_storage_client().generate_presigned_url(
+        "put_object",
+        Params={
+            "Bucket": settings.r2_bucket,
+            "Key": object_key,
+            "ContentType": payload.content_type,
+        },
+        ExpiresIn=600,
+        HttpMethod="PUT",
+    )
+    photo_url = f"{settings.r2_endpoint_url}/{settings.r2_bucket}/{object_key}"
+    return {"upload_url": url, "photo_url": photo_url}
