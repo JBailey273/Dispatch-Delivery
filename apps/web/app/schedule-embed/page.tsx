@@ -189,10 +189,12 @@ export default function ScheduleEmbedPage() {
     return (
       <>
         <style>{styles}</style>
-        <div className="se-shell">
-          <div className="se-spinner-wrap">
-            <div className="se-spinner" />
-            <p className="se-spinner-text">Loading available delivery dates…</p>
+        <div className="se-shell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300 }}>
+          <div style={{ textAlign: 'center' }}>
+            <div className="spinner spinner-lg" style={{ margin: '0 auto 16px' }} />
+            <div style={{ fontSize: 15, color: 'var(--gray-600)', fontWeight: 500 }}>
+              {retryRef.current > 0 ? 'Getting your order ready…' : 'Loading…'}
+            </div>
           </div>
         </div>
       </>
