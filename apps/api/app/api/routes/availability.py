@@ -730,5 +730,5 @@ def embed_get_photo_upload_url(
         ExpiresIn=600,
         HttpMethod="PUT",
     )
-    photo_url = f"{settings.r2_endpoint_url}/{settings.r2_bucket}/{object_key}"
+    photo_url = f"https://pub-2acb2bd410ad4b7094ea64a66e6531f5.r2.dev/{object_key}"
     return {"upload_url": url, "photo_url": photo_url}
