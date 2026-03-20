@@ -16,7 +16,6 @@ type ScheduleContext = {
 
 type WindowOption = { window: string; label: string; time_range: string };
 type DateOption = { date: string; windows: WindowOption[] };
-
 type WeekGroup = { label: string; dates: DateOption[] };
 
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -44,8 +43,6 @@ function weekLabel(ds: string): string {
   startOfWeekAfter.setDate(startOfNextWeek.getDate() + 7);
   if (d < startOfNextWeek) return 'This week';
   if (d < startOfWeekAfter) return 'Next week';
-
-  // Find the Sunday that starts this date's week
   const weekStart = new Date(d);
   weekStart.setDate(d.getDate() - d.getDay());
   return `Week of ${MONTHS[weekStart.getMonth()]} ${weekStart.getDate()}`;
@@ -76,7 +73,17 @@ export default function SchedulePage() {
   const [selectedWindow, setSelectedWindow] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [confirmed, setConfirmed] = useState<{ date: string; window_label: string } | null>(null);
+
+  // Site info step
+  const [showSiteInfo, setShowSiteInfo] = useState(false);
+  const [siteNote, setSiteNote] = useState('');
+  const [sitePhoto, setSitePhoto] = useState<File | null>(null);
+  const [sitePhotoPreview, setSitePhotoPreview] = useState<string | null>(null);
+  const [siteInfoSaving, setSiteInfoSaving] = useState(false);
+  const [siteInfoDone, setSiteInfoDone] = useState(false);
+
   const loaderRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -103,7 +110,6 @@ export default function SchedulePage() {
       .catch(() => { setLoadingDates(false); });
   }, [token]);
 
-  // Infinite scroll observer
   useEffect(() => {
     const el = loaderRef.current;
     if (!el) return;
@@ -131,9 +137,59 @@ export default function SchedulePage() {
       const data = await r.json();
       if (!r.ok) throw data;
       setConfirmed({ date: data.scheduled_date, window_label: data.window_label });
+      setShowSiteInfo(true); // go to step 2
     } catch (e: any) {
       setError(e?.detail?.message || 'Something went wrong. Please try again.');
       setConfirming(false);
+    }
+  };
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSitePhoto(file);
+    setSitePhotoPreview(URL.createObjectURL(file));
+  };
+
+  const submitSiteInfo = async (skip = false) => {
+    if (skip) { setSiteInfoDone(true); return; }
+    if (!token) return;
+    setSiteInfoSaving(true);
+    try {
+      let photoUrl: string | null = null;
+
+      if (sitePhoto) {
+        // Get presigned URL
+        const uploadRes = await fetch(`${API_BASE}/schedule/${token}/photo-upload-url`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content_type: sitePhoto.type || 'image/jpeg' }),
+        });
+        const uploadData = await uploadRes.json();
+        if (uploadRes.ok) {
+          // Upload directly to R2
+          await fetch(uploadData.upload_url, {
+            method: 'PUT',
+            headers: { 'Content-Type': sitePhoto.type || 'image/jpeg' },
+            body: sitePhoto,
+          });
+          photoUrl = uploadData.photo_url;
+        }
+      }
+
+      await fetch(`${API_BASE}/schedule/${token}/site-info`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          note: siteNote.trim() || null,
+          photo_url: photoUrl,
+        }),
+      });
+    } catch {
+      // Non-fatal — don't block the customer
+    } finally {
+      setSiteInfoSaving(false);
+      setSiteInfoDone(true);
     }
   };
 
@@ -141,8 +197,8 @@ export default function SchedulePage() {
   const weekGroups = groupByWeek(visibleDates);
   const hasMore = visibleCount < allDates.length;
 
-  // ── Confirmed state ───────────────────────────────────────────────────────
-  if (confirmed) {
+  // ── Final confirmed screen ────────────────────────────────────────────────
+  if (confirmed && siteInfoDone) {
     const d = parseLocalDate(confirmed.date);
     return (
       <>
@@ -159,6 +215,90 @@ export default function SchedulePage() {
             {ctx && <p className="sc-confirmed-addr">{ctx.address?.line1}, {ctx.address?.city}</p>}
             <p className="sc-confirmed-note">You'll receive a text when your driver is on the way.</p>
           </div>
+        </div>
+      </>
+    );
+  }
+
+  // ── Site info step ────────────────────────────────────────────────────────
+  if (confirmed && showSiteInfo) {
+    const d = parseLocalDate(confirmed.date);
+    return (
+      <>
+        <style>{styles}</style>
+        <div className="sc-shell">
+
+          {/* Booked confirmation banner */}
+          <div className="sc-booked-banner">
+            <span className="sc-booked-check">✓</span>
+            <div>
+              <div className="sc-booked-title">Delivery booked!</div>
+              <div className="sc-booked-date">{DAYS[d.getDay()]}, {MONTHS[d.getMonth()]} {d.getDate()} · {confirmed.window_label}</div>
+            </div>
+          </div>
+
+          {/* Site info card */}
+          <div className="sc-card" style={{ marginTop: 16 }}>
+            <div className="sc-site-heading">📍 Help your driver find the spot</div>
+            <p className="sc-site-sub">Anything useful? Gate codes, driveway notes, where to drop — totally optional.</p>
+
+            <textarea
+              className="sc-site-textarea"
+              placeholder="e.g. Gate code is 1234, drop near the side gate on the left…"
+              value={siteNote}
+              onChange={e => setSiteNote(e.target.value)}
+              rows={4}
+            />
+
+            {/* Photo picker */}
+            <div className="sc-photo-section">
+              {sitePhotoPreview ? (
+                <div className="sc-photo-preview-wrap">
+                  <img src={sitePhotoPreview} alt="Site preview" className="sc-photo-preview" />
+                  <button
+                    className="sc-photo-remove"
+                    onClick={() => { setSitePhoto(null); setSitePhotoPreview(null); }}
+                  >
+                    ✕ Remove photo
+                  </button>
+                </div>
+              ) : (
+                <button
+                  className="sc-photo-btn"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  📷 Add a photo of the drop location
+                </button>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                style={{ display: 'none' }}
+                onChange={handlePhotoChange}
+              />
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="sc-cta-wrap sc-site-actions">
+            <button
+              className="sc-cta"
+              disabled={siteInfoSaving}
+              onClick={() => submitSiteInfo(false)}
+            >
+              {siteInfoSaving ? 'Saving…' : 'Submit & finish'}
+            </button>
+            <button
+              className="sc-skip-btn"
+              disabled={siteInfoSaving}
+              onClick={() => submitSiteInfo(true)}
+            >
+              Skip for now
+            </button>
+          </div>
+
         </div>
       </>
     );
@@ -199,13 +339,11 @@ export default function SchedulePage() {
       <style>{styles}</style>
       <div className="sc-shell">
 
-        {/* Header */}
         <div className="sc-header">
           <div className="sc-logo-mark" />
           <div className="sc-header-name">{ctx?.tenant_name}</div>
         </div>
 
-        {/* Order summary card */}
         <div className="sc-card sc-summary">
           <div className="sc-summary-name">{ctx?.customer_name}</div>
           {ctx?.address && (
@@ -220,17 +358,14 @@ export default function SchedulePage() {
           )}
         </div>
 
-        {/* Section label */}
         <div className="sc-section-label">Choose a delivery date</div>
 
-        {/* Already scheduled notice */}
         {ctx?.already_scheduled && ctx.current_date && (
           <div className="sc-notice">
             Currently scheduled for {fmtDate(ctx.current_date)} · {ctx.current_window === 'A' ? 'Morning' : 'Afternoon'}. Select a new date below to change it.
           </div>
         )}
 
-        {/* Date list */}
         {loadingDates && <div className="sc-spinner-wrap"><div className="sc-spinner" /></div>}
 
         {!loadingDates && allDates.length === 0 && (
@@ -263,7 +398,6 @@ export default function SchedulePage() {
                       {isSelected && <div className="sc-radio-dot" />}
                     </div>
                   </div>
-
                   {isSelected && (
                     <div className="sc-windows">
                       {d.windows.map(w => (
@@ -284,15 +418,12 @@ export default function SchedulePage() {
           </div>
         ))}
 
-        {/* Infinite scroll loader */}
         {hasMore && <div ref={loaderRef} className="sc-load-more">Load more dates ↓</div>}
 
-        {/* Error inline */}
         {error && confirmed === null && (
           <div className="sc-error">{error}</div>
         )}
 
-        {/* CTA */}
         <div className="sc-cta-wrap">
           <button
             className="sc-cta"
@@ -339,11 +470,7 @@ const styles = `
     background: #2d6a1f;
     flex-shrink: 0;
   }
-  .sc-header-name {
-    font-size: 15px;
-    font-weight: 600;
-    color: #1a1a1a;
-  }
+  .sc-header-name { font-size: 15px; font-weight: 600; color: #1a1a1a; }
 
   .sc-card {
     background: #fff;
@@ -353,184 +480,154 @@ const styles = `
     padding: 16px;
   }
 
-  .sc-summary-name {
-    font-size: 16px;
-    font-weight: 600;
-    color: #1a1a1a;
-    margin-bottom: 4px;
-  }
-  .sc-summary-addr {
-    font-size: 13px;
-    color: #6b7280;
-    margin-bottom: 10px;
-  }
+  .sc-summary-name { font-size: 16px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px; }
+  .sc-summary-addr { font-size: 13px; color: #6b7280; margin-bottom: 10px; }
   .sc-summary-materials { display: flex; flex-wrap: wrap; gap: 6px; }
   .sc-material-pill {
-    font-size: 12px;
-    font-weight: 500;
-    background: #eef6e8;
-    color: #2d6a1f;
-    border-radius: 20px;
-    padding: 3px 10px;
+    font-size: 12px; font-weight: 500;
+    background: #eef6e8; color: #2d6a1f;
+    border-radius: 20px; padding: 3px 10px;
   }
 
   .sc-section-label {
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: #9ca3af;
-    padding: 18px 20px 6px;
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.07em;
+    color: #9ca3af; padding: 18px 20px 6px;
   }
 
   .sc-week-label {
-    font-size: 12px;
-    font-weight: 600;
-    color: #6b7280;
+    font-size: 12px; font-weight: 600; color: #6b7280;
     padding: 10px 20px 4px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    text-transform: uppercase; letter-spacing: 0.05em;
   }
 
   .sc-notice {
     margin: 0 16px 4px;
-    background: #fffbeb;
-    border: 1px solid #fde68a;
-    border-radius: 10px;
-    padding: 10px 14px;
-    font-size: 13px;
-    color: #92400e;
+    background: #fffbeb; border: 1px solid #fde68a;
+    border-radius: 10px; padding: 10px 14px;
+    font-size: 13px; color: #92400e;
   }
 
   .sc-date-card {
     margin: 6px 16px 0;
-    background: #fff;
-    border-radius: 12px;
-    border: 1px solid #e5e7e0;
-    padding: 14px 16px;
-    cursor: pointer;
-    transition: border-color 0.15s;
+    background: #fff; border-radius: 12px;
+    border: 1px solid #e5e7e0; padding: 14px 16px;
+    cursor: pointer; transition: border-color 0.15s;
   }
   .sc-date-card:active { opacity: 0.85; }
-  .sc-date-selected {
-    border-color: #2d6a1f;
-    border-width: 2px;
-  }
-
-  .sc-date-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .sc-date-label {
-    font-size: 15px;
-    font-weight: 600;
-    color: #1a1a1a;
-  }
-  .sc-date-sub {
-    font-size: 12px;
-    color: #6b7280;
-    margin-top: 3px;
-  }
+  .sc-date-selected { border-color: #2d6a1f; border-width: 2px; }
+  .sc-date-row { display: flex; justify-content: space-between; align-items: center; }
+  .sc-date-label { font-size: 15px; font-weight: 600; color: #1a1a1a; }
+  .sc-date-sub { font-size: 12px; color: #6b7280; margin-top: 3px; }
 
   .sc-radio {
-    width: 20px; height: 20px;
-    border-radius: 50%;
+    width: 20px; height: 20px; border-radius: 50%;
     border: 2px solid #d1d5db;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
   }
   .sc-radio-selected { border-color: #2d6a1f; background: #2d6a1f; }
   .sc-radio-dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; }
 
-  .sc-windows {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    margin-top: 12px;
-  }
+  .sc-windows { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
   .sc-window-pill {
-    border: 1.5px solid #e5e7e0;
-    border-radius: 10px;
-    padding: 10px 12px;
-    text-align: center;
-    cursor: pointer;
+    border: 1.5px solid #e5e7e0; border-radius: 10px;
+    padding: 10px 12px; text-align: center; cursor: pointer;
     transition: border-color 0.15s, background 0.15s;
   }
   .sc-window-pill:active { opacity: 0.8; }
-  .sc-window-selected {
-    border-color: #2d6a1f;
-    background: #eef6e8;
-  }
-  .sc-window-label {
-    font-size: 13px;
-    font-weight: 600;
-    color: #1a1a1a;
-  }
-  .sc-window-time {
-    font-size: 11px;
-    color: #6b7280;
-    margin-top: 2px;
-  }
+  .sc-window-selected { border-color: #2d6a1f; background: #eef6e8; }
+  .sc-window-label { font-size: 13px; font-weight: 600; color: #1a1a1a; }
+  .sc-window-time { font-size: 11px; color: #6b7280; margin-top: 2px; }
 
   .sc-load-more {
-    text-align: center;
-    padding: 18px 0 4px;
-    font-size: 13px;
-    font-weight: 500;
-    color: #2d6a1f;
+    text-align: center; padding: 18px 0 4px;
+    font-size: 13px; font-weight: 500; color: #2d6a1f;
   }
 
   .sc-error {
     margin: 12px 16px 0;
-    background: #fef2f2;
-    border: 1px solid #fecaca;
-    border-radius: 10px;
-    padding: 10px 14px;
-    font-size: 13px;
-    color: #991b1b;
+    background: #fef2f2; border: 1px solid #fecaca;
+    border-radius: 10px; padding: 10px 14px;
+    font-size: 13px; color: #991b1b;
   }
 
   .sc-cta-wrap {
     position: fixed;
     bottom: 0; left: 0; right: 0;
     padding: 14px 16px 28px;
-    background: #fff;
-    border-top: 1px solid #e5e7e0;
+    background: #fff; border-top: 1px solid #e5e7e0;
   }
   .sc-cta {
-    width: 100%;
-    background: #2d6a1f;
-    color: #fff;
-    border: none;
-    border-radius: 12px;
-    padding: 16px;
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-    font-family: inherit;
-    transition: opacity 0.15s;
+    width: 100%; background: #2d6a1f; color: #fff;
+    border: none; border-radius: 12px; padding: 16px;
+    font-size: 16px; font-weight: 600; cursor: pointer;
+    font-family: inherit; transition: opacity 0.15s;
   }
   .sc-cta:disabled { opacity: 0.4; cursor: default; }
   .sc-cta:not(:disabled):active { opacity: 0.85; }
 
-  .sc-confirmed {
-    margin-top: 60px;
-    text-align: center;
-    padding: 36px 24px;
+  /* Site info step */
+  .sc-booked-banner {
+    display: flex; align-items: center; gap: 12px;
+    background: #eef6e8; border-bottom: 1px solid #c6e0b8;
+    padding: 14px 20px;
   }
+  .sc-booked-check {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: #2d6a1f; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: 700; flex-shrink: 0;
+  }
+  .sc-booked-title { font-size: 14px; font-weight: 700; color: #1a4d10; }
+  .sc-booked-date { font-size: 13px; color: #2d6a1f; margin-top: 2px; }
+
+  .sc-site-heading { font-size: 16px; font-weight: 700; color: #1a1a1a; margin-bottom: 6px; }
+  .sc-site-sub { font-size: 13px; color: #6b7280; margin-bottom: 14px; line-height: 1.5; }
+
+  .sc-site-textarea {
+    width: 100%; border: 1.5px solid #e5e7e0; border-radius: 10px;
+    padding: 12px 14px; font-size: 14px; font-family: inherit;
+    color: #1a1a1a; resize: none; outline: none;
+    transition: border-color 0.15s;
+  }
+  .sc-site-textarea:focus { border-color: #2d6a1f; }
+
+  .sc-photo-section { margin-top: 12px; }
+  .sc-photo-btn {
+    width: 100%; padding: 12px;
+    border: 1.5px dashed #d1d5db; border-radius: 10px;
+    background: #fafafa; color: #4b5563;
+    font-size: 14px; font-weight: 500; cursor: pointer;
+    font-family: inherit; transition: border-color 0.15s;
+  }
+  .sc-photo-btn:active { opacity: 0.8; }
+
+  .sc-photo-preview-wrap { position: relative; }
+  .sc-photo-preview {
+    width: 100%; max-height: 200px; object-fit: cover;
+    border-radius: 10px; display: block;
+  }
+  .sc-photo-remove {
+    margin-top: 8px; background: none; border: none;
+    color: #dc2626; font-size: 13px; font-weight: 500;
+    cursor: pointer; padding: 0; font-family: inherit;
+  }
+
+  .sc-site-actions { display: flex; flex-direction: column; gap: 10px; }
+  .sc-skip-btn {
+    width: 100%; background: none; border: none;
+    color: #6b7280; font-size: 14px; font-weight: 500;
+    cursor: pointer; padding: 8px; font-family: inherit;
+  }
+  .sc-skip-btn:disabled { opacity: 0.4; }
+
+  /* Confirmed final screen */
+  .sc-confirmed { margin-top: 60px; text-align: center; padding: 36px 24px; }
   .sc-check {
-    width: 56px; height: 56px;
-    border-radius: 50%;
-    background: #eef6e8;
-    color: #2d6a1f;
-    font-size: 24px;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    width: 56px; height: 56px; border-radius: 50%;
+    background: #eef6e8; color: #2d6a1f;
+    font-size: 24px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
     margin: 0 auto 16px;
   }
   .sc-confirmed-title { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
@@ -543,10 +640,8 @@ const styles = `
   .sc-spinner-wrap { display: flex; justify-content: center; padding: 40px 0; }
   .sc-spinner {
     width: 28px; height: 28px;
-    border: 3px solid #e5e7e0;
-    border-top-color: #2d6a1f;
-    border-radius: 50%;
-    animation: sc-spin 0.7s linear infinite;
+    border: 3px solid #e5e7e0; border-top-color: #2d6a1f;
+    border-radius: 50%; animation: sc-spin 0.7s linear infinite;
   }
   @keyframes sc-spin { to { transform: rotate(360deg); } }
 `;
