@@ -872,7 +872,7 @@ const panelStyles = `
 
   /* Cards */
   .so-card { background: var(--surface); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 14px 16px; display: flex; flex-direction: column; gap: 5px; }
-  .so-card-flush { padding: 0; overflow: hidden; }
+  .so-card-flush { padding: 0; }
   .so-card-label { font-family: var(--font-heading); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--gray-400); }
   .so-card-label-pad { padding: 12px 16px 8px; border-bottom: 1px solid var(--border-light); }
 
