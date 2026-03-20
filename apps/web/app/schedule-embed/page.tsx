@@ -83,21 +83,37 @@ export default function ScheduleEmbedPage() {
     setChannelKey(key);
   }, []);
 
+  const MAX_RETRIES = 8;
+  const RETRY_DELAY_MS = 3000;
+  const retryRef = useRef(0);
+
   useEffect(() => {
     if (!orderId || !channelKey) return;
-    setLoading(true);
-    fetch(`${API_BASE}/embed/order/${orderId}`, {
-      headers: { 'X-Channel-Key': channelKey },
-    })
-      .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(e)))
-      .then(data => {
-        setCtx(data);
-        setLoading(false);
+    retryRef.current = 0;
+
+    const attempt = () => {
+      setLoading(true);
+      fetch(`${API_BASE}/embed/order/${orderId}`, {
+        headers: { 'X-Channel-Key': channelKey },
       })
-      .catch(e => {
-        setError(e?.detail?.message || 'Unable to load your order. Please contact us.');
-        setLoading(false);
-      });
+        .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject({ status: r.status, ...e })))
+        .then(data => {
+          setCtx(data);
+          setLoading(false);
+        })
+        .catch(e => {
+          // Only retry on 404 (order not ingested yet) — fail immediately on anything else
+          if (e?.status === 404 && retryRef.current < MAX_RETRIES) {
+            retryRef.current += 1;
+            setTimeout(attempt, RETRY_DELAY_MS);
+          } else {
+            setError(e?.detail?.message || 'Unable to load your order. Please contact us.');
+            setLoading(false);
+          }
+        });
+    };
+
+    attempt();
   }, [orderId, channelKey]);
 
   // Infinite scroll
