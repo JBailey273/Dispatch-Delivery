@@ -455,7 +455,7 @@ const sendSchedulingLink = async () => {
             <div className="so-card">
               <div className="so-card-label">Customer</div>
               {dropDetail.customer_id ? (
-                <Link href={`/customers?search=${encodeURIComponent(dropDetail.customer_name)}`}`} className="so-info-name so-info-name-link">
+                <Link href={`/customers?search=${encodeURIComponent(dropDetail.customer_name)}`} className="so-info-name so-info-name-link">
                   {dropDetail.customer_name}
                 </Link>
               ) : (
