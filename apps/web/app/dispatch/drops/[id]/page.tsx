@@ -121,7 +121,7 @@ function DispatchDropDetailPage() {
   setDeleting(true);
   try {
     await api(`/drops/${id}`, { method: 'DELETE' });
-    router.replace('/dispatch-schedule');
+    router.back();
   } catch (err) {
     setError((err as ApiError).message || 'Failed to delete order.');
     setDeleting(false);
