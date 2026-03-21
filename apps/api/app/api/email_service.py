@@ -230,13 +230,15 @@ def send_scheduling_link_email(to: str, customer_name: str, scheduling_link: str
     subject = "Schedule Your Delivery from East Meadow Garden Center"
     content = f"""
       <h1 style="margin:0 0 12px;font-family:Outfit,Arial,sans-serif;font-size:26px;font-weight:800;color:#2c2c2c;letter-spacing:-0.02em;line-height:1.25;mso-line-height-rule:exactly;text-align:center;">Schedule Your Delivery &#x1F4C5;</h1>
-      <p style="margin:0;font-family:Arial,sans-serif;font-size:16px;color:#666666;line-height:1.65;text-align:center;">Hi {first_name} &#8212; click the button below to pick a delivery date and time that works for you.</p>
+      <p style="margin:0;font-family:Arial,sans-serif;font-size:16px;color:#666666;line-height:1.65;text-align:center;">Hi {first_name} &#8212; use the button below to pick a delivery date and time that works for you.</p>
+      {_detail_card('#f4f8f4', '#c8dfc8', '#3d5a45', 'Your Delivery', [('Next Step', 'Choose a date and arrival window below')])}
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:28px 0;">
         <tr><td align="center">
-          <a href="{scheduling_link}" style="display:inline-block;padding:14px 32px;background-color:#4a7052;color:#ffffff;font-family:Outfit,Arial,sans-serif;font-size:16px;font-weight:700;text-decoration:none;border-radius:8px;">Choose Your Delivery Window</a>
+          <a href="{scheduling_link}" style="display:inline-block;padding:16px 36px;background-color:#4a7052;color:#ffffff;font-family:Outfit,Arial,sans-serif;font-size:17px;font-weight:700;text-decoration:none;border-radius:10px;letter-spacing:-0.01em;">Choose Your Delivery Window &rarr;</a>
         </td></tr>
       </table>
-      <p style="margin:0;font-family:Arial,sans-serif;font-size:13px;color:#999999;line-height:1.65;text-align:center;">Or copy this link into your browser:<br/><a href="{scheduling_link}" style="color:#4a7052;word-break:break-all;">{scheduling_link}</a></p>
-      <p style="margin:20px 0 0;font-family:Arial,sans-serif;font-size:14px;color:#999999;line-height:1.65;">Questions? Reply to this email or call us at (413) 566-8733.</p>
+      {_info_box('&#x1F4CB; &nbsp;This link is <strong>unique to your order</strong>. Once you select a date, your delivery will be confirmed automatically.')}
+      <p style="margin:20px 0 0;font-family:Arial,sans-serif;font-size:13px;color:#999999;line-height:1.65;text-align:center;">Button not working? Copy this link into your browser:<br/><a href="{scheduling_link}" style="color:#4a7052;word-break:break-all;font-size:12px;">{scheduling_link}</a></p>
+      <p style="margin:20px 0 0;font-family:Arial,sans-serif;font-size:14px;color:#999999;line-height:1.65;">Questions? Reply to this email or call us at <a href="tel:4135668733" style="color:#4a7052;text-decoration:none;">(413) 566-8733</a>.</p>
     """
-    return send_email(to, subject, _layout('#4a7052', content, "Schedule your delivery from East Meadow Garden Center"))
+    return send_email(to, subject, _layout('#4a7052', content, f"Schedule your delivery from East Meadow Garden Center — click to choose your window"))
