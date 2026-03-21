@@ -454,7 +454,13 @@ const sendSchedulingLink = async () => {
             {/* Customer */}
             <div className="so-card">
               <div className="so-card-label">Customer</div>
-              <div className="so-info-name">{dropDetail.customer_name}</div>
+              {dropDetail.customer_id ? (
+                <Link href={`/customers/${dropDetail.customer_id}`} className="so-info-name so-info-name-link">
+                  {dropDetail.customer_name}
+                </Link>
+              ) : (
+                <div className="so-info-name">{dropDetail.customer_name}</div>
+              )}
               <div className="so-info-phone">{fmtPhone(dropDetail.customer_phone)}</div>
               {dropDetail.delivery_address && (
                 <div className="so-info-addr">
@@ -886,6 +892,8 @@ const panelStyles = `
   .so-source-badge.manual { background: var(--gray-100); color: var(--gray-500); }
   .so-priority-badge { display: inline-flex; font-family: var(--font-heading); font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 12px; background: var(--amber-100,#fef3c7); color: var(--amber-800,#92400e); text-transform: uppercase; letter-spacing: 0.04em; }
   .so-info-name { font-family: var(--font-heading); font-size: 17px; font-weight: 800; color: var(--gray-900); letter-spacing: -0.015em; }
+  .so-info-name-link { color: inherit; text-decoration: none; border-bottom: 1px dashed var(--gray-300); cursor: pointer; transition: color 0.15s, border-color 0.15s; }
+  .so-info-name-link:hover { color: var(--green-600); border-bottom-color: var(--green-400); }
   .so-info-phone { font-size: 14px; color: var(--gray-500); font-weight: 500; }
   .so-info-addr { font-size: 13px; color: var(--gray-600); line-height: 1.45; }
   .so-info-date { font-family: var(--font-heading); font-size: 15px; font-weight: 700; color: var(--gray-900); }
