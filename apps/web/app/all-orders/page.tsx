@@ -120,6 +120,14 @@ export default function AllOrdersPage() {
     api('/dispatch/drivers').then(d => setDrivers(d.drivers || [])).catch(() => null);
   }, []);
 
+  useEffect(() => {
+  const handleVisibility = () => {
+    if (document.visibilityState === 'visible') fetchOrders();
+  };
+  document.addEventListener('visibilitychange', handleVisibility);
+  return () => document.removeEventListener('visibilitychange', handleVisibility);
+}, [fetchOrders]);
+  
   // Split by tab
   const deliveryOrders = useMemo(() => orders.filter(o => o.delivery_method !== 'pickup'), [orders]);
   const pickupOrders = useMemo(() => orders.filter(o => o.delivery_method === 'pickup'), [orders]);
