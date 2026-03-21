@@ -223,3 +223,20 @@ def send_pickup_ready_email(
       <p style="margin:20px 0 0;font-family:Arial,sans-serif;font-size:14px;color:#999999;line-height:1.65;">See you soon! &#8212; The East Meadow Team</p>
     """
     return send_email(to, subject, _layout('#4a7052', content, f"{order_label} is ready for pickup at East Meadow Garden Center"))
+
+
+def send_scheduling_link_email(to: str, customer_name: str, scheduling_link: str) -> bool:
+    first_name = customer_name.split()[0] if customer_name else "there"
+    subject = "Schedule Your Delivery from East Meadow Garden Center"
+    content = f"""
+      <h1 style="margin:0 0 12px;font-family:Outfit,Arial,sans-serif;font-size:26px;font-weight:800;color:#2c2c2c;letter-spacing:-0.02em;line-height:1.25;mso-line-height-rule:exactly;text-align:center;">Schedule Your Delivery &#x1F4C5;</h1>
+      <p style="margin:0;font-family:Arial,sans-serif;font-size:16px;color:#666666;line-height:1.65;text-align:center;">Hi {first_name} &#8212; click the button below to pick a delivery date and time that works for you.</p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:28px 0;">
+        <tr><td align="center">
+          <a href="{scheduling_link}" style="display:inline-block;padding:14px 32px;background-color:#4a7052;color:#ffffff;font-family:Outfit,Arial,sans-serif;font-size:16px;font-weight:700;text-decoration:none;border-radius:8px;">Choose Your Delivery Window</a>
+        </td></tr>
+      </table>
+      <p style="margin:0;font-family:Arial,sans-serif;font-size:13px;color:#999999;line-height:1.65;text-align:center;">Or copy this link into your browser:<br/><a href="{scheduling_link}" style="color:#4a7052;word-break:break-all;">{scheduling_link}</a></p>
+      <p style="margin:20px 0 0;font-family:Arial,sans-serif;font-size:14px;color:#999999;line-height:1.65;">Questions? Reply to this email or call us at (413) 566-8733.</p>
+    """
+    return send_email(to, subject, _layout('#4a7052', content, "Schedule your delivery from East Meadow Garden Center"))
