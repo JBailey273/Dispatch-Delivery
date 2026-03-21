@@ -367,6 +367,7 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
         "scheduled_window": drop.scheduled_window.value if drop.scheduled_window else None,
         "notify_sent_at": drop.notify_sent_at.isoformat() if drop.notify_sent_at else None,
         "last_reschedule_sms_at": drop.last_reschedule_sms_at.isoformat() if drop.last_reschedule_sms_at else None,
+        "customer_id": str(customer.id),
         "customer_name": customer.name,
         "customer_phone": customer.phone_e164,
         "customer_email": customer.email,
