@@ -1,6 +1,6 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, api, requireRole } from '../lib/auth';
 
@@ -97,6 +97,15 @@ export default function CustomerSearchPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  /* Pre-populate search from URL param */
+useEffect(() => {
+  const params = new URLSearchParams(window.location.search);
+  const initialSearch = params.get('search');
+  if (initialSearch) {
+    handleQueryChange(initialSearch);
+  }
+}, []);
+  
   const refreshCustomers = async () => {
     const d = await api('/customers');
     setAllCustomers(d.results || []);
