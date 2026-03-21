@@ -417,95 +417,81 @@ def get_unscheduled_drops(
             for drop, customer, addr in rows
         ]
     }
-@router.post("/drops/{drop_id}/send-delivery-notification")
-def send_delivery_notification(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)), db: Session = Depends(db_dep)):
-    row = db.execute(
-        select(Drop, Customer).join(Customer, Customer.id == Drop.customer_id)
-        .where(Drop.tenant_id == user.tenant_id, Drop.id == drop_id)
-    ).one_or_none()
-    if not row:
-        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
-    drop, customer = row
-
-    if drop.is_priority and not drop.scheduled_window:
-        window_label = "Priority Delivery"
-    else:
-        window_label = "Morning (9am–1pm)" if drop.scheduled_window and drop.scheduled_window.value == "A" else "Afternoon (1pm–5pm)"
-
-    message = f"Your delivery is scheduled for {drop.scheduled_date.strftime('%A, %B %d')} between {window_label}. Please ensure the delivery area is accessible."
-    job = {
-        "tenant_id": str(user.tenant_id),
-        "to": customer.phone_e164,
-        "template": "delivery_notification",
-        "message": message,
-    }
-    dedupe_key = f"notify-{drop.id}-{int(now_utc().timestamp() // 300)}"
-    if not enqueue_sms_job(job, dedupe_key=dedupe_key):
-        raise HTTPException(status_code=409, detail={"code": "rate_limited", "message": "Notification was already sent recently. Wait a few minutes."})
-    # Send email if opted in
-    if customer.email and customer.email_opt_in:
-        date_label = drop.scheduled_date.strftime("%A, %B %d") if drop.scheduled_date else "your scheduled date"
-        send_on_the_way_email(customer.email, customer.name, date_label, window_label)
-
-    drop.notify_sent_at = now_utc()
-    log_event(db, user.tenant_id, "delivery_notification.sent", "api", {"drop_id": drop_id})
-    db.commit()
-    return {"status": "sent", "sent_at": drop.notify_sent_at.isoformat()}
-
-
-class RescheduleSmsIn(BaseModel):
-    message: str
+class SendNotificationIn(BaseModel):
+    type: str  # "on_the_way" | "reschedule" | "scheduling_link" | "pickup_ready"
+    message: str | None = None          # optional override for reschedule body
+    scheduling_link: str | None = None  # required for scheduling_link type
     admin_override: bool = False
 
 
-@router.post("/drops/{drop_id}/send-reschedule-sms")
-def send_reschedule_sms(drop_id: str, payload: RescheduleSmsIn, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)), db: Session = Depends(db_dep)):
+@router.post("/drops/{drop_id}/send-notification")
+def send_notification(
+    drop_id: str,
+    payload: SendNotificationIn,
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)),
+    db: Session = Depends(db_dep),
+):
+    from app.api.notification_service import notify_customer
+
     row = db.execute(
-        select(Drop, Customer).join(Customer, Customer.id == Drop.customer_id).where(Drop.tenant_id == user.tenant_id, Drop.id == drop_id).with_for_update()
+        select(Drop, Customer)
+        .join(Customer, Customer.id == Drop.customer_id)
+        .where(Drop.tenant_id == user.tenant_id, Drop.id == drop_id)
+        .with_for_update()
     ).one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
     drop, customer = row
-    if drop.last_reschedule_sms_at and now_utc() - drop.last_reschedule_sms_at < timedelta(minutes=5) and not payload.admin_override:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "sms_rate_limited",
-                "message": "Could not send reschedule text because one was already sent in the last 5 minutes.",
-                "next_step": "Wait a few minutes or use admin override if this is urgent.",
-            },
-        )
 
-    job = {
-        "type": "SEND_SMS",
-        "tenant_id": str(user.tenant_id),
-        "drop_id": str(drop.id),
-        "to": customer.phone_e164,
-        "template": "custom",
-        "message": payload.message,
-    }
-    dedupe_key = f"reschedule-{drop.id}-{int(now_utc().timestamp() // 300)}"
-    if not enqueue_sms_job(job, dedupe_key=dedupe_key):
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "duplicate_sms",
-                "message": "Could not queue this reschedule text because the same message is already queued.",
-                "next_step": "Refresh drop details and retry with updated timing or content.",
-            },
-        )
+    # Rate limit reschedule notifications (5 min cooldown, bypassable)
+    if payload.type == "reschedule" and not payload.admin_override:
+        if drop.last_reschedule_sms_at and now_utc() - drop.last_reschedule_sms_at < timedelta(minutes=5):
+            raise HTTPException(status_code=409, detail={
+                "code": "rate_limited",
+                "message": "A notification was already sent in the last 5 minutes.",
+                "next_step": "Wait a few minutes or enable admin override.",
+            })
 
-    # Send email if opted in
-    if customer.email and customer.email_opt_in and drop.scheduled_date:
-        window_label = "Priority Delivery" if drop.is_priority and not drop.scheduled_window else ("Morning (9am–1pm)" if drop.scheduled_window and drop.scheduled_window.value == "A" else "Afternoon (1pm–5pm)")
-        date_label = drop.scheduled_date.strftime("%A, %B %d")
-        send_reschedule_notification_email(customer.email, customer.name, date_label, window_label)
+    # Rate limit on_the_way (5 min cooldown, bypassable)
+    if payload.type == "on_the_way" and not payload.admin_override:
+        if drop.notify_sent_at and now_utc() - drop.notify_sent_at < timedelta(minutes=5):
+            raise HTTPException(status_code=409, detail={
+                "code": "rate_limited",
+                "message": "An on-the-way notification was already sent recently.",
+                "next_step": "Wait a few minutes or enable admin override.",
+            })
 
-    drop.last_reschedule_sms_at = now_utc()
-    log_event(db, user.tenant_id, "SMS_SENT", "dispatch", {"drop_id": drop_id, "kind": "reschedule", "preview": payload.message})
+    context = {}
+    if payload.message:
+        context["message"] = payload.message
+    if payload.scheduling_link:
+        context["scheduling_link"] = payload.scheduling_link
+
+    result = notify_customer(
+        db, user.tenant_id, drop, customer,
+        payload.type, context,
+    )
+
+    if not result.any_sent:
+        raise HTTPException(status_code=400, detail={
+            "code": "no_channel",
+            "message": "Customer has no notification channel set up. Add SMS opt-in or email opt-in first.",
+        })
+
+    # Update timestamps
+    if payload.type == "on_the_way":
+        drop.notify_sent_at = now_utc()
+    elif payload.type in ("reschedule", "scheduling_link"):
+        drop.last_reschedule_sms_at = now_utc()
+
+    log_event(db, user.tenant_id, "notification.sent", "dispatch", {
+        "drop_id": drop_id,
+        "type": payload.type,
+        **result.to_dict(),
+    })
     db.commit()
     invalidate_suggestion_cache(str(user.tenant_id))
-    return {"status": "queued", "sent_at": drop.last_reschedule_sms_at.isoformat()}
+    return {"status": "sent", **result.to_dict()}
 
 
 class AssignIn(BaseModel):
