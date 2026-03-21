@@ -8,6 +8,7 @@ from app.api.deps import AuthUser, db_dep, require_roles
 from app.api.services import enqueue_sms_job, log_event, now_utc
 from app.models.entities import Customer, CustomerAddress, Drop, ExceptionReasonCode, Load, LoadStatus, UserRole
 from app.api.email_service import send_on_the_way_email, send_delivery_confirmation_email
+from app.api.notification_service import notify_customer
 
 router = APIRouter(prefix="/driver", tags=["driver"])
 
@@ -118,14 +119,13 @@ def driver_notify_customer(
     user: AuthUser = Depends(require_roles(UserRole.DRIVER)),
     db: Session = Depends(db_dep),
 ):
-    """Send on-the-way SMS to customer. Idempotent — won't send twice."""
+    
     drop = db.execute(
         select(Drop).where(Drop.id == drop_id, Drop.tenant_id == user.tenant_id).with_for_update()
     ).scalar_one_or_none()
     if not drop:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
 
-    # Verify this driver has loads on this drop
     driver_load = db.execute(
         select(Load).where(Load.drop_id == drop_id, Load.driver_user_id == user.user_id, Load.tenant_id == user.tenant_id)
     ).scalars().first()
@@ -140,25 +140,20 @@ def driver_notify_customer(
         select(Customer).where(Customer.id == drop.customer_id, Customer.tenant_id == user.tenant_id)
     ).scalar_one()
 
-    created = enqueue_sms_job(
-        {
-            "type": "SEND_SMS",
-            "tenant_id": str(user.tenant_id),
-            "drop_id": str(drop.id),
-            "to": customer.phone_e164,
-            "template": "on_the_way",
-            "context": {"drop_id": str(drop.id)},
-        },
-        dedupe_key=f"drop-on-the-way-{drop.id}",
+    result = notify_customer(
+        db, user.tenant_id, drop, customer,
+        "on_the_way",
+        {"driver_user_id": str(user.user_id)},
     )
-    if created:
+
+    if result.any_sent:
         drop.notify_sent_at = now_utc()
 
-    log_event(
-        db, user.tenant_id, "CUSTOMER_NOTIFIED", "driver",
-        {"drop_id": drop_id, "driver_user_id": str(user.user_id)},
-    )
-
+    log_event(db, user.tenant_id, "CUSTOMER_NOTIFIED", "driver", {
+        "drop_id": drop_id,
+        "driver_user_id": str(user.user_id),
+        **result.to_dict(),
+    })
     db.commit()
     return {"already_sent": False, "sent_at": drop.notify_sent_at.isoformat() if drop.notify_sent_at else None}
 
