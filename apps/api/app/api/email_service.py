@@ -199,7 +199,7 @@ def send_pickup_ready_email(
     customer_name: str,
     order_number: int | None,
     items: list[str],
-    store_address: str = "651 Hempstead Turnpike, East Meadow, NY 11554",
+    store_address: str = "16 Somers Road, Hampden, MA 01036",
 ) -> bool:
     first_name = customer_name.split()[0] if customer_name else "there"
     order_label = f"Order #{order_number}" if order_number else "Your Order"
