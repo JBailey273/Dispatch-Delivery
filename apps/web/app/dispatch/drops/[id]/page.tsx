@@ -128,15 +128,6 @@ function DispatchDropDetailPage() {
     setConfirmDelete(false);
   }
 };   
-
-  useEffect(() => {
-  const handleVisibility = () => {
-    if (document.visibilityState === 'visible') fetchOrders();
-  };
-  document.addEventListener('visibilitychange', handleVisibility);
-  return () => document.removeEventListener('visibilitychange', handleVisibility);
-}, [fetchOrders]);
-
   
   const fetchDrop = useCallback(async () => {
     setLoading(true);
