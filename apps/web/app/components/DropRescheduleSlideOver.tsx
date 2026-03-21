@@ -253,47 +253,50 @@ export default function DropRescheduleSlideOver({
   const [schedLinkMsg, setSchedLinkMsg] = useState('');
   const [schedLink, setSchedLink] = useState('');
 
-  const sendNotification = async () => {
-    setNotifLoading(true); setNotifMsg('');
-    try {
-      const r = await api(`/dispatch/drops/${dropId}/send-delivery-notification`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
-      setNotifMsg(r.already_sent ? 'Already sent' : 'sent');
-      await refreshDetail();
-    } catch (err) { setNotifMsg((err as ApiError).message || 'Failed'); }
-    finally { setNotifLoading(false); }
-  };
-  const sendSms = async () => {
-    setSmsSending(true); setSmsMsg('');
-    try {
-      await api(`/dispatch/drops/${dropId}/send-reschedule-sms`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: smsText }),
-      });
-      setSmsMsg('sent'); setSmsEditing(false);
-      await refreshDetail();
-    } catch (err) { setSmsMsg((err as ApiError).message || 'Failed'); }
-    finally { setSmsSending(false); }
-  };
-  const sendSchedulingLink = async () => {
-    setSchedLinkLoading(true); setSchedLinkMsg(''); setSchedLink('');
-    try {
-      const r = await api(`/schedule/drops/${dropId}/scheduling-link`, { method: 'POST' });
-      const link = `${window.location.origin}/schedule?token=${r.token}`;
-      setSchedLink(link);
-      // Send via reschedule SMS channel
-      const message = `Hi ${dropDetail?.customer_name?.split(' ')[0] || 'there'}, please use this link to schedule your delivery from East Meadow Garden Center: ${link}`;
-      await api(`/dispatch/drops/${dropId}/send-reschedule-sms`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, admin_override: true }),
-      });
-      setSchedLinkMsg('sent');
-      await refreshDetail();
-    } catch (err) { setSchedLinkMsg((err as ApiError).message || 'Failed'); }
-    finally { setSchedLinkLoading(false); }
-  };
+  const sendOnTheWay = async () => {
+  setNotifLoading(true); setNotifMsg('');
+  try {
+    await api(`/dispatch/drops/${dropId}/send-notification`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'on_the_way' }),
+    });
+    setNotifMsg('sent');
+    await refreshDetail();
+  } catch (err) { setNotifMsg((err as ApiError).message || 'Failed'); }
+  finally { setNotifLoading(false); }
+};
 
+const sendRescheduleNotification = async () => {
+  setSmsSending(true); setSmsMsg('');
+  try {
+    await api(`/dispatch/drops/${dropId}/send-notification`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'reschedule', message: smsText, admin_override: true }),
+    });
+    setSmsMsg('sent'); setSmsEditing(false);
+    await refreshDetail();
+  } catch (err) { setSmsMsg((err as ApiError).message || 'Failed'); }
+  finally { setSmsSending(false); }
+};
+
+const sendSchedulingLink = async () => {
+  setSchedLinkLoading(true); setSchedLinkMsg(''); setSchedLink('');
+  try {
+    const r = await api(`/schedule/drops/${dropId}/scheduling-link`, { method: 'POST' });
+    const link = `${window.location.origin}/schedule?token=${r.token}`;
+    setSchedLink(link);
+    await api(`/dispatch/drops/${dropId}/send-notification`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'scheduling_link', scheduling_link: link, admin_override: true }),
+    });
+    setSchedLinkMsg('sent');
+    await refreshDetail();
+  } catch (err) { setSchedLinkMsg((err as ApiError).message || 'Failed'); }
+  finally { setSchedLinkLoading(false); }
+};
   /* ── Calendar cells ── */
   const calCells = useMemo(() => {
     const y = calMonth.getFullYear(), m = calMonth.getMonth();
@@ -611,7 +614,7 @@ export default function DropRescheduleSlideOver({
                 </div>
                 <button
                   className="btn btn-secondary btn-sm"
-                  onClick={sendNotification}
+                  onClick={sendOnTheWay}
                   disabled={notifLoading || (!dropDetail.customer_sms_opt_in && !(dropDetail.customer_email && dropDetail.customer_email_opt_in))}
                   title={!dropDetail.customer_sms_opt_in && !(dropDetail.customer_email && dropDetail.customer_email_opt_in) ? 'Customer has no notification channel set up' : ''}
                 >
@@ -653,7 +656,7 @@ export default function DropRescheduleSlideOver({
                     />
                     {smsMsg && smsMsg !== 'sent' && <div className="so-notif-err">{smsMsg}</div>}
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <button className="btn btn-primary btn-sm" onClick={sendSms} disabled={smsSending}>
+                      <button className="btn btn-primary btn-sm" onClick={sendRescheduleNotification} disabled={smsSending}>
                         {smsSending ? 'Sending…' : 'Send'}
                       </button>
                       <button className="btn btn-ghost btn-sm" onClick={() => { setSmsEditing(false); setSmsText(DEFAULT_SMS); setSmsMsg(''); }}>
