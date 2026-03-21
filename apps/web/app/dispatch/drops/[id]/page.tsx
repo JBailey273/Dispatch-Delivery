@@ -23,6 +23,7 @@ type LoadItem = {
 type DropDetail = {
   id: string; ref: string; source: string;
   scheduled_date: string | null; scheduled_window: string | null; is_priority: boolean;
+  customer_id: string | null;
   customer_name: string; customer_phone: string; delivery_address: Address | null;
   notes: string | null; required_loads: number; loads: LoadItem[];
   notify_sent_at: string | null; last_reschedule_sms_at: string | null;
