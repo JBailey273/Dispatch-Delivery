@@ -1,4 +1,4 @@
-'use client';
+  'use client';
 
 import Link from 'next/link';
 import { Suspense } from 'react';
@@ -512,10 +512,10 @@ function DispatchSchedulePage() {
                         const r = await api(`/schedule/drops/${item.drop_id}/scheduling-link`, { method: 'POST' });
                         const link = `${window.location.origin}/schedule?token=${r.token}`;
                         const msg = `Hi ${item.customer_name.split(' ')[0]}, please use this link to schedule your delivery from East Meadow Garden Center: ${link}`;
-                        await api(`/dispatch/drops/${item.drop_id}/send-reschedule-sms`, {
+                        await api(`/dispatch/drops/${item.drop_id}/send-notification`, {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ message: msg, admin_override: true }),
+                          body: JSON.stringify({ type: 'scheduling_link', scheduling_link: link, admin_override: true }),
                         });
                         fetchUnscheduled();
                       } catch { /* silent — dispatcher can use slide-over for details */ }
