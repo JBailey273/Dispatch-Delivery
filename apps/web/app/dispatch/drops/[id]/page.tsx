@@ -76,7 +76,7 @@ function toSlideOverDetail(drop: DropDetail): SlideOverDropDetail {
     id: drop.id, ref: drop.ref, source: drop.source,
     is_priority: drop.is_priority,
     scheduled_date: drop.scheduled_date, scheduled_window: drop.scheduled_window,
-    customer_name: drop.customer_name, customer_phone: drop.customer_phone,
+    customer_id: drop.customer_id, customer_name: drop.customer_name, customer_phone: drop.customer_phone,
     customer_email: drop.customer_email, customer_sms_opt_in: drop.customer_sms_opt_in, customer_email_opt_in: drop.customer_email_opt_in,
     delivery_address: drop.delivery_address, notes: drop.notes,
     required_loads: drop.required_loads,
