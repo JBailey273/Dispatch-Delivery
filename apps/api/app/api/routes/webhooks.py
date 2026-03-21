@@ -348,6 +348,7 @@ def js_ingest_order(
         name_parts = payload.customer.name.strip().split(' ', 1)
         customer = Customer(
             tenant_id=tenant_id,
+            name=payload.customer.name.strip(),
             first_name=name_parts[0],
             last_name=name_parts[1] if len(name_parts) > 1 else '',
             phone_e164=phone_e164,
