@@ -267,7 +267,14 @@ def get_shipping_fee(
             methods = _wc_request(f"shipping/zones/{zone_id}/methods")
             for method in methods:
                 if method.get("method_id") == "flat_rate" and method.get("enabled"):
-                    cost = method.get("settings", {}).get("cost", {}).get("value", "0")
+                    settings_data = method.get("settings", {})
+                    # Find any shipping class cost (class_cost_{id} keys)
+                    class_cost = next(
+                        (v.get("value") for k, v in settings_data.items() 
+                         if k.startswith("class_cost_") and v.get("value")),
+                        None
+                    )
+                    cost = class_cost or settings_data.get("cost", {}).get("value") or "0"
                     return {
                         "found": True,
                         "zone_id": zone_id,
