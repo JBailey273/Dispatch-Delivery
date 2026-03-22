@@ -135,36 +135,59 @@ def lookup_wc_customer(
     db: Session = Depends(db_dep),
 ):
     """
-    Look up a WooCommerce customer by email or phone.
-    Also checks our local Customer table for Stripe customer ID and dispatch history.
+    Look up a customer by searching WC orders billing data.
+    Works for both guest and registered customers.
     """
-    results = _wc_request(f"customers?search={urllib.parse.quote(search)}&per_page=5")
-    if not results:
+    # Search orders by billing email or phone
+    orders = _wc_request(f"orders?per_page=10&search={urllib.parse.quote(search.strip())}&orderby=date&order=desc")
+
+    if not orders:
         return {"found": False}
 
-    c = results[0]
-    role = c.get("role", "customer")
+    # Use the most recent order's billing info
+    o = orders[0]
+    billing = o.get("billing", {})
+    wc_customer_id = o.get("customer_id") or None  # 0 = guest, treat as None
+
+    # Check WC registered customer for role if customer_id exists
     wc_role = None
-    if role == WC_ROLE_CONTRACTOR:
-        wc_role = WC_ROLE_CONTRACTOR
-    elif role == WC_ROLE_WHOLESALE:
-        wc_role = WC_ROLE_WHOLESALE
+    if wc_customer_id:
+        try:
+            wc_user = _wc_request(f"customers/{wc_customer_id}")
+            role = wc_user.get("role", "customer")
+            if role in (WC_ROLE_CONTRACTOR, WC_ROLE_WHOLESALE):
+                wc_role = role
+        except Exception:
+            pass
 
-    billing = c.get("billing", {})
-    wc_id = c["id"]
+    # Check local dispatch customer record
+    local = None
+    phone = billing.get("phone", "")
+    email = billing.get("email", "")
 
-    # Check if we have a local customer record with Stripe info
-    local = db.execute(
-        select(Customer).where(
-            Customer.tenant_id == user.tenant_id,
-            Customer.wc_customer_id == wc_id,
-        )
-    ).scalar_one_or_none()
+    if phone:
+        try:
+            normalized = normalize_us_phone(phone)
+            local = db.execute(
+                select(Customer).where(
+                    Customer.tenant_id == user.tenant_id,
+                    Customer.phone_e164 == normalized,
+                )
+            ).scalar_one_or_none()
+        except Exception:
+            pass
 
+    if not local and email:
+        local = db.execute(
+            select(Customer).where(
+                Customer.tenant_id == user.tenant_id,
+                Customer.email == email.strip().lower(),
+            )
+        ).scalar_one_or_none()
+
+    # Fetch saved Stripe card if we have a local record
     stripe_customer_id = local.stripe_customer_id if local else None
     saved_card = None
-
-    # Fetch saved card from Stripe if we have a stripe_customer_id
     if stripe_customer_id and settings.stripe_api_key:
         try:
             _stripe()
@@ -179,43 +202,36 @@ def lookup_wc_customer(
                     "exp_year": pm.card.exp_year,
                 }
         except Exception as e:
-            logger.warning(f"Could not fetch Stripe payment methods for {stripe_customer_id}: {e}")
+            logger.warning(f"Could not fetch Stripe methods: {e}")
 
-    # Fetch last 5 WC orders for this customer
+    # Build order history from all matching orders
     order_history = []
-    try:
-        orders = _wc_request(f"orders?customer={wc_id}&per_page=5&orderby=date&order=desc")
-        for o in orders:
-            items = [
-                f"{li.get('quantity')} yd {li.get('name', '')}"
-                for li in o.get("line_items", [])
-            ]
-            order_history.append({
-                "wc_order_id": o["id"],
-                "order_number": o.get("number"),
-                "date": o.get("date_created", "")[:10],
-                "status": o.get("status"),
-                "total": o.get("total"),
-                "items": items,
-                "line_items_raw": [
-                    {
-                        "product_id": li.get("product_id"),
-                        "name": li.get("name"),
-                        "quantity": li.get("quantity"),
-                    }
-                    for li in o.get("line_items", [])
-                ],
-            })
-    except Exception as e:
-        logger.warning(f"Could not fetch order history for WC customer {wc_id}: {e}")
+    for ord in orders[:5]:
+        items = [f"{li.get('quantity')} yd {li.get('name', '')}" for li in ord.get("line_items", [])]
+        order_history.append({
+            "wc_order_id": ord["id"],
+            "order_number": ord.get("number"),
+            "date": ord.get("date_created", "")[:10],
+            "status": ord.get("status"),
+            "total": ord.get("total"),
+            "items": items,
+            "line_items_raw": [
+                {
+                    "product_id": li.get("product_id"),
+                    "name": li.get("name"),
+                    "quantity": li.get("quantity"),
+                }
+                for li in ord.get("line_items", [])
+            ],
+        })
 
     return {
         "found": True,
-        "wc_id": wc_id,
-        "email": c.get("email", ""),
-        "first_name": billing.get("first_name") or c.get("first_name", ""),
-        "last_name": billing.get("last_name") or c.get("last_name", ""),
-        "phone": billing.get("phone", ""),
+        "wc_id": wc_customer_id,
+        "email": email,
+        "first_name": billing.get("first_name", ""),
+        "last_name": billing.get("last_name", ""),
+        "phone": phone,
         "role": wc_role,
         "billing": billing,
         "stripe_customer_id": stripe_customer_id,
