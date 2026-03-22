@@ -223,7 +223,7 @@ class Customer(Base, TenantScopedMixin, TimestampMixin):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     sms_opt_in: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     email_opt_in: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    wc_customer_id: Mapped[int | None] = mapped_column(sa.Integer, nullable=True, index=True)
+    wc_customer_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     stripe_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     is_contractor: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
