@@ -242,3 +242,19 @@ def send_scheduling_link_email(to: str, customer_name: str, scheduling_link: str
       <p style="margin:20px 0 0;font-family:Arial,sans-serif;font-size:14px;color:#999999;line-height:1.65;">Questions? Reply to this email or call us at <a href="tel:4135668733" style="color:#4a7052;text-decoration:none;">(413) 566-8733</a>.</p>
     """
     return send_email(to, subject, _layout('#4a7052', content, f"Schedule your delivery from East Meadow Garden Center — click to choose your window"))
+
+def send_payment_link_email(to: str, customer_name: str, order_number: str, payment_link_url: str) -> bool:
+    first_name = customer_name.split()[0] if customer_name else "there"
+    subject = f"Complete Your Payment — Order #{order_number}"
+    content = f"""
+      <h1 style="margin:0 0 12px;font-family:Outfit,Arial,sans-serif;font-size:26px;font-weight:800;color:#2c2c2c;letter-spacing:-0.02em;line-height:1.25;">Complete your payment &#x1F4B3;</h1>
+      <p style="margin:0 0 24px;font-family:Arial,sans-serif;font-size:16px;color:#666666;line-height:1.65;">Hi {first_name} &#8212; thank you for your order! Please use the link below to securely complete your payment for Order #{order_number}.</p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+        <tr><td align="center">
+          <a href="{payment_link_url}" style="display:inline-block;padding:14px 32px;background-color:#4a7052;color:#ffffff;font-family:Outfit,Arial,sans-serif;font-size:16px;font-weight:700;text-decoration:none;border-radius:8px;letter-spacing:-0.01em;">Pay Now</a>
+        </td></tr>
+      </table>
+      {_info_box(f'If the button above doesn&#8217;t work, copy and paste this link into your browser:<br/><a href="{payment_link_url}" style="color:#4a7052;word-break:break-all;">{payment_link_url}</a>')}
+      <p style="margin:20px 0 0;font-family:Arial,sans-serif;font-size:14px;color:#999999;line-height:1.65;">This is a secure Stripe payment link. Your card information is never stored on our servers.</p>
+    """
+    return send_email(to, subject, _layout('#4a7052', content, f"Complete your payment for Order #{order_number}"))
