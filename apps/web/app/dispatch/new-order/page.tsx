@@ -9,7 +9,7 @@ import {
   useStripe,
   useElements,
 } from '@stripe/react-stripe-js';
-import { ApiError, api, requireRole } from '../lib/auth';
+import { ApiError, api, requireRole } from '../../lib/auth';
 
 // ── Stripe init ───────────────────────────────────────────────────────────────
 
