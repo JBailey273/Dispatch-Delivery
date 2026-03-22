@@ -317,7 +317,7 @@ class Drop(Base, TenantScopedMixin, TimestampMixin):
     delivery_method: Mapped[str] = mapped_column(String(20), nullable=False, default="delivery")
     payment_method: Mapped[str | None] = mapped_column(String(50), nullable=True)
     payment_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    payment_note: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    payment_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     stripe_payment_intent_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     stripe_payment_link_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     wc_customer_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
