@@ -223,6 +223,9 @@ class Customer(Base, TenantScopedMixin, TimestampMixin):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     sms_opt_in: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     email_opt_in: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    wc_customer_id: Mapped[int | None] = mapped_column(sa.Integer, nullable=True, index=True)
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    is_contractor: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class CustomerAddress(Base, TenantScopedMixin, TimestampMixin):
@@ -312,6 +315,12 @@ class Drop(Base, TenantScopedMixin, TimestampMixin):
     last_reschedule_sms_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     needs_reschedule: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     delivery_method: Mapped[str] = mapped_column(String(20), nullable=False, default="delivery")
+    payment_method: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    payment_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    payment_note: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    stripe_payment_intent_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    stripe_payment_link_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    wc_customer_id: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
     fulfilled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     pickup_ready_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
