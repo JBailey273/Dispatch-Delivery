@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     r2_public_url: str = ""
     resend_api_key: str = "re_KbiB5bm5_GXtSzGBir7b4S71ZeYxShoZure_KbiB5bm5_GXtSzGBir7b4S71ZeYxShoZu"
     smtp_from_name: str = "East Meadow Garden Center"
+    wc_store_url: str = ""
+    wc_consumer_key: str = ""
+    wc_consumer_secret: str = ""
 
     @field_validator("database_url", mode="before")
     @classmethod
