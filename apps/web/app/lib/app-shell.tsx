@@ -96,7 +96,8 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
           <>
             <NavLink href="/ops-dashboard">Dashboard</NavLink>
             <NavLink href="/dispatch-schedule">Schedule</NavLink>
-            <NavLink href="/new-drop">New Order</NavLink>
+            <NavLink href="/new-drop">Quick Drop</NavLink>
+            <NavLink href="/dispatch/new-order">WC Order</NavLink>
             <NavLink href="/customer-search">Customers</NavLink>
             <NavLink href="/all-orders">All Orders</NavLink>
             <NavLink href="/pickup">Pickup Queue</NavLink>
