@@ -9,6 +9,7 @@ from app.api.routes import (
     dispatch,
     driver,
     drops,
+    internal_orders,
     locations,
     operations,
     platform_admin,
@@ -38,7 +39,7 @@ api_router.include_router(sms.router)
 api_router.include_router(users.router)
 api_router.include_router(operations.router)
 api_router.include_router(operations.admin_router)
-
+api_router.include_router(internal_orders.router)
 api_router.include_router(platform_admin.router)
 api_router.include_router(schedule.router)  # add after the other include_router lines
 api_router.include_router(webhooks.router)
