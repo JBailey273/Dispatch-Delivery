@@ -108,7 +108,7 @@ def get_wc_products(
     db: Session = Depends(db_dep),
 ):
     """Fetch bulk-material products from WooCommerce with role-based pricing."""
-    products = _wc_request("products?per_page=100&status=publish&shipping_class=bulk-material")
+    products = _wc_request("products?per_page=100&status=publish")
     result = []
     for p in products:
         meta = {m["key"]: m["value"] for m in p.get("meta_data", [])}
