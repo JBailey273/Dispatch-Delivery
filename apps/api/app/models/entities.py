@@ -320,7 +320,7 @@ class Drop(Base, TenantScopedMixin, TimestampMixin):
     payment_note: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     stripe_payment_intent_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     stripe_payment_link_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    wc_customer_id: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    wc_customer_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     fulfilled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     pickup_ready_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
