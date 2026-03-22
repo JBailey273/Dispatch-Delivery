@@ -53,17 +53,19 @@ def _wc_request(path: str, method: str = "GET", payload: dict | None = None) -> 
     if not settings.wc_store_url or not settings.wc_consumer_key:
         raise HTTPException(status_code=503, detail={"code": "wc_not_configured", "message": "WooCommerce credentials not configured"})
 
-    url = f"{settings.wc_store_url.rstrip('/')}/wp-json/wc/v3/{path.lstrip('/')}"
-    credentials = base64.b64encode(
-        f"{settings.wc_consumer_key}:{settings.wc_consumer_secret}".encode()
-    ).decode()
+    # Use query string auth — Hostinger strips Authorization headers
+    separator = "&" if "?" in path else "?"
+    url = (
+        f"{settings.wc_store_url.rstrip('/')}/wp-json/wc/v3/{path.lstrip('/')}"
+        f"{separator}consumer_key={urllib.parse.quote(settings.wc_consumer_key)}"
+        f"&consumer_secret={urllib.parse.quote(settings.wc_consumer_secret)}"
+    )
 
     data = json.dumps(payload).encode() if payload else None
     req = urllib.request.Request(
         url,
         data=data,
         headers={
-            "Authorization": f"Basic {credentials}",
             "Content-Type": "application/json",
             "User-Agent": "dispatch-app/1.0",
         },
