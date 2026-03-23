@@ -258,6 +258,7 @@ export default function NewOrderPage() {
   const [saveCard, setSaveCard] = useState(false);
   const [paymentNote, setPaymentNote] = useState('');
   const chargeRef = useRef<(() => Promise<{ paymentIntentId: string; stripeCustomerId: string } | null>) | null>(null);
+  const [cashTendered, setCashTendered] = useState('');
 
   // Submit
   const [submitting, setSubmitting] = useState(false);
@@ -331,6 +332,7 @@ export default function NewOrderPage() {
     setSmsOptIn(false); setEmailOptIn(false);
     setAddrLine1(''); setAddrLine2(''); setAddrCity(''); setAddrState('MA'); setAddrZip('');
     setShipping(null); loadProducts(null);
+    setCashTendered('');
   };
 
   const repeatLastOrder = (history: OrderHistoryItem) => {
@@ -641,7 +643,41 @@ export default function NewOrderPage() {
                 ))}
               </div>
 
-              {paymentMethod === 'cash' && <div className="no-pay-note">Taken at counter — order marked paid on submit.</div>}
+              {paymentMethod === 'cash' && (
+                <div>
+                  <div className="no-pay-note" style={{ marginBottom: 10 }}>Taken at counter — order marked paid on submit.</div>
+                  <div className="no-field" style={{ maxWidth: 160 }}>
+                    <label>Cash Tendered</label>
+                    <input
+                      className="no-input"
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      placeholder="0.00"
+                      value={cashTendered}
+                      onChange={e => setCashTendered(e.target.value)}
+                    />
+                  </div>
+                  {cashTendered && parseFloat(cashTendered) >= total && (
+                    <div style={{
+                      marginTop: 8, padding: '8px 12px', background: '#f0fdf4',
+                      border: '1.5px solid #bbf7d0', borderRadius: 8,
+                      fontSize: 15, fontWeight: 700, color: '#15803d'
+                    }}>
+                      Change due: {fmt(parseFloat(cashTendered) - total)}
+                    </div>
+                  )}
+                  {cashTendered && parseFloat(cashTendered) < total && (
+                    <div style={{
+                      marginTop: 8, padding: '8px 12px', background: '#fef2f2',
+                      border: '1.5px solid #fecaca', borderRadius: 8,
+                      fontSize: 13, fontWeight: 600, color: '#dc2626'
+                    }}>
+                      Short by: {fmt(total - parseFloat(cashTendered))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {paymentMethod === 'card' && (
                 <Elements stripe={stripePromise}>
