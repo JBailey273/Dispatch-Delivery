@@ -698,10 +698,6 @@ def create_internal_order(
             ))
         else:
             existing_addr.last_used_at = now_utc()
-
-    else:
-            existing_addr.last_used_at = now_utc()
-
     log_event(db, user.tenant_id, "internal_order.created", "api", {
         "wc_order_id": wc_order_id,
         "order_number": order_number,
