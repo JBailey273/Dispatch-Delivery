@@ -580,7 +580,14 @@ def create_internal_order(
     if wc_customer_id:
         wc_payload["customer_id"] = wc_customer_id
 
-    wc_order = _wc_request("orders", method="POST", payload=wc_payload)
+    try:
+        wc_order = _wc_request("orders", method="POST", payload=wc_payload)
+    except HTTPException as e:
+        logger.error(f"WC order creation failed: {e.detail}")
+        raise
+    except Exception as e:
+        logger.exception(f"WC order creation unexpected error: {e}")
+        raise HTTPException(status_code=500, detail={"code": "order_creation_failed", "message": str(e)})
     wc_order_id = wc_order.get("id")
     order_number = wc_order.get("number", str(wc_order_id))
 
