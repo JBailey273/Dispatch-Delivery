@@ -1046,12 +1046,11 @@ def get_tax_rate(
     zip_match = None
     state_match = None
     for t in taxes:
-        if t.get("postcode", "") == postal_code:
+        if postal_code and t.get("postcode", "") == postal_code:
             zip_match = t
             break
         if t.get("state", "") == "MA" and not t.get("postcode"):
             state_match = t
-
     match = zip_match or state_match
     if not match:
         return {"rate": "0", "label": "Tax"}
