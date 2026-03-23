@@ -250,6 +250,7 @@ export default function NewOrderPage() {
   const [shipping, setShipping] = useState<ShippingResult | null>(null);
   const [shippingLoading, setShippingLoading] = useState(false);
   const zipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [overrideDeliveryFee, setOverrideDeliveryFee] = useState(false);
 
   // Payment
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'payment_link' | 'invoice'>('cash');
@@ -378,7 +379,11 @@ export default function NewOrderPage() {
 
   // Totals
   const subtotal = lineItems.reduce((s, l) => s + l.unit_price * l.quantity, 0);
-  const deliveryFee = deliveryMethod === 'delivery' && shipping?.found ? parseFloat(shipping.fee || '0') : 0;
+  const qualifyingDeliveryItems = deliveryMethod === 'delivery'
+    ? lineItems.filter(l => l.quantity >= 3 || overrideDeliveryFee)
+    : [];
+  const deliveryFee = qualifyingDeliveryItems.length > 0 && shipping?.found
+    ? parseFloat(shipping.fee || '0') * qualifyingDeliveryItems.length : 0;
   const total = subtotal + deliveryFee;
   const totalCents = Math.round(total * 100);
   const underMinItems = deliveryMethod === 'delivery' ? lineItems.filter(l => l.quantity < 3) : [];
@@ -392,8 +397,9 @@ export default function NewOrderPage() {
     if (deliveryMethod === 'delivery') {
       if (!addrLine1.trim() || !addrCity.trim() || !addrZip.trim()) { setError('Full delivery address required.'); return; }
       if (zipOutOfZone) { setError('This zip code is outside our delivery zones.'); return; }
-      if (underMinItems.length > 0) { setError(`Delivery requires a minimum of 3 yards per item. Increase quantity or switch to pickup.`); return; }
-    }
+      if (qualifyingDeliveryItems.length === 0 && deliveryMethod === 'delivery') {
+        setError('All items are under 3 yards — this order will be pickup only. Switch to pickup or increase quantities.'); return;
+      }
 
     setSubmitting(true);
     try {
@@ -593,7 +599,7 @@ export default function NewOrderPage() {
               <div className="no-section-head">Delivery or Pickup</div>
               <div className="no-seg" style={{ marginBottom: 14 }}>
                 <button className={`no-seg-btn${deliveryMethod === 'delivery' ? ' active' : ''}`} onClick={() => setDeliveryMethod('delivery')}>🚛 Delivery</button>
-                <button className={`no-seg-btn${deliveryMethod === 'pickup' ? ' active' : ''}`} onClick={() => setDeliveryMethod('pickup')}>🏪 Pickup</button>
+                <button className={`no-seg-btn${deliveryMethod === 'pickup' ? ' active' : ''}`} onClick={() => { setDeliveryMethod('pickup'); setOverrideDeliveryFee(false); }}>🏪 Pickup</button>
               </div>
               {deliveryMethod === 'delivery' && (
                 <div className="no-fields">
@@ -606,6 +612,17 @@ export default function NewOrderPage() {
                   </div>
                   {shippingLoading && <div className="no-zone no-zone-checking">Checking delivery zone…</div>}
                   {!shippingLoading && shipping?.found && <div className="no-zone no-zone-ok">✓ {shipping.zone_title} · Fee: {fmt(parseFloat(shipping.fee || '0'))}</div>}
+                  {!shippingLoading && shipping?.found && underMinItems.length > 0 && (
+                    <label className="no-check-label" style={{ marginTop: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={overrideDeliveryFee}
+                        onChange={e => setOverrideDeliveryFee(e.target.checked)}
+                      />
+                      <span>Charge delivery fee on under-minimum items</span>
+                      <span className="no-check-hint">Override for special circumstances</span>
+                    </label>
+                  )}
                   {!shippingLoading && zipOutOfZone && <div className="no-zone no-zone-err">✗ Outside delivery zones — pickup only</div>}
                 </div>
               )}
@@ -706,7 +723,7 @@ export default function NewOrderPage() {
                         <div className="no-cart-info">
                           <div className="no-cart-name">{item.name}</div>
                           <div className="no-cart-uprice">{fmt(item.unit_price)}/yd</div>
-                          {underMin && <div className="no-cart-warn">⚠ Min 3 yards for delivery</div>}
+                          {underMin && <div className="no-cart-warn">⚠ Under 3 yds — Will Be Pickup</div>}
                         </div>
                         <div className="no-qty-wrap">
                           <button className="no-qty-btn" onClick={() => updateQty(item.product_id, item.quantity - 1)}>−</button>
