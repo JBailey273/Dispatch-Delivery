@@ -685,7 +685,7 @@ def create_internal_order(
                 CustomerAddress.line1.ilike(payload.address_line1.strip()),
                 CustomerAddress.postal_code == payload.address_postal_code.strip(),
             )
-        ).first()
+        ).scalar_one_or_none()
 
         if not existing_addr:
             db.add(CustomerAddress(
