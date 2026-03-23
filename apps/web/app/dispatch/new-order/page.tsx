@@ -400,6 +400,7 @@ export default function NewOrderPage() {
       if (qualifyingDeliveryItems.length === 0 && deliveryMethod === 'delivery') {
         setError('All items are under 3 yards — this order will be pickup only. Switch to pickup or increase quantities.'); return;
       }
+    }
 
     setSubmitting(true);
     try {
