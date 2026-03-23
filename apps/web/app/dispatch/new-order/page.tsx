@@ -238,6 +238,9 @@ export default function NewOrderPage() {
   const [shippingLoading, setShippingLoading] = useState(false);
   const zipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [overrideDeliveryFee, setOverrideDeliveryFee] = useState(false);
+  const [taxRate, setTaxRate] = useState<number>(0);
+  const [taxLabel, setTaxLabel] = useState<string>('Sales Tax');
+  const [taxLoading, setTaxLoading] = useState(false);
 
   // Payment
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'payment_link' | 'invoice'>('cash');
@@ -335,15 +338,25 @@ export default function NewOrderPage() {
   };
 
   useEffect(() => {
-    if (deliveryMethod !== 'delivery' || addrZip.length < 5) { setShipping(null); return; }
+    if (deliveryMethod !== 'delivery' || addrZip.length < 5) { 
+      setShipping(null); 
+      setTaxRate(0);
+      return; 
+    }
     if (zipTimer.current) clearTimeout(zipTimer.current);
     zipTimer.current = setTimeout(async () => {
       setShippingLoading(true);
+      setTaxLoading(true);
       try {
-        const data = await api(`/internal-orders/shipping-fee?postal_code=${addrZip.trim()}`);
-        setShipping(data);
-      } catch { setShipping(null); }
-      finally { setShippingLoading(false); }
+        const [shippingData, taxData] = await Promise.all([
+          api(`/internal-orders/shipping-fee?postal_code=${addrZip.trim()}`),
+          api(`/internal-orders/tax-rate?postal_code=${addrZip.trim()}`),
+        ]);
+        setShipping(shippingData);
+        setTaxRate(parseFloat(taxData.rate || '0') / 100);
+        setTaxLabel(taxData.label || 'Sales Tax');
+      } catch { setShipping(null); setTaxRate(0); }
+      finally { setShippingLoading(false); setTaxLoading(false); }
     }, 700);
   }, [addrZip, deliveryMethod]);
 
@@ -375,7 +388,8 @@ export default function NewOrderPage() {
     : [];
   const deliveryFee = qualifyingDeliveryItems.length > 0 && shipping?.found
     ? parseFloat(shipping.fee || '0') * qualifyingDeliveryItems.length : 0;
-  const total = subtotal + deliveryFee;
+  const taxAmount = (subtotal + deliveryFee) * taxRate;
+  const total = subtotal + deliveryFee + taxAmount;
   const totalCents = Math.round(total * 100);
   const underMinItems = deliveryMethod === 'delivery' ? lineItems.filter(l => l.quantity < 3) : [];
   const zipOutOfZone = deliveryMethod === 'delivery' && shipping !== null && !shipping.found && addrZip.length >= 5;
@@ -1142,6 +1156,12 @@ export default function NewOrderPage() {
                   <div className="no-total-row">
                     <span>Delivery fee</span>
                     <span>{shipping?.found ? fmt(deliveryFee) : shippingLoading ? '…' : '—'}</span>
+                  </div>
+                )}
+                {taxRate > 0 && (
+                  <div className="no-total-row">
+                    <span>{taxLabel}</span>
+                    <span>{taxLoading ? '…' : fmt(taxAmount)}</span>
                   </div>
                 )}
                 <div className="no-total-row no-total-grand"><span>Total</span><span>{fmt(total)}</span></div>
