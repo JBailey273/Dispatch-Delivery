@@ -338,10 +338,22 @@ export default function NewOrderPage() {
   };
 
   useEffect(() => {
+    if (deliveryMethod === 'pickup') {
+      setShipping(null);
+      // Pickup always taxed at MA rate
+      api(`/internal-orders/tax-rate?postal_code=`).then(taxData => {
+        setTaxRate(parseFloat(taxData.rate || '0') / 100);
+        setTaxLabel(taxData.label || 'Sales Tax');
+      }).catch(() => setTaxRate(0));
+      return;
+    }
     if (deliveryMethod !== 'delivery' || addrZip.length < 5) { 
       setShipping(null); 
       setTaxRate(0);
       return; 
+    }
+    if (addrState !== 'MA') {
+      setTaxRate(0);
     }
     if (zipTimer.current) clearTimeout(zipTimer.current);
     zipTimer.current = setTimeout(async () => {
