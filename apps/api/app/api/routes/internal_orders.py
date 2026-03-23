@@ -282,7 +282,13 @@ def get_shipping_fee(
                         "fee": cost,
                     }
             # Zone matched but no flat rate — delivery allowed, $0 fee
-            return {"found": True, "zone_id": zone_id, "zone_title": zone["name"], "fee": "0"}
+            return {
+                "found": True,
+                "zone_id": zone_id,
+                "zone_title": zone["name"],
+                "fee": cost,
+                "instance_id": str(method.get("instance_id", "3")),
+            }
 
     return {"found": False, "fee": None}
 
@@ -436,6 +442,7 @@ class InternalOrderIn(BaseModel):
 
     # Pricing
     delivery_fee: str = "0"
+    shipping_instance_id: str = "3"
 
     # Payment
     payment_method: str = "cash"  # "cash" | "card" | "payment_link" | "invoice"
@@ -527,7 +534,9 @@ def create_internal_order(
 
     shipping_lines = [{
         "method_id": "flat_rate" if payload.delivery_method == "delivery" else "local_pickup",
-        "method_title": "Delivery" if payload.delivery_method == "delivery" else "Pickup",
+        "method_title": "Local Delivery" if payload.delivery_method == "delivery" else "Local Pickup",
+        "instance_id": payload.shipping_instance_id if payload.delivery_method == "delivery" else "10",
+        "total": payload.delivery_fee if payload.delivery_method == "delivery" else "0",
     }]
 
     billing = {
