@@ -509,6 +509,7 @@ def create_internal_order(
             except HTTPException:
                 # WC customer creation failed (e.g. duplicate email) — proceed without
                 logger.warning(f"Could not create WC customer — proceeding as guest order")
+                logger.info(f"create_internal_order: step 1 complete, wc_customer_id={wc_customer_id}")
 
     # ── Step 2: Create WooCommerce order ─────────────────────────────────────
 
@@ -582,6 +583,7 @@ def create_internal_order(
 
     try:
         wc_order = _wc_request("orders", method="POST", payload=wc_payload)
+        logger.info(f"create_internal_order: step 2 complete, wc_order_id={wc_order.get('id')}")
     except HTTPException as e:
         logger.error(f"WC order creation failed: {e.detail}")
         raise
