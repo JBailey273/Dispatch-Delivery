@@ -247,15 +247,22 @@ def month_summary(
 
 @router.get("/orders")
 def list_orders(
-    start_date: date = Query(...),
-    end_date: date = Query(...),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
     status: str | None = Query(default=None),
     driver_name: str | None = Query(default=None),
     location_id: str | None = Query(default=None),
+    search: str | None = Query(default=None),
     user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
     db: Session = Depends(db_dep),
 ):
     """Full order/load list for the All Orders page with optional filters."""
+    from datetime import timedelta
+    if not end_date:
+        end_date = date.today()
+    if not start_date:
+        start_date = end_date - timedelta(days=30)
+
     stmt = (
         select(Load, Drop, Customer, CustomerAddress, User)
         .join(Drop, Drop.id == Load.drop_id)
@@ -293,10 +300,22 @@ def list_orders(
             elif driver_name != "Unassigned" and driver_display != driver_name:
                 continue
 
+        if search:
+            q = search.lower()
+            ref = str(drop.external_order_id or drop.order_number or '').lower()
+            if not any([
+                q in (customer.name or '').lower(),
+                q in (customer.phone_e164 or ''),
+                q in f"{address.line1} {address.city}".lower(),
+                q in ref,
+            ]):
+                continue
+
         orders.append({
             "drop_id": str(drop.id),
             "load_id": str(load.id),
             "order_ref": _build_order_ref(drop),
+            "external_order_id": drop.external_order_id,
             "scheduled_date": str(load.route_date) if load.route_date else None,
             "window": load.route_window.value if load.route_window else None,
             "delivery_method": drop.delivery_method,
