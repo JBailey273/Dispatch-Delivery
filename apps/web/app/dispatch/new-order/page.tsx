@@ -370,7 +370,7 @@ export default function NewOrderPage() {
       } catch { setShipping(null); setTaxRate(0); }
       finally { setShippingLoading(false); setTaxLoading(false); }
     }, 700);
-  }, [addrZip, deliveryMethod]);
+  }, [addrZip, deliveryMethod, addrState]);
 
   const handleRoleChange = (role: string | null) => {
     setWcRole(role); setIsContractor(role === 'contractor'); loadProducts(role);
