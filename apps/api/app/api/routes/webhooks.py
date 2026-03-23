@@ -340,11 +340,11 @@ def js_ingest_order(
     if email:
         customer = db.execute(
             select(Customer).where(Customer.tenant_id == tenant_id, Customer.email == email)
-        ).scalar_one_or_none()
+        ).scalars().first()
     if not customer and phone_e164:
         customer = db.execute(
             select(Customer).where(Customer.tenant_id == tenant_id, Customer.phone_e164 == phone_e164)
-        ).scalar_one_or_none()
+        ).scalars().first()
     if not customer:
         name_parts = payload.customer.name.strip().split(' ', 1)
         customer = Customer(
@@ -375,7 +375,7 @@ def js_ingest_order(
             CustomerAddress.line1 == line1,
             CustomerAddress.postal_code == postal_code,
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
     if not address:
         address = CustomerAddress(
             tenant_id=tenant_id,
@@ -405,7 +405,7 @@ def js_ingest_order(
                 ProductCatalogItem.sku == sku,
                 ProductCatalogItem.active == True,
             )
-        ).scalar_one_or_none()
+        ).scalars().first()
         if catalog_item:
             matched_items.append((catalog_item, item.qty))
         else:
