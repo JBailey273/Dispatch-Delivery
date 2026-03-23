@@ -609,7 +609,7 @@ def create_internal_order(
                 Customer.tenant_id == user.tenant_id,
                 Customer.phone_e164 == normalized_phone,
             )
-        ).scalar_one_or_none()()
+        ).scalar_one_or_none()
 
     if not local_customer and payload.email:
         local_customer = db.execute(
@@ -617,7 +617,7 @@ def create_internal_order(
                 Customer.tenant_id == user.tenant_id,
                 Customer.email == payload.email.strip().lower(),
             )
-        ).scalar_one_or_none()()
+        ).scalar_one_or_none()
 
     if local_customer:
         # Update existing
