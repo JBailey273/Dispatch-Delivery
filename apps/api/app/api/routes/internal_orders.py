@@ -699,6 +699,9 @@ def create_internal_order(
         else:
             existing_addr.last_used_at = now_utc()
 
+    else:
+            existing_addr.last_used_at = now_utc()
+
     log_event(db, user.tenant_id, "internal_order.created", "api", {
         "wc_order_id": wc_order_id,
         "order_number": order_number,
@@ -706,7 +709,87 @@ def create_internal_order(
         "payment_method": payload.payment_method,
         "wc_customer_id": wc_customer_id,
     })
-    db.commit()
+
+    # ── Step 5: Create Drop + Loads directly (don't wait for webhook) ─────────
+
+    drop_id = None
+    skipped_skus: list[str] = []
+
+    if local_customer:
+        # Resolve location
+        drop_location = None
+        if payload.location_id:
+            drop_location = db.execute(
+                select(Location).where(
+                    Location.id == payload.location_id,
+                    Location.tenant_id == user.tenant_id,
+                )
+            ).scalar_one_or_none()
+        if not drop_location:
+            drop_location = db.execute(
+                select(Location).where(
+                    Location.tenant_id == user.tenant_id,
+                    Location.is_active == True,  # noqa: E712
+                ).order_by(Location.created_at)
+            ).scalars().first()
+
+        # Resolve delivery address for the drop
+        drop_address = None
+        if payload.delivery_method == "delivery" and payload.address_line1.strip():
+            drop_address = db.execute(
+                select(CustomerAddress).where(
+                    CustomerAddress.tenant_id == user.tenant_id,
+                    CustomerAddress.customer_id == local_customer.id,
+                    CustomerAddress.line1.ilike(payload.address_line1.strip()),
+                    CustomerAddress.postal_code == payload.address_postal_code.strip(),
+                )
+            ).scalar_one_or_none()
+
+        if drop_location:
+            # Match WC order line items to catalog by SKU
+            wc_line_items_full = wc_order.get("line_items", [])
+            matched_items: list[tuple] = []
+
+            for wc_item in wc_line_items_full:
+                sku = (wc_item.get("sku") or "").strip()
+                qty = int(wc_item.get("quantity", 1))
+                if not sku:
+                    continue
+                catalog_item = db.execute(
+                    select(ProductCatalogItem).where(
+                        ProductCatalogItem.tenant_id == user.tenant_id,
+                        ProductCatalogItem.location_id == drop_location.id,
+                        ProductCatalogItem.sku == sku,
+                        ProductCatalogItem.active == True,  # noqa: E712
+                    )
+                ).scalar_one_or_none()
+                if catalog_item:
+                    matched_items.append((catalog_item, qty))
+                else:
+                    skipped_skus.append(sku)
+                    logger.warning(f"create_internal_order: SKU '{sku}' not in catalog — skipping")
+
+            if matched_items:
+                new_drop = Drop(
+                    tenant_id=user.tenant_id,
+                    location_id=drop_location.id,
+                    customer_id=local_customer.id,
+                    address_id=drop_address.id if drop_address else None,
+                    order_number=int(order_number),
+                    external_order_id=str(wc_order_id),
+                    source="internal",
+                    delivery_method=payload.delivery_method,
+                    is_priority=False,
+                    scheduled_date=None,
+                    scheduled_window=None,
+                    notes=None,
+                    drop_photos=[],
+                )
+                db.add(new_drop)
+                db.flush()
+
+                for catalog_item, qty in matched_items:
+                    db.add(Load(
 
     # ── Step 5: Stripe Payment Link (if requested) ───────────────────────────
 
@@ -788,12 +871,13 @@ def create_internal_order(
         "order_number": order_number,
         "wc_order_key": wc_order.get("order_key", ""),
         "status": wc_order.get("status"),
+        "drop_id": drop_id,
+        "skipped_skus": skipped_skus,
         "payment_link_url": payment_link_url,
         "payment_link_id": payment_link_id,
         "local_customer_id": str(local_customer.id) if local_customer else None,
         "stripe_customer_id": payload.stripe_customer_id,
     }
-
 
 # ── Payment link notification helper ─────────────────────────────────────────
 
