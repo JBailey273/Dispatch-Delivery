@@ -585,7 +585,11 @@ export default function NewOrderPage() {
       });
 
       if (deliveryMethod === 'delivery') {
-        pollForDrop(result.wc_order_id);
+        if (result.drop_id) {
+          setDropId(result.drop_id);
+        } else {
+          pollForDrop(result.wc_order_id);
+        }
       }
     } catch (err) {
       setError((err as ApiError).message || 'Order creation failed. Please try again.');
