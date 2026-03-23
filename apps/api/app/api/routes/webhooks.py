@@ -98,8 +98,9 @@ async def woocommerce_webhook(
     # Determine delivery method from shipping lines
     delivery_method = "delivery"
     for line in payload.get("shipping_lines", []):
-        method_id = line.get("method_id", "")
-        if "pickup" in method_id.lower() or method_id == "local_pickup":
+        method_id = line.get("method_id", "").lower()
+        method_title = line.get("method_title", "").lower()
+        if "pickup" in method_id or "pickup" in method_title:
             delivery_method = "pickup"
             break
 
