@@ -365,8 +365,12 @@ export default function NewOrderPage() {
           api(`/internal-orders/tax-rate?postal_code=${addrZip.trim()}`),
         ]);
         setShipping(shippingData);
-        setTaxRate(parseFloat(taxData.rate || '0') / 100);
-        setTaxLabel(taxData.label || 'Sales Tax');
+        if (addrState.toUpperCase() === 'MA') {
+          setTaxRate(parseFloat(taxData.rate || '0') / 100);
+          setTaxLabel(taxData.label || 'Sales Tax');
+        } else {
+          setTaxRate(0);
+        }
       } catch { setShipping(null); setTaxRate(0); }
       finally { setShippingLoading(false); setTaxLoading(false); }
     }, 700);
