@@ -77,6 +77,7 @@ type ShippingResult = {
   zone_id?: number;
   zone_title?: string;
   fee?: string;
+  instance_id?: string;
 };
 
 type Confirmation = {
