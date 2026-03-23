@@ -493,12 +493,12 @@ def create_internal_order(
                 new_wc_customer = _wc_request("customers", method="POST", payload={
                     "first_name": payload.first_name,
                     "last_name": payload.last_name,
-                    "email": payload.email or "",
-                    "username": (payload.email or f"{payload.first_name.lower()}{payload.last_name.lower()}").replace(" ", ""),
+                    "email": payload.email or f"noemail+{payload.phone.replace('+','').replace(' ','')}@internal.emgc",
+                    "username": (payload.email or f"{payload.first_name.lower()}{payload.last_name.lower()}{payload.phone[-4:]}").replace(" ", ""),
                     "billing": {
                         "first_name": payload.first_name,
                         "last_name": payload.last_name,
-                        "email": payload.email or "",
+                        "email": payload.email or f"noemail+{payload.phone.replace('+','').replace(' ','')}@internal.emgc",
                         "phone": payload.phone,
                         "address_1": payload.address_line1,
                         "address_2": payload.address_line2,
@@ -539,7 +539,7 @@ def create_internal_order(
     billing = {
         "first_name": payload.first_name,
         "last_name": payload.last_name,
-        "email": payload.email or "",
+        "email": payload.email or f"noemail+{payload.phone.replace('+','').replace(' ','')}@internal.emgc",
         "phone": payload.phone,
         "address_1": payload.address_line1,
         "address_2": payload.address_line2,
