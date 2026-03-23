@@ -1030,3 +1030,33 @@ def get_invoiced_orders(
             for d, c in drops
         ]
     }
+
+@router.get("/tax-rate")
+def get_tax_rate(
+    postal_code: str,
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
+):
+    """Return the applicable WC tax rate for a given postal code."""
+    try:
+        taxes = _wc_request("taxes?per_page=100")
+    except Exception:
+        return {"rate": "0", "label": "Tax"}
+
+    # Try zip-level match first, then state-level
+    zip_match = None
+    state_match = None
+    for t in taxes:
+        if t.get("postcode", "") == postal_code:
+            zip_match = t
+            break
+        if t.get("state", "") == "MA" and not t.get("postcode"):
+            state_match = t
+
+    match = zip_match or state_match
+    if not match:
+        return {"rate": "0", "label": "Tax"}
+
+    return {
+        "rate": match.get("rate", "0"),  # e.g. "6.2500"
+        "label": match.get("name", "Sales Tax"),
+    }
