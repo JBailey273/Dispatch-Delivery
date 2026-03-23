@@ -454,6 +454,10 @@ export default function NewOrderPage() {
       ? `<tr><td class="pt-item" colspan="3">Delivery Fee</td><td class="pt-item pt-right">$${deliveryFee.toFixed(2)}</td></tr>`
       : '';
 
+    const taxRow = taxAmount > 0
+      ? `<tr><td class="pt-item" colspan="3">${taxLabel}</td><td class="pt-item pt-right">$${taxAmount.toFixed(2)}</td></tr>`
+      : '';
+
     const addrStr = deliveryMethod === 'delivery' && addrLine1
       ? `${addrLine1}${addrLine2 ? ` ${addrLine2}` : ''}, ${addrCity}, ${addrState} ${addrZip}`
       : 'Pickup at Hampden location';
@@ -515,7 +519,7 @@ export default function NewOrderPage() {
   <div class="pt-section-label">Items</div>
   <table class="pt-items-table">
     <thead><tr><th>Description</th><th class="pt-right">Qty</th><th class="pt-right">Unit Price</th><th class="pt-right">Amount</th></tr></thead>
-    <tbody>${itemRows}${deliveryRow}</tbody>
+    <tbody>${itemRows}${deliveryRow}${taxRow}</tbody>
   </table>
   <div class="pt-total-row"><span>Total</span><span>$${confirmation.total.toFixed(2)}</span></div>
   <div class="pt-payment">
