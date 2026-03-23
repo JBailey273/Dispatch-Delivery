@@ -432,6 +432,7 @@ export default function NewOrderPage() {
           address_city: addrCity.trim(), address_state: addrState.trim(),
           address_postal_code: addrZip.trim(),
           delivery_fee: deliveryFee.toFixed(2),
+          shipping_instance_id: shipping?.instance_id || "3",
           payment_method: paymentMethod, payment_note: paymentNote.trim(),
           stripe_payment_intent_id: stripePaymentIntentId,
           stripe_customer_id: resolvedStripeCustomerId,
