@@ -10,14 +10,12 @@ import {
   useElements,
 } from '@stripe/react-stripe-js';
 import { ApiError, api, requireRole } from '../../lib/auth';
-
-// ── Stripe init ───────────────────────────────────────────────────────────────
+import DropRescheduleSlideOver from '../../components/DropRescheduleSlideOver';
+import { useLocation } from '../../lib/location-context';
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || ''
 );
-
-// ── Types ─────────────────────────────────────────────────────────────────────
 
 type WcProduct = {
   id: number;
@@ -91,8 +89,6 @@ type Confirmation = {
   payment_link_url?: string | null;
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 function fmt(n: number) {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 }
@@ -108,8 +104,6 @@ function roleLabel(role: string | null | undefined) {
   if (role === 'wholesale') return { label: 'Wholesale', color: '#5b21b6', bg: '#ede9fe' };
   return null;
 }
-
-// ── Card form (needs Stripe context) ─────────────────────────────────────────
 
 function CardForm({
   totalCents,
@@ -137,7 +131,6 @@ function CardForm({
 
   const charge = async (): Promise<{ paymentIntentId: string; stripeCustomerId: string } | null> => {
     if (!stripe) { onPaymentError('Stripe not loaded'); return null; }
-
     try {
       const intentRes = await api('/internal-orders/create-payment-intent', {
         method: 'POST',
@@ -152,20 +145,15 @@ function CardForm({
           description: 'East Meadow Garden Center order',
         }),
       });
-
       if (intentRes.confirmed) {
         return { paymentIntentId: intentRes.payment_intent_id, stripeCustomerId: intentRes.stripe_customer_id };
       }
-
-      // New card — confirm client-side
       const cardEl = elements?.getElement(CardElement);
       if (!cardEl) { onPaymentError('Card element not found'); return null; }
-
       const { error, paymentIntent } = await stripe.confirmCardPayment(
         intentRes.client_secret,
         { payment_method: { card: cardEl, billing_details: { name: customerName, email: customerEmail } } }
       );
-
       if (error) { onPaymentError(error.message || 'Card declined'); return null; }
       if (paymentIntent?.status === 'succeeded') {
         return { paymentIntentId: paymentIntent.id, stripeCustomerId: intentRes.stripe_customer_id };
@@ -176,7 +164,6 @@ function CardForm({
     }
   };
 
-  // Expose charge fn to parent on mount
   useEffect(() => { onPaymentReady(charge); }, [stripe, elements, totalCents, savedCard]);
 
   return (
@@ -213,12 +200,11 @@ function CardForm({
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
-
 export default function NewOrderPage() {
   const router = useRouter();
+  const { activeLocation } = useLocation();
 
-  // Customer
+  // Customer state
   const [lookupQuery, setLookupQuery] = useState('');
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupDone, setLookupDone] = useState(false);
@@ -260,16 +246,21 @@ export default function NewOrderPage() {
   const chargeRef = useRef<(() => Promise<{ paymentIntentId: string; stripeCustomerId: string } | null>) | null>(null);
   const [cashTendered, setCashTendered] = useState('');
 
-  // Submit
+  // Submit & confirmation
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+
+  // Post-order scheduling
+  const [dropId, setDropId] = useState<string | null>(null);
+  const [dropPolling, setDropPolling] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [scheduled, setScheduled] = useState<string | null>(null);
 
   if (!requireRole(['dispatcher', 'admin'])) {
     return <div className="page"><p>Unauthorized</p></div>;
   }
 
-  // Load products
   const loadProducts = useCallback(async (role: string | null) => {
     setProductsLoading(true);
     try {
@@ -282,7 +273,6 @@ export default function NewOrderPage() {
 
   useEffect(() => { loadProducts(null); }, [loadProducts]);
 
-  // Customer lookup
   const runLookup = useCallback(async (q: string) => {
     if (q.trim().length < 3) return;
     setLookupLoading(true);
@@ -344,7 +334,6 @@ export default function NewOrderPage() {
     if (newItems.length > 0) setLineItems(newItems);
   };
 
-  // Shipping zone
   useEffect(() => {
     if (deliveryMethod !== 'delivery' || addrZip.length < 5) { setShipping(null); return; }
     if (zipTimer.current) clearTimeout(zipTimer.current);
@@ -358,7 +347,6 @@ export default function NewOrderPage() {
     }, 700);
   }, [addrZip, deliveryMethod]);
 
-  // Role change
   const handleRoleChange = (role: string | null) => {
     setWcRole(role); setIsContractor(role === 'contractor'); loadProducts(role);
     setLineItems(prev => prev.map(l => {
@@ -367,20 +355,20 @@ export default function NewOrderPage() {
     }));
   };
 
-  // Line items
   const addProduct = (product: WcProduct) => {
     setLineItems(prev => {
       if (prev.find(l => l.product_id === product.id)) return prev;
       return [...prev, { product_id: product.id, name: product.name, quantity: 3, unit_price: priceForRole(product, wcRole) }];
     });
   };
+
   const updateQty = (productId: number, qty: number) => {
     if (qty < 1) { removeItem(productId); return; }
     setLineItems(prev => prev.map(l => l.product_id === productId ? { ...l, quantity: qty } : l));
   };
+
   const removeItem = (productId: number) => setLineItems(prev => prev.filter(l => l.product_id !== productId));
 
-  // Totals
   const subtotal = lineItems.reduce((s, l) => s + l.unit_price * l.quantity, 0);
   const qualifyingDeliveryItems = deliveryMethod === 'delivery'
     ? lineItems.filter(l => l.quantity >= 3 || overrideDeliveryFee)
@@ -392,15 +380,146 @@ export default function NewOrderPage() {
   const underMinItems = deliveryMethod === 'delivery' ? lineItems.filter(l => l.quantity < 3) : [];
   const zipOutOfZone = deliveryMethod === 'delivery' && shipping !== null && !shipping.found && addrZip.length >= 5;
 
-  // Submit
+  const pollForDrop = useCallback(async (wcOrderId: number) => {
+    setDropPolling(true);
+    let attempts = 0;
+    const maxAttempts = 15;
+    const interval = setInterval(async () => {
+      attempts++;
+      try {
+        const data = await api(`/dispatch/orders?search=${wcOrderId}&start_date=2020-01-01&end_date=2099-01-01`);
+        const match = (data.orders || []).find((o: any) =>
+          String(o.external_order_id) === String(wcOrderId) ||
+          String(o.order_ref) === String(wcOrderId)
+        );
+        if (match) {
+          clearInterval(interval);
+          setDropId(match.drop_id);
+          setDropPolling(false);
+        }
+      } catch { /* silent */ }
+      if (attempts >= maxAttempts) {
+        clearInterval(interval);
+        setDropPolling(false);
+      }
+    }, 2000);
+  }, []);
+
+  const printReceipt = () => {
+    if (!confirmation) return;
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+    const itemRows = lineItems.map(l => `
+      <tr>
+        <td class="pt-item">${l.name}</td>
+        <td class="pt-item pt-right">${l.quantity} yd</td>
+        <td class="pt-item pt-right">$${l.unit_price.toFixed(2)}/yd</td>
+        <td class="pt-item pt-right">$${(l.unit_price * l.quantity).toFixed(2)}</td>
+      </tr>
+    `).join('');
+
+    const deliveryRow = deliveryFee > 0
+      ? `<tr><td class="pt-item" colspan="3">Delivery Fee</td><td class="pt-item pt-right">$${deliveryFee.toFixed(2)}</td></tr>`
+      : '';
+
+    const addrStr = deliveryMethod === 'delivery' && addrLine1
+      ? `${addrLine1}${addrLine2 ? ` ${addrLine2}` : ''}, ${addrCity}, ${addrState} ${addrZip}`
+      : 'Pickup at Hampden location';
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Receipt — Order #${confirmation.order_number}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Plus Jakarta Sans', sans-serif; color: #111; background: #fff; padding: 32px; font-size: 13px; }
+    .pt-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #111; padding-bottom: 14px; margin-bottom: 18px; }
+    .pt-gc { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; }
+    .pt-gc-sub { font-size: 11px; color: #555; margin-top: 2px; }
+    .pt-order-num { font-size: 28px; font-weight: 800; letter-spacing: -0.03em; text-align: right; }
+    .pt-order-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #555; text-align: right; }
+    .pt-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #ddd; }
+    .pt-meta-block dt { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #777; margin-bottom: 3px; }
+    .pt-meta-block dd { font-size: 14px; font-weight: 700; }
+    .pt-meta-block dd.small { font-size: 12px; font-weight: 600; }
+    .pt-section-label { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: #555; margin-bottom: 8px; }
+    .pt-items-table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+    .pt-items-table th { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #777; border-bottom: 1px solid #ddd; padding: 0 0 6px; text-align: left; }
+    .pt-items-table th.pt-right { text-align: right; }
+    .pt-item { padding: 8px 0; border-bottom: 1px solid #eee; font-size: 13px; font-weight: 600; }
+    .pt-right { text-align: right; }
+    .pt-total-row { display: flex; justify-content: space-between; padding: 12px 0 0; border-top: 2px solid #111; margin-top: 8px; font-size: 17px; font-weight: 800; }
+    .pt-payment { margin-top: 16px; padding: 10px 14px; background: #f5f5f5; border-radius: 6px; font-size: 12px; }
+    .pt-payment-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #777; margin-bottom: 4px; }
+    .pt-footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #ddd; text-align: center; font-size: 11px; color: #777; }
+    .pt-sig { margin-top: 24px; padding-top: 16px; border-top: 1px solid #ddd; }
+    .pt-sig-line { border-bottom: 1px solid #999; height: 28px; margin-bottom: 6px; width: 60%; }
+    .pt-sig-label { font-size: 10px; color: #777; text-transform: uppercase; letter-spacing: 0.06em; }
+  </style>
+</head>
+<body>
+  <div class="pt-header">
+    <div>
+      <div class="pt-gc">East Meadow Garden Center</div>
+      <div class="pt-gc-sub">Sales Receipt</div>
+    </div>
+    <div>
+      <div class="pt-order-label">Order</div>
+      <div class="pt-order-num">#${confirmation.order_number}</div>
+    </div>
+  </div>
+  <div class="pt-meta">
+    <dl class="pt-meta-block"><dt>Customer</dt><dd>${confirmation.first_name} ${confirmation.last_name}</dd></dl>
+    <dl class="pt-meta-block"><dt>Date</dt><dd class="small">${dateStr}</dd></dl>
+    ${phone ? `<dl class="pt-meta-block"><dt>Phone</dt><dd class="small">${phone}</dd></dl>` : ''}
+    <dl class="pt-meta-block"><dt>Time</dt><dd class="small">${timeStr}</dd></dl>
+    ${email ? `<dl class="pt-meta-block"><dt>Email</dt><dd class="small">${email}</dd></dl>` : ''}
+    <dl class="pt-meta-block"><dt>Method</dt><dd class="small" style="text-transform:capitalize">${confirmation.delivery_method}</dd></dl>
+    <dl class="pt-meta-block" style="grid-column: 1 / -1"><dt>${deliveryMethod === 'delivery' ? 'Delivery Address' : 'Pickup Location'}</dt><dd class="small">${addrStr}</dd></dl>
+    ${scheduled ? `<dl class="pt-meta-block" style="grid-column: 1 / -1"><dt>Scheduled</dt><dd class="small">${scheduled}</dd></dl>` : ''}
+  </div>
+  <div class="pt-section-label">Items</div>
+  <table class="pt-items-table">
+    <thead><tr><th>Description</th><th class="pt-right">Qty</th><th class="pt-right">Unit Price</th><th class="pt-right">Amount</th></tr></thead>
+    <tbody>${itemRows}${deliveryRow}</tbody>
+  </table>
+  <div class="pt-total-row"><span>Total</span><span>$${confirmation.total.toFixed(2)}</span></div>
+  <div class="pt-payment">
+    <div class="pt-payment-label">Payment</div>
+    <div style="text-transform:capitalize;font-weight:700">${confirmation.payment_method.replace('_', ' ')}${paymentNote ? ` — ${paymentNote}` : ''}</div>
+  </div>
+  ${deliveryMethod === 'delivery' ? `<div class="pt-sig"><div class="pt-sig-line"></div><div class="pt-sig-label">Customer signature</div></div>` : ''}
+  <div class="pt-footer"><p>Thank you for your business!</p><p style="margin-top:4px">eastmeadowgardencenter.com · Hampden, MA</p></div>
+</body>
+</html>`;
+
+    const win = window.open('', '_blank', 'width=700,height=900');
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+    win.onload = () => { win.print(); };
+  };
+
   const handleSubmit = async () => {
     setError('');
-    if (!firstName.trim() || !lastName.trim() || !phone.trim()) { setError('First name, last name, and phone are required.'); return; }
-    if (lineItems.length === 0) { setError('Add at least one product.'); return; }
+    if (!firstName.trim() || !lastName.trim() || !phone.trim()) {
+      setError('First name, last name, and phone are required.'); return;
+    }
+    if (lineItems.length === 0) {
+      setError('Add at least one product.'); return;
+    }
     if (deliveryMethod === 'delivery') {
-      if (!addrLine1.trim() || !addrCity.trim() || !addrZip.trim()) { setError('Full delivery address required.'); return; }
-      if (zipOutOfZone) { setError('This zip code is outside our delivery zones.'); return; }
-      if (qualifyingDeliveryItems.length === 0 && deliveryMethod === 'delivery') {
+      if (!addrLine1.trim() || !addrCity.trim() || !addrZip.trim()) {
+        setError('Full delivery address required.'); return;
+      }
+      if (zipOutOfZone) {
+        setError('This zip code is outside our delivery zones.'); return;
+      }
+      if (qualifyingDeliveryItems.length === 0) {
         setError('All items are under 3 yards — this order will be pickup only. Switch to pickup or increase quantities.'); return;
       }
     }
@@ -410,11 +529,10 @@ export default function NewOrderPage() {
       let stripePaymentIntentId: string | null = null;
       let resolvedStripeCustomerId: string | null = stripeCustomerId;
 
-      // Process card payment first if needed
       if (paymentMethod === 'card') {
         if (!chargeRef.current) { setError('Card payment not ready — please try again.'); setSubmitting(false); return; }
         const result = await chargeRef.current();
-        if (!result) { setSubmitting(false); return; } // error already set in CardForm
+        if (!result) { setSubmitting(false); return; }
         stripePaymentIntentId = result.paymentIntentId;
         resolvedStripeCustomerId = result.stripeCustomerId;
       }
@@ -423,20 +541,32 @@ export default function NewOrderPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          first_name: firstName.trim(), last_name: lastName.trim(),
-          email: email.trim() || null, phone: phone.trim(),
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
+          email: email.trim() || null,
+          phone: phone.trim(),
           company_name: companyName.trim() || null,
-          sms_opt_in: smsOptIn, email_opt_in: emailOptIn,
+          sms_opt_in: smsOptIn,
+          email_opt_in: emailOptIn,
           wc_customer_id: wcCustomer?.wc_id || null,
-          wc_role: wcRole, is_contractor: isContractor,
-          line_items: lineItems.map(l => ({ product_id: l.product_id, quantity: l.quantity, price: l.unit_price.toFixed(2), name: l.name })),
+          wc_role: wcRole,
+          is_contractor: isContractor,
+          line_items: lineItems.map(l => ({
+            product_id: l.product_id,
+            quantity: l.quantity,
+            price: l.unit_price.toFixed(2),
+            name: l.name,
+          })),
           delivery_method: deliveryMethod,
-          address_line1: addrLine1.trim(), address_line2: addrLine2.trim(),
-          address_city: addrCity.trim(), address_state: addrState.trim(),
+          address_line1: addrLine1.trim(),
+          address_line2: addrLine2.trim(),
+          address_city: addrCity.trim(),
+          address_state: addrState.trim(),
           address_postal_code: addrZip.trim(),
           delivery_fee: deliveryFee.toFixed(2),
-          shipping_instance_id: shipping?.instance_id || "3",
-          payment_method: paymentMethod, payment_note: paymentNote.trim(),
+          shipping_instance_id: shipping?.instance_id || '3',
+          payment_method: paymentMethod,
+          payment_note: paymentNote.trim(),
           stripe_payment_intent_id: stripePaymentIntentId,
           stripe_customer_id: resolvedStripeCustomerId,
           payment_status: (paymentMethod === 'cash' || paymentMethod === 'card') ? 'paid' : 'unpaid',
@@ -444,17 +574,27 @@ export default function NewOrderPage() {
       });
 
       setConfirmation({
-        wc_order_id: result.wc_order_id, order_number: result.order_number,
-        first_name: firstName, last_name: lastName,
-        delivery_method: deliveryMethod, total,
-        payment_method: paymentMethod, payment_link_url: result.payment_link_url,
+        wc_order_id: result.wc_order_id,
+        order_number: result.order_number,
+        first_name: firstName,
+        last_name: lastName,
+        delivery_method: deliveryMethod,
+        total,
+        payment_method: paymentMethod,
+        payment_link_url: result.payment_link_url,
       });
+
+      if (deliveryMethod === 'delivery') {
+        pollForDrop(result.wc_order_id);
+      }
     } catch (err) {
       setError((err as ApiError).message || 'Order creation failed. Please try again.');
-    } finally { setSubmitting(false); }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  // ── Confirmation ───────────────────────────────────────────────────────────
+  // ── Confirmation screen ────────────────────────────────────────────────────
 
   if (confirmation) {
     return (
@@ -465,36 +605,125 @@ export default function NewOrderPage() {
             <div className="no-confirm-check">✓</div>
             <h1>Order Created</h1>
             <p className="no-confirm-name">{confirmation.first_name} {confirmation.last_name}</p>
+
             <div className="no-confirm-details">
-              <div className="no-confirm-row"><span>WC Order #</span><strong>#{confirmation.order_number}</strong></div>
-              <div className="no-confirm-row"><span>Method</span><strong style={{ textTransform: 'capitalize' }}>{confirmation.delivery_method}</strong></div>
-              <div className="no-confirm-row"><span>Payment</span><strong style={{ textTransform: 'capitalize' }}>{confirmation.payment_method.replace('_', ' ')}</strong></div>
-              <div className="no-confirm-row"><span>Total</span><strong>{fmt(confirmation.total)}</strong></div>
+              <div className="no-confirm-row">
+                <span>WC Order #</span><strong>#{confirmation.order_number}</strong>
+              </div>
+              <div className="no-confirm-row">
+                <span>Method</span>
+                <strong style={{ textTransform: 'capitalize' }}>{confirmation.delivery_method}</strong>
+              </div>
+              <div className="no-confirm-row">
+                <span>Payment</span>
+                <strong style={{ textTransform: 'capitalize' }}>{confirmation.payment_method.replace('_', ' ')}</strong>
+              </div>
+              <div className="no-confirm-row">
+                <span>Total</span><strong>{fmt(confirmation.total)}</strong>
+              </div>
+              {scheduled && (
+                <div className="no-confirm-row">
+                  <span>Scheduled</span>
+                  <strong style={{ color: '#15803d' }}>{scheduled}</strong>
+                </div>
+              )}
             </div>
+
             {confirmation.payment_link_url && (
               <div className="no-confirm-link-box">
-                <div className="no-confirm-link-label">Payment link{(!smsOptIn && !emailOptIn) ? ' — copy and send manually' : ' sent to customer'}</div>
-                <a href={confirmation.payment_link_url} target="_blank" rel="noreferrer" className="no-confirm-link">{confirmation.payment_link_url}</a>
-                <button className="btn btn-ghost btn-sm" onClick={() => navigator.clipboard.writeText(confirmation.payment_link_url!)}>Copy link</button>
+                <div className="no-confirm-link-label">
+                  Payment link{(!smsOptIn && !emailOptIn) ? ' — copy and send manually' : ' sent to customer'}
+                </div>
+                <a href={confirmation.payment_link_url} target="_blank" rel="noreferrer" className="no-confirm-link">
+                  {confirmation.payment_link_url}
+                </a>
+                <button className="btn btn-ghost btn-sm" onClick={() => navigator.clipboard.writeText(confirmation.payment_link_url!)}>
+                  Copy link
+                </button>
               </div>
             )}
+
+            {confirmation.delivery_method === 'delivery' && (
+              <div className="no-confirm-schedule">
+                {!dropId && dropPolling && (
+                  <div className="no-confirm-polling">
+                    <div className="no-spinner" style={{ display: 'inline-block', marginRight: 8 }} />
+                    Waiting for order to enter dispatch queue…
+                  </div>
+                )}
+                {dropId && !scheduled && (
+                  <button
+                    className="btn btn-primary"
+                    style={{ width: '100%', marginBottom: 8 }}
+                    onClick={() => setShowSchedule(true)}
+                  >
+                    📅 Schedule Delivery Now
+                  </button>
+                )}
+                {scheduled && (
+                  <div className="no-confirm-scheduled-badge">
+                    ✓ Delivery scheduled for {scheduled}
+                  </div>
+                )}
+              </div>
+            )}
+
             <p className="no-confirm-note">Order is entering the dispatch queue now.</p>
+
             <div className="no-confirm-actions">
-              <button className="btn btn-primary" onClick={() => {
-                setConfirmation(null); clearCustomer(); setLineItems([]);
-                setDeliveryMethod('delivery'); setPaymentMethod('cash'); setPaymentNote('');
-              }}>New Order</button>
-              <button className="btn btn-ghost" onClick={() => router.push('/dispatch-schedule')}>View Schedule</button>
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  setConfirmation(null);
+                  clearCustomer();
+                  setLineItems([]);
+                  setDeliveryMethod('delivery');
+                  setPaymentMethod('cash');
+                  setPaymentNote('');
+                  setDropId(null);
+                  setScheduled(null);
+                  setShowSchedule(false);
+                }}
+              >
+                New Order
+              </button>
+              <button className="btn btn-secondary" onClick={printReceipt}>
+                🖨 Print Receipt
+              </button>
+              <button className="btn btn-ghost" onClick={() => router.push('/dispatch-schedule')}>
+                View Schedule
+              </button>
             </div>
           </div>
         </div>
+
+        {showSchedule && dropId && (
+          <DropRescheduleSlideOver
+            dropId={dropId}
+            onClose={() => setShowSchedule(false)}
+            onRescheduled={() => {
+              setShowSchedule(false);
+              api(`/dispatch/drops/${dropId}`).then(d => {
+                if (d.scheduled_date) {
+                  const date = new Date(d.scheduled_date + 'T12:00:00');
+                  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                  const win = d.scheduled_window === 'A' ? 'Morning' : 'Afternoon';
+                  setScheduled(`${days[date.getDay()]}, ${months[date.getMonth()]} ${date.getDate()} · ${win}`);
+                }
+              }).catch(() => null);
+            }}
+            startOnReschedule={true}
+            locationId={activeLocation?.id ?? null}
+          />
+        )}
       </>
     );
   }
 
   const rl = roleLabel(wcRole);
 
-  // ── Form ───────────────────────────────────────────────────────────────────
+  // ── Main form ──────────────────────────────────────────────────────────────
 
   return (
     <>
@@ -504,7 +733,9 @@ export default function NewOrderPage() {
         <div className="no-header">
           <div>
             <h1>New Order</h1>
-            <p style={{ color: 'var(--gray-500)', marginTop: 2, fontSize: 13 }}>Phone order · Walk-in · WooCommerce</p>
+            <p style={{ color: 'var(--gray-500)', marginTop: 2, fontSize: 13 }}>
+              Phone order · Walk-in · WooCommerce
+            </p>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={() => router.back()}>← Back</button>
         </div>
@@ -523,7 +754,13 @@ export default function NewOrderPage() {
             <div className="card no-section">
               <div className="no-section-head">Customer</div>
               <div className="no-lookup-row">
-                <input className="no-input" placeholder="Search WooCommerce by phone or email…" value={lookupQuery} onChange={e => handleLookupChange(e.target.value)} autoComplete="off" />
+                <input
+                  className="no-input"
+                  placeholder="Search WooCommerce by phone or email…"
+                  value={lookupQuery}
+                  onChange={e => handleLookupChange(e.target.value)}
+                  autoComplete="off"
+                />
                 {lookupLoading && <div className="no-spinner" />}
               </div>
               {lookupDone && !lookupLoading && !wcCustomer?.found && lookupQuery.length >= 3 && (
@@ -539,8 +776,9 @@ export default function NewOrderPage() {
                     </div>
                     <button className="btn btn-ghost btn-xs" onClick={clearCustomer}>Change</button>
                   </div>
-                  {(email || phone) && <div className="no-found-meta">{phone}{email ? ` · ${email}` : ''}</div>}
-
+                  {(email || phone) && (
+                    <div className="no-found-meta">{phone}{email ? ` · ${email}` : ''}</div>
+                  )}
                   {wcCustomer.order_history && wcCustomer.order_history.length > 0 && (
                     <div className="no-history">
                       <div className="no-history-label">Recent orders</div>
@@ -556,7 +794,12 @@ export default function NewOrderPage() {
                             <div className="no-history-right">
                               <span className="no-history-total">{o.total ? fmt(parseFloat(o.total)) : ''}</span>
                               {i === 0 && products.length > 0 && (
-                                <button className="btn btn-ghost btn-xs no-repeat-btn" onClick={() => repeatLastOrder(o)}>↺ Repeat</button>
+                                <button
+                                  className="btn btn-ghost btn-xs no-repeat-btn"
+                                  onClick={() => repeatLastOrder(o)}
+                                >
+                                  ↺ Repeat
+                                </button>
                               )}
                             </div>
                           </div>
@@ -569,19 +812,44 @@ export default function NewOrderPage() {
 
               <div className="no-fields">
                 <div className="no-row-2">
-                  <div className="no-field"><label>First Name *</label><input className="no-input" value={firstName} onChange={e => setFirstName(e.target.value)} /></div>
-                  <div className="no-field"><label>Last Name *</label><input className="no-input" value={lastName} onChange={e => setLastName(e.target.value)} /></div>
+                  <div className="no-field">
+                    <label>First Name *</label>
+                    <input className="no-input" value={firstName} onChange={e => setFirstName(e.target.value)} />
+                  </div>
+                  <div className="no-field">
+                    <label>Last Name *</label>
+                    <input className="no-input" value={lastName} onChange={e => setLastName(e.target.value)} />
+                  </div>
                 </div>
-                <div className="no-field"><label>Company Name</label><input className="no-input" value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="optional" /></div>
+                <div className="no-field">
+                  <label>Company Name</label>
+                  <input className="no-input" value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="optional" />
+                </div>
                 <div className="no-row-2">
-                  <div className="no-field"><label>Phone *</label><input className="no-input" value={phone} onChange={e => setPhone(e.target.value)} type="tel" placeholder="(413) 555-0100" /></div>
-                  <div className="no-field"><label>Email</label><input className="no-input" value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="optional" /></div>
+                  <div className="no-field">
+                    <label>Phone *</label>
+                    <input className="no-input" value={phone} onChange={e => setPhone(e.target.value)} type="tel" placeholder="(413) 555-0100" />
+                  </div>
+                  <div className="no-field">
+                    <label>Email</label>
+                    <input className="no-input" value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="optional" />
+                  </div>
                 </div>
                 <div className="no-field">
                   <label>Pricing Tier</label>
                   <div className="no-seg">
-                    {[{ value: null, label: 'Retail' }, { value: 'contractor', label: '🏗 Contractor' }, { value: 'wholesale', label: '📦 Wholesale' }].map(opt => (
-                      <button key={opt.label} className={`no-seg-btn${wcRole === opt.value ? ' active' : ''}`} onClick={() => handleRoleChange(opt.value)}>{opt.label}</button>
+                    {[
+                      { value: null, label: 'Retail' },
+                      { value: 'contractor', label: '🏗 Contractor' },
+                      { value: 'wholesale', label: '📦 Wholesale' },
+                    ].map(opt => (
+                      <button
+                        key={opt.label}
+                        className={`no-seg-btn${wcRole === opt.value ? ' active' : ''}`}
+                        onClick={() => handleRoleChange(opt.value)}
+                      >
+                        {opt.label}
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -599,24 +867,56 @@ export default function NewOrderPage() {
               </div>
             </div>
 
-            {/* Delivery */}
+            {/* Delivery / Pickup */}
             <div className="card no-section">
               <div className="no-section-head">Delivery or Pickup</div>
               <div className="no-seg" style={{ marginBottom: 14 }}>
-                <button className={`no-seg-btn${deliveryMethod === 'delivery' ? ' active' : ''}`} onClick={() => setDeliveryMethod('delivery')}>🚛 Delivery</button>
-                <button className={`no-seg-btn${deliveryMethod === 'pickup' ? ' active' : ''}`} onClick={() => { setDeliveryMethod('pickup'); setOverrideDeliveryFee(false); }}>🏪 Pickup</button>
+                <button
+                  className={`no-seg-btn${deliveryMethod === 'delivery' ? ' active' : ''}`}
+                  onClick={() => setDeliveryMethod('delivery')}
+                >
+                  🚛 Delivery
+                </button>
+                <button
+                  className={`no-seg-btn${deliveryMethod === 'pickup' ? ' active' : ''}`}
+                  onClick={() => { setDeliveryMethod('pickup'); setOverrideDeliveryFee(false); }}
+                >
+                  🏪 Pickup
+                </button>
               </div>
+
               {deliveryMethod === 'delivery' && (
                 <div className="no-fields">
-                  <div className="no-field"><label>Street Address *</label><input className="no-input" value={addrLine1} onChange={e => setAddrLine1(e.target.value)} placeholder="123 Main St" /></div>
-                  <div className="no-field"><label>Apt / Unit</label><input className="no-input" value={addrLine2} onChange={e => setAddrLine2(e.target.value)} placeholder="optional" /></div>
-                  <div className="no-row-3">
-                    <div className="no-field" style={{ flex: 2 }}><label>City *</label><input className="no-input" value={addrCity} onChange={e => setAddrCity(e.target.value)} /></div>
-                    <div className="no-field" style={{ flex: 1 }}><label>State</label><input className="no-input" value={addrState} onChange={e => setAddrState(e.target.value)} maxLength={2} /></div>
-                    <div className="no-field" style={{ flex: 1 }}><label>ZIP *</label><input className="no-input" value={addrZip} onChange={e => setAddrZip(e.target.value)} maxLength={5} placeholder="01020" /></div>
+                  <div className="no-field">
+                    <label>Street Address *</label>
+                    <input className="no-input" value={addrLine1} onChange={e => setAddrLine1(e.target.value)} placeholder="123 Main St" />
                   </div>
-                  {shippingLoading && <div className="no-zone no-zone-checking">Checking delivery zone…</div>}
-                  {!shippingLoading && shipping?.found && <div className="no-zone no-zone-ok">✓ {shipping.zone_title} · Fee: {fmt(parseFloat(shipping.fee || '0'))}</div>}
+                  <div className="no-field">
+                    <label>Apt / Unit</label>
+                    <input className="no-input" value={addrLine2} onChange={e => setAddrLine2(e.target.value)} placeholder="optional" />
+                  </div>
+                  <div className="no-row-3">
+                    <div className="no-field" style={{ flex: 2 }}>
+                      <label>City *</label>
+                      <input className="no-input" value={addrCity} onChange={e => setAddrCity(e.target.value)} />
+                    </div>
+                    <div className="no-field" style={{ flex: 1 }}>
+                      <label>State</label>
+                      <input className="no-input" value={addrState} onChange={e => setAddrState(e.target.value)} maxLength={2} />
+                    </div>
+                    <div className="no-field" style={{ flex: 1 }}>
+                      <label>ZIP *</label>
+                      <input className="no-input" value={addrZip} onChange={e => setAddrZip(e.target.value)} maxLength={5} placeholder="01020" />
+                    </div>
+                  </div>
+                  {shippingLoading && (
+                    <div className="no-zone no-zone-checking">Checking delivery zone…</div>
+                  )}
+                  {!shippingLoading && shipping?.found && (
+                    <div className="no-zone no-zone-ok">
+                      ✓ {shipping.zone_title} · Fee: {fmt(parseFloat(shipping.fee || '0'))}
+                    </div>
+                  )}
                   {!shippingLoading && shipping?.found && underMinItems.length > 0 && (
                     <label className="no-check-label" style={{ marginTop: 8 }}>
                       <input
@@ -628,24 +928,44 @@ export default function NewOrderPage() {
                       <span className="no-check-hint">Override for special circumstances</span>
                     </label>
                   )}
-                  {!shippingLoading && zipOutOfZone && <div className="no-zone no-zone-err">✗ Outside delivery zones — pickup only</div>}
+                  {!shippingLoading && zipOutOfZone && (
+                    <div className="no-zone no-zone-err">✗ Outside delivery zones — pickup only</div>
+                  )}
                 </div>
               )}
-              {deliveryMethod === 'pickup' && <div className="no-pickup-note">Customer picks up at the Hampden location. No delivery fee.</div>}
+
+              {deliveryMethod === 'pickup' && (
+                <div className="no-pickup-note">
+                  Customer picks up at the Hampden location. No delivery fee.
+                </div>
+              )}
             </div>
 
             {/* Payment */}
             <div className="card no-section">
               <div className="no-section-head">Payment</div>
               <div className="no-seg" style={{ marginBottom: 14 }}>
-                {([{ value: 'cash', label: '💵 Cash' }, { value: 'card', label: '💳 Card' }, { value: 'payment_link', label: '🔗 Send Link' }, { value: 'invoice', label: '🧾 Invoice' }] as const).map(opt => (
-                  <button key={opt.value} className={`no-seg-btn${paymentMethod === opt.value ? ' active' : ''}`} onClick={() => setPaymentMethod(opt.value)}>{opt.label}</button>
+                {([
+                  { value: 'cash', label: '💵 Cash' },
+                  { value: 'card', label: '💳 Card' },
+                  { value: 'payment_link', label: '🔗 Send Link' },
+                  { value: 'invoice', label: '🧾 Invoice' },
+                ] as const).map(opt => (
+                  <button
+                    key={opt.value}
+                    className={`no-seg-btn${paymentMethod === opt.value ? ' active' : ''}`}
+                    onClick={() => setPaymentMethod(opt.value)}
+                  >
+                    {opt.label}
+                  </button>
                 ))}
               </div>
 
               {paymentMethod === 'cash' && (
                 <div>
-                  <div className="no-pay-note" style={{ marginBottom: 10 }}>Taken at counter — order marked paid on submit.</div>
+                  <div className="no-pay-note" style={{ marginBottom: 10 }}>
+                    Taken at counter — order marked paid on submit.
+                  </div>
                   <div className="no-field" style={{ maxWidth: 160 }}>
                     <label>Cash Tendered</label>
                     <input
@@ -662,7 +982,7 @@ export default function NewOrderPage() {
                     <div style={{
                       marginTop: 8, padding: '8px 12px', background: '#f0fdf4',
                       border: '1.5px solid #bbf7d0', borderRadius: 8,
-                      fontSize: 15, fontWeight: 700, color: '#15803d'
+                      fontSize: 15, fontWeight: 700, color: '#15803d',
                     }}>
                       Change due: {fmt(parseFloat(cashTendered) - total)}
                     </div>
@@ -671,7 +991,7 @@ export default function NewOrderPage() {
                     <div style={{
                       marginTop: 8, padding: '8px 12px', background: '#fef2f2',
                       border: '1.5px solid #fecaca', borderRadius: 8,
-                      fontSize: 13, fontWeight: 600, color: '#dc2626'
+                      fontSize: 13, fontWeight: 600, color: '#dc2626',
                     }}>
                       Short by: {fmt(total - parseFloat(cashTendered))}
                     </div>
@@ -698,7 +1018,9 @@ export default function NewOrderPage() {
                       <span>Save card on file for future orders</span>
                     </label>
                   )}
-                  <div className="no-pay-note" style={{ marginTop: 8 }}>Card will be charged {fmt(total)} on submit.</div>
+                  <div className="no-pay-note" style={{ marginTop: 8 }}>
+                    Card will be charged {fmt(total)} on submit.
+                  </div>
                 </Elements>
               )}
 
@@ -706,29 +1028,50 @@ export default function NewOrderPage() {
                 <div>
                   <div className="no-pay-note">
                     A Stripe payment link will be created and sent
-                    {smsOptIn && emailOptIn ? ' via SMS and email' : smsOptIn ? ' via SMS' : emailOptIn ? ' via email' : ''}.
+                    {smsOptIn && emailOptIn ? ' via SMS and email'
+                      : smsOptIn ? ' via SMS'
+                      : emailOptIn ? ' via email'
+                      : ''}.
                   </div>
                   {!smsOptIn && !emailOptIn && (
-                    <div className="no-zone no-zone-checking" style={{ marginTop: 8 }}>⚠ No channels opted in — link will show on screen after submit for manual sharing.</div>
+                    <div className="no-zone no-zone-checking" style={{ marginTop: 8 }}>
+                      ⚠ No channels opted in — link will show on screen after submit for manual sharing.
+                    </div>
                   )}
                 </div>
               )}
 
-              {paymentMethod === 'invoice' && <div className="no-pay-note">Order will be invoiced. Appears in the Ops Dashboard accounting queue for billing.</div>}
+              {paymentMethod === 'invoice' && (
+                <div className="no-pay-note">
+                  Order will be invoiced. Appears in the Ops Dashboard accounting queue for billing.
+                </div>
+              )}
 
               <div className="no-field" style={{ marginTop: 12 }}>
-                <label>Payment note <span style={{ fontWeight: 400, color: 'var(--gray-400)' }}>(optional)</span></label>
-                <input className="no-input" value={paymentNote} onChange={e => setPaymentNote(e.target.value)} placeholder="e.g. net 30, cash left at door…" />
+                <label>
+                  Payment note{' '}
+                  <span style={{ fontWeight: 400, color: 'var(--gray-400)' }}>(optional)</span>
+                </label>
+                <input
+                  className="no-input"
+                  value={paymentNote}
+                  onChange={e => setPaymentNote(e.target.value)}
+                  placeholder="e.g. net 30, cash left at door…"
+                />
               </div>
             </div>
           </div>
 
-          {/* Right col */}
+          {/* Right column */}
           <div className="no-col">
             <div className="card no-section">
               <div className="no-section-head">
                 Products
-                {rl && <span className="no-role-pill" style={{ background: rl.bg, color: rl.color, marginLeft: 8, fontSize: 11 }}>{rl.label} pricing</span>}
+                {rl && (
+                  <span className="no-role-pill" style={{ background: rl.bg, color: rl.color, marginLeft: 8, fontSize: 11 }}>
+                    {rl.label} pricing
+                  </span>
+                )}
               </div>
               {productsLoading ? (
                 <div className="no-empty">Loading products…</div>
@@ -737,9 +1080,15 @@ export default function NewOrderPage() {
                   {products.map(p => {
                     const inCart = lineItems.find(l => l.product_id === p.id);
                     return (
-                      <button key={p.id} className={`no-product-btn${inCart ? ' in-cart' : ''}`} onClick={() => addProduct(p)}>
+                      <button
+                        key={p.id}
+                        className={`no-product-btn${inCart ? ' in-cart' : ''}`}
+                        onClick={() => addProduct(p)}
+                      >
                         <span className="no-product-name">{p.name}</span>
-                        <span className="no-product-price">{fmt(priceForRole(p, wcRole))}<span className="no-product-unit">/yd</span></span>
+                        <span className="no-product-price">
+                          {fmt(priceForRole(p, wcRole))}<span className="no-product-unit">/yd</span>
+                        </span>
                         {inCart && <span className="no-in-cart-dot">✓</span>}
                       </button>
                     );
@@ -766,7 +1115,13 @@ export default function NewOrderPage() {
                         </div>
                         <div className="no-qty-wrap">
                           <button className="no-qty-btn" onClick={() => updateQty(item.product_id, item.quantity - 1)}>−</button>
-                          <input className="no-qty-input" type="number" min={1} value={item.quantity} onChange={e => updateQty(item.product_id, parseInt(e.target.value) || 1)} />
+                          <input
+                            className="no-qty-input"
+                            type="number"
+                            min={1}
+                            value={item.quantity}
+                            onChange={e => updateQty(item.product_id, parseInt(e.target.value) || 1)}
+                          />
                           <button className="no-qty-btn" onClick={() => updateQty(item.product_id, item.quantity + 1)}>+</button>
                           <button className="no-qty-btn no-qty-del" onClick={() => removeItem(item.product_id)}>✕</button>
                         </div>
@@ -780,12 +1135,19 @@ export default function NewOrderPage() {
               <div className="no-totals">
                 <div className="no-total-row"><span>Subtotal</span><span>{fmt(subtotal)}</span></div>
                 {deliveryMethod === 'delivery' && (
-                  <div className="no-total-row"><span>Delivery fee</span><span>{shipping?.found ? fmt(deliveryFee) : shippingLoading ? '…' : '—'}</span></div>
+                  <div className="no-total-row">
+                    <span>Delivery fee</span>
+                    <span>{shipping?.found ? fmt(deliveryFee) : shippingLoading ? '…' : '—'}</span>
+                  </div>
                 )}
                 <div className="no-total-row no-total-grand"><span>Total</span><span>{fmt(total)}</span></div>
               </div>
 
-              <button className="btn btn-primary no-submit" onClick={handleSubmit} disabled={submitting || lineItems.length === 0}>
+              <button
+                className="btn btn-primary no-submit"
+                onClick={handleSubmit}
+                disabled={submitting || lineItems.length === 0}
+              >
                 {submitting ? 'Creating order…' : `Create Order · ${fmt(total)}`}
               </button>
             </div>
@@ -893,7 +1255,10 @@ const styles = `
 .no-confirm-link-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px; margin-bottom: 14px; text-align: left; }
 .no-confirm-link-label { font-size: 12px; font-weight: 600; color: #15803d; margin-bottom: 4px; }
 .no-confirm-link { font-size: 12px; color: #15803d; word-break: break-all; display: block; margin-bottom: 8px; }
+.no-confirm-schedule { margin-bottom: 12px; }
+.no-confirm-polling { font-size: 13px; color: var(--gray-400); display: flex; align-items: center; justify-content: center; padding: 10px 0; }
+.no-confirm-scheduled-badge { background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: 8px; padding: 10px 14px; font-size: 14px; font-weight: 600; color: #15803d; text-align: center; margin-bottom: 8px; }
 .no-confirm-note { font-size: 13px; color: var(--gray-400); margin: 0 0 20px; }
-.no-confirm-actions { display: flex; gap: 10px; justify-content: center; }
+.no-confirm-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 .btn-xs { font-size: 11px !important; padding: 2px 8px !important; }
 `;
