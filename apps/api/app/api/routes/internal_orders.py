@@ -600,7 +600,7 @@ def create_internal_order(
                 Customer.tenant_id == user.tenant_id,
                 Customer.phone_e164 == normalized_phone,
             )
-        ).scalar_one_or_none()
+        ).first()
 
     if not local_customer and payload.email:
         local_customer = db.execute(
@@ -608,7 +608,7 @@ def create_internal_order(
                 Customer.tenant_id == user.tenant_id,
                 Customer.email == payload.email.strip().lower(),
             )
-        ).scalar_one_or_none()
+        ).first()
 
     if local_customer:
         # Update existing
@@ -658,7 +658,7 @@ def create_internal_order(
                 Location.tenant_id == user.tenant_id,
                 Location.is_active == True,  # noqa: E712
             ).order_by(Location.name)
-        ).scalar_one_or_none()
+        ).first()
 
         existing_addr = db.execute(
             select(CustomerAddress).where(
@@ -667,7 +667,7 @@ def create_internal_order(
                 CustomerAddress.line1.ilike(payload.address_line1.strip()),
                 CustomerAddress.postal_code == payload.address_postal_code.strip(),
             )
-        ).scalar_one_or_none()
+        ).first()
 
         if not existing_addr:
             db.add(CustomerAddress(
