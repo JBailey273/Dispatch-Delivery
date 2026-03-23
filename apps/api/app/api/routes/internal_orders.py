@@ -29,6 +29,7 @@ from app.models.entities import (
     Load,
     LoadStatus,
     Location,
+    ProductCatalogItem,
     UserRole,
 )
 
