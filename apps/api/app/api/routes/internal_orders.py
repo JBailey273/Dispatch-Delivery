@@ -790,9 +790,29 @@ def create_internal_order(
 
                 for catalog_item, qty in matched_items:
                     db.add(Load(
+                        tenant_id=user.tenant_id,
+                        drop_id=new_drop.id,
+                        status=LoadStatus.ASSIGNED,
+                        bulk_group_snapshot=catalog_item.bulk_group or catalog_item.sku,
+                        material_name_snapshot=catalog_item.name,
+                        qty=qty,
+                        unit=catalog_item.unit or "unit",
+                        driver_user_id=None,
+                    ))
+
+                drop_id = str(new_drop.id)
+                log_event(db, user.tenant_id, "internal_order.drop_created", "api", {
+                    "drop_id": drop_id,
+                    "wc_order_id": wc_order_id,
+                    "skipped_skus": skipped_skus,
+                })
+                logger.info(f"create_internal_order: drop {drop_id} created with {len(matched_items)} load(s)")
+            else:
+                logger.warning(f"create_internal_order: no SKUs matched catalog for WC order {wc_order_id} — drop not created")
+
+    db.commit()
 
     # ── Step 5: Stripe Payment Link (if requested) ───────────────────────────
-
     payment_link_url = None
     payment_link_id = None
 
