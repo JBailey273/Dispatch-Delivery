@@ -321,7 +321,7 @@ export default function AllOrdersPage() {
                         {activeTab === 'pickups' ? 'Order Received' : 'Date'}{sortIcon('date')}
                       </th>
                       {activeTab === 'deliveries' && <th className="ao-th">Window</th>}
-                      {activeTab === 'pickups' && <th className="ao-th">Order #</th>}
+                      <th className="ao-th">Order #</th>
                       <th className="ao-th ao-th-sort" onClick={() => toggleSort('customer')}>Customer{sortIcon('customer')}</th>
                       <th className="ao-th ao-hide-mobile">{activeTab === 'pickups' ? 'Contact' : 'Address'}</th>
                       <th className="ao-th ao-th-sort" onClick={() => toggleSort('material')}>Material{sortIcon('material')}</th>
@@ -349,11 +349,9 @@ export default function AllOrdersPage() {
                             )}
                           </td>
                         )}
-                        {activeTab === 'pickups' && (
-                          <td className="ao-td" style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 13 }}>
-                            {o.order_ref}
-                          </td>
-                        )}
+                        <td className="ao-td" style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 13 }}>
+                          {o.order_ref || '—'}
+                        </td>
                         <td className="ao-td">
                           <div className="ao-customer-name">{o.customer_name}</div>
                           <div className="ao-customer-phone">{o.customer_phone}</div>
