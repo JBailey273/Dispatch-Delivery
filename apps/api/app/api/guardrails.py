@@ -147,16 +147,7 @@ def assert_drop_load_invariants(db: Session, tenant_id, drop_id) -> list[Load]:
                     "next_step": "Reload the dispatch board and retry. If it persists, contact support with the drop id.",
                 },
             )
-        if not load.route_date or not load.route_window:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "invalid_load",
-                    "message": "Could not modify this drop because one load is missing schedule details.",
-                    "next_step": "Refresh and retry. If this continues, ask an admin to repair the load record.",
-                },
-            )
-    return loads
+        return loads
 
 
 def guard_load_editable(load: Load, operation: str):
