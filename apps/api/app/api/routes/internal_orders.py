@@ -526,11 +526,7 @@ def create_internal_order(
     ]
 
     fee_lines = []
-    if payload.delivery_method == "delivery" and float(payload.delivery_fee or 0) > 0:
-        fee_lines.append({
-            "name": "Delivery Fee",
-            "total": payload.delivery_fee,
-        })
+    
 
     shipping_lines = [{
         "method_id": "flat_rate" if payload.delivery_method == "delivery" else "local_pickup",
