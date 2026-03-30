@@ -177,7 +177,7 @@ export default function DashboardPage() {
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-secondary btn-sm" onClick={fetchAll}>↻ Refresh</button>
-            <Link href="/new-drop" className="btn btn-primary btn-sm" style={{ textDecoration: 'none' }}>+ New Order</Link>
+            <Link href="/dispatch/new-order" className="btn btn-primary btn-sm" style={{ textDecoration: 'none' }}>+ New Order</Link>
           </div>
         </div>
 
