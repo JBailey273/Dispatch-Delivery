@@ -640,7 +640,7 @@ export default function DriverPage() {
                           {activeLoads.length > 1 && <div className="drv-act-label">{load.material}</div>}
                           <button
                              className="drv-btn drv-btn--green"
-                             disabled={actionLoading === load.id || !drop.loads.every(l => l.condition_photo_url || l.condition_notes)}
+                             disabled={actionLoading === load.id || !(drop.loads[0]?.condition_photo_url || drop.loads[0]?.condition_notes)}
                              onClick={() => markDelivered(load.id)}
                           >
                             <span className="drv-btn-ic">📸</span>
