@@ -76,11 +76,11 @@ const STATUS_PILL: Record<string, string> = {
   exception: 'pill-red', cancelled: 'pill-red', new: 'pill-amber',
 };
 const STATUS_LABEL: Record<string, string> = {
-  assigned: 'Assigned', loaded_leaving: 'En Route', delivered: 'Delivered',
+  assigned: 'Scheduled', loaded_leaving: 'En Route', delivered: 'Delivered',
   exception: 'Exception', cancelled: 'Cancelled', new: 'Pending',
 };
 const ALL_STATUSES = [
-  { value: 'assigned', label: 'Assigned' },
+  { value: 'assigned', label: 'Scheduled' },
   { value: 'loaded_leaving', label: 'Out for Delivery' },
   { value: 'delivered', label: 'Delivered' },
   { value: 'exception', label: 'Exception' },
