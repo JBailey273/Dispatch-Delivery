@@ -144,7 +144,7 @@ export default function DriverPage() {
 
   useEffect(() => {
     if (drops.length > 0 && !expandedDrop) {
-      const active = drops.find(d => getDropStatus(d) === 'assigned');
+      const active = drops.find(d => ['assigned', 'loaded_leaving'].includes(getDropStatus(d)));
       if (active) setExpandedDrop(active.drop_id);
     }
   }, [drops, expandedDrop]);
@@ -304,13 +304,12 @@ export default function DriverPage() {
           body: JSON.stringify({ status: 'delivered' }),
         });
         showToast('Photo saved & delivery confirmed!');
-        // Immediately collapse this card
         setExpandedDrop(null);
         setPhotoTarget(null);
-        await fetchDrops();
-        // After fetch, open the next active drop
-        setDrops(prev => {
-          const sorted = [...prev].sort((a, b) => {
+        const updated = await fetchDrops();
+        // Open next active drop if one exists, otherwise stay collapsed
+        if (updated) {
+          const sorted = [...updated].sort((a, b) => {
             const doneA = ['delivered', 'cancelled'].includes(getDropStatus(a));
             const doneB = ['delivered', 'cancelled'].includes(getDropStatus(b));
             if (doneA !== doneB) return doneA ? 1 : -1;
@@ -319,8 +318,8 @@ export default function DriverPage() {
           });
           const next = sorted.find(d => !['delivered', 'cancelled'].includes(getDropStatus(d)));
           if (next) setExpandedDrop(next.drop_id);
-          return prev;
-        });
+          // If no next — stay collapsed, nothing to open
+        }
         return;
       } else if (photoTarget.type === 'condition') {
         // Don't collapse yet — stay open so driver can optionally add a note
