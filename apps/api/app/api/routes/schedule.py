@@ -240,8 +240,11 @@ def confirm_schedule(token: str, payload: ConfirmScheduleIn, db: Session = Depen
                 if window == WindowCode.A
                 else f"{location.windowB_start.strftime('%-I:%M %p')}–{location.windowB_end.strftime('%-I:%M %p')}"
             )
-            materials = [f"{load.qty} {load.unit if load.qty == 1 else (load.unit.rstrip('s') + 's') if not load.unit.endswith('s') else load.unit} {load.material_name_snapshot}" for load in loads]
-                for load in loads
+            def _unit_label(qty, unit):
+                if qty == 1:
+                    return unit.rstrip('s') if unit.lower().endswith('s') else unit
+                return unit if unit.lower().endswith('s') else unit + 's'
+            materials = [f"{load.qty} {_unit_label(load.qty, load.unit)} {load.material_name_snapshot}" for load in loads]
             ]
             address_line = f"{address.line1}, {address.city}, {address.state}" if address else None
 
