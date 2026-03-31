@@ -90,7 +90,7 @@ type Driver = { id: string; name: string; email: string; truck?: string | null }
 type PanelView = 'main' | 'reschedule';
 
 const STATUS_OPTIONS = [
-  { value: 'assigned',       label: 'Assigned',         pill: 'pill-gray'  },
+  { value: 'assigned',       label: 'Scheduled',        pill: 'pill-gray'  },
   { value: 'loaded_leaving', label: 'Out for Delivery',  pill: 'pill-blue'  },
   { value: 'delivered',      label: 'Delivered',         pill: 'pill-green' },
   { value: 'exception',      label: 'Exception',         pill: 'pill-red'   },
