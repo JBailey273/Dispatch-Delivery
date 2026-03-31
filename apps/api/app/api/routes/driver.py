@@ -301,35 +301,25 @@ def update_load_status(
         if drop:
             drop.needs_reschedule = True
 
-    # ── Email notifications ──
+    # ── Auto-notify customer on status change ──
     if requested in (LoadStatus.LOADED_LEAVING, LoadStatus.DELIVERED):
         try:
             drop = db.execute(
                 select(Drop).where(Drop.id == load.drop_id, Drop.tenant_id == user.tenant_id)
             ).scalar_one_or_none()
             if drop:
-                from app.models.entities import Customer, User as UserModel
+                from app.models.entities import Customer as CustomerModel
                 customer = db.execute(
-                    select(Customer).where(Customer.id == drop.customer_id, Customer.tenant_id == user.tenant_id)
+                    select(CustomerModel).where(CustomerModel.id == drop.customer_id, CustomerModel.tenant_id == user.tenant_id)
                 ).scalar_one_or_none()
-                if customer and customer.email and customer.email_opt_in:
-                    from zoneinfo import ZoneInfo
-                    eastern = ZoneInfo("America/New_York")
-                    local_now = now_utc().astimezone(eastern)
-                    tz_label = "EDT" if local_now.dst() else "EST"
-                    date_label = local_now.strftime("%A, %B %d at %-I:%M %p") + f" {tz_label}"
-                    window_label = "Priority Delivery" if drop.is_priority and not drop.scheduled_window else ("Morning (9am–1pm)" if drop.scheduled_window and drop.scheduled_window.value == "A" else "Afternoon (1pm–5pm)")
+                if customer:
                     if requested == LoadStatus.LOADED_LEAVING:
-                        driver = db.execute(
-                            select(UserModel).where(UserModel.id == user.user_id)
-                        ).scalar_one_or_none()
-                        driver_name = driver.display_name if driver else None
-                        send_on_the_way_email(customer.email, customer.name, date_label, window_label, driver_name)
+                        notify_customer(db, user.tenant_id, drop, customer, "on_the_way", {"driver_user_id": str(user.user_id)})
                     elif requested == LoadStatus.DELIVERED:
-                        send_delivery_confirmation_email(customer.email, customer.name, date_label, load.pod_photo_url)
+                        notify_customer(db, user.tenant_id, drop, customer, "delivered", {"pod_photo_url": load.pod_photo_url})
         except Exception as e:
             import logging
-            logging.getLogger("dispatch.email").error(f"Email trigger failed for load {load_id}: {e}")
+            logging.getLogger("dispatch.email").error(f"Auto-notification failed for load {load_id}: {e}")
 
     # ── WooCommerce sync — mark order completed when all loads delivered ──
     if requested == LoadStatus.DELIVERED:
