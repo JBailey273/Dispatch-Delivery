@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
 from app.api.routes.availability import _is_blacked_out, _remaining_slots, _schedule_storage_client
-from app.api.services import log_event, now_utc
+from app.api.services import enqueue_sms_job, log_event, now_utc
+from app.api.email_service import send_delivery_scheduled_email
 from app.core.config import settings
 from app.models.entities import (
     Customer,
@@ -26,6 +27,7 @@ from app.models.entities import (
     WindowCode,
 )
 
+logger = logging.getLogger("dispatch.schedule")
 router = APIRouter(prefix="/schedule", tags=["schedule"])
 
 
@@ -224,6 +226,55 @@ def confirm_schedule(token: str, payload: ConfirmScheduleIn, db: Session = Depen
         "window": window.value,
     })
     db.commit()
+
+    # ── Notify customer ───────────────────────────────────────────────────────
+    try:
+        customer = db.execute(select(Customer).where(Customer.id == drop.customer_id)).scalar_one_or_none()
+        address = db.execute(select(CustomerAddress).where(CustomerAddress.id == drop.address_id)).scalar_one_or_none()
+        if customer:
+            date_str = payload.scheduled_date.strftime("%A, %B %d")
+            win_label = "Morning" if window == WindowCode.A else "Afternoon"
+            time_range = (
+                f"{location.windowA_start.strftime('%-I:%M %p')}–{location.windowA_end.strftime('%-I:%M %p')}"
+                if window == WindowCode.A
+                else f"{location.windowB_start.strftime('%-I:%M %p')}–{location.windowB_end.strftime('%-I:%M %p')}"
+            )
+            materials = [
+                f"{load.qty} {load.unit} {load.material_name_snapshot}"
+                for load in loads
+            ]
+            address_line = f"{address.line1}, {address.city}, {address.state}" if address else None
+
+            if customer.email and customer.email_opt_in:
+                send_delivery_scheduled_email(
+                    customer.email,
+                    customer.name,
+                    date_str,
+                    win_label,
+                    time_range,
+                    materials,
+                    address_line,
+                )
+
+            if customer.sms_opt_in and customer.phone_e164:
+                first = customer.name.split()[0] if customer.name else "there"
+                enqueue_sms_job(
+                    {
+                        "type": "SEND_SMS",
+                        "tenant_id": str(drop.tenant_id),
+                        "drop_id": str(drop.id),
+                        "to": customer.phone_e164,
+                        "template": "custom",
+                        "message": (
+                            f"Hi {first}! Your East Meadow Garden Center delivery is confirmed for "
+                            f"{date_str}, {win_label} ({time_range}). "
+                            f"We'll text you when your driver is on the way."
+                        ),
+                    },
+                    dedupe_key=f"scheduled-confirm-{drop.id}",
+                )
+    except Exception:
+        logger.exception(f"Delivery scheduled notification failed for drop {drop.id}")
 
     return {
         "status": "confirmed",
