@@ -245,7 +245,6 @@ def confirm_schedule(token: str, payload: ConfirmScheduleIn, db: Session = Depen
                     return unit.rstrip('s') if unit.lower().endswith('s') else unit
                 return unit if unit.lower().endswith('s') else unit + 's'
             materials = [f"{load.qty} {_unit_label(load.qty, load.unit)} {load.material_name_snapshot}" for load in loads]
-            ]
             address_line = f"{address.line1}, {address.city}, {address.state}" if address else None
 
             if customer.email and customer.email_opt_in:
