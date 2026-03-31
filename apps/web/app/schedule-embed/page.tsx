@@ -230,7 +230,7 @@ await fetch(`${API_BASE}/embed/order/${orderId}/site-info`, {
             </div>
             <div className="se-confirmed-window">{confirmed.window_label}</div>
             <p className="se-confirmed-note">
-              We'll send you a text message when your driver is on the way. Thank you for choosing East Meadow Garden Center!
+              We'll send you a message when your driver is on the way. Thank you for choosing East Meadow Garden Center!
             </p>
           </div>
         </div>
