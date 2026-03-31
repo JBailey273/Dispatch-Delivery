@@ -13,11 +13,25 @@ export class ApiError extends Error {
   }
 }
 
+function isTokenExpired(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    // exp is in seconds, Date.now() is ms — add 30s buffer
+    return payload.exp * 1000 < Date.now() - 30_000;
+  } catch {
+    return true;
+  }
+}
+
 export function getSession(): Session | null {
   if (typeof window === 'undefined') return null;
   const raw = localStorage.getItem('session');
   if (!raw) return null;
   const parsed = JSON.parse(raw) as Session;
+  if (isTokenExpired(parsed.token)) {
+    clearSession();
+    return null;
+  }
   // Normalize role to lowercase for consistent frontend checks
   if (parsed.role) parsed.role = parsed.role.toLowerCase();
   return parsed;
