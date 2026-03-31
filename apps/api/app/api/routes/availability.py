@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, ChannelAuth, db_dep, require_channel, require_roles
 from app.api.guardrails import CapacityMutationContext, locked_capacity_row, mutate_capacity_or_409
-from app.api.services import log_event, normalize_us_phone, now_utc
+from app.api.services import enqueue_sms_job, log_event, normalize_us_phone, now_utc
+from app.api.email_service import send_delivery_scheduled_email
 from app.core.config import settings
 from app.models.entities import (
     CapacityHold,
@@ -647,7 +648,52 @@ def schedule_embed_order(
         "scheduled_window": payload.scheduled_window.value,
     })
     db.commit()
- 
+
+    # ── Notify customer ───────────────────────────────────────────────────────
+    try:
+        address = db.execute(select(CustomerAddress).where(CustomerAddress.id == drop.address_id)).scalar_one_or_none()
+        if customer:
+            date_str = payload.scheduled_date.strftime("%A, %B %d")
+            win_label = "Morning" if payload.scheduled_window == WindowCode.A else "Afternoon"
+            time_range = "9am–1pm" if payload.scheduled_window == WindowCode.A else "1pm–5pm"
+            def _unit_label(qty, unit):
+                if qty == 1:
+                    return unit.rstrip('s') if unit.lower().endswith('s') else unit
+                return unit if unit.lower().endswith('s') else unit + 's'
+            materials = [f"{l.qty} {_unit_label(l.qty, l.unit)} {l.material_name_snapshot}" for l in loads]
+            address_line = f"{address.line1}, {address.city}, {address.state}" if address else None
+
+            if customer.email and customer.email_opt_in:
+                send_delivery_scheduled_email(
+                    customer.email,
+                    customer.name,
+                    date_str,
+                    win_label,
+                    time_range,
+                    materials,
+                    address_line,
+                )
+
+            if customer.sms_opt_in and customer.phone_e164:
+                first = customer.name.split()[0] if customer.name else "there"
+                enqueue_sms_job(
+                    {
+                        "type": "SEND_SMS",
+                        "tenant_id": str(channel.tenant_id),
+                        "drop_id": str(drop.id),
+                        "to": customer.phone_e164,
+                        "template": "custom",
+                        "message": (
+                            f"Hi {first}! Your East Meadow Garden Center delivery is confirmed for "
+                            f"{date_str}, {win_label} ({time_range}). "
+                            f"We'll text you when your driver is on the way."
+                        ),
+                    },
+                    dedupe_key=f"scheduled-confirm-{drop.id}",
+                )
+    except Exception:
+        logger.exception(f"Embed delivery scheduled notification failed for drop {drop.id}")
+
     return {
         "drop_id": str(drop.id),
         "scheduled_date": str(drop.scheduled_date),
