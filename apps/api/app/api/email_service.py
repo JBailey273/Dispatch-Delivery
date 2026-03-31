@@ -258,3 +258,51 @@ def send_payment_link_email(to: str, customer_name: str, order_number: str, paym
       <p style="margin:20px 0 0;font-family:Arial,sans-serif;font-size:14px;color:#999999;line-height:1.65;">This is a secure Stripe payment link. Your card information is never stored on our servers.</p>
     """
     return send_email(to, subject, _layout('#4a7052', content, f"Complete your payment for Order #{order_number}"))
+
+def send_delivery_scheduled_email(
+    to: str,
+    customer_name: str,
+    scheduled_date: str,
+    window_label: str,
+    time_range: str,
+    materials: list[str],
+    address_line: str | None = None,
+) -> bool:
+    first_name = customer_name.split()[0] if customer_name else "there"
+    subject = f"Your Delivery is Confirmed — {scheduled_date}"
+    materials_html = "".join(
+        f'<p style="margin:4px 0;font-family:Arial,sans-serif;font-size:16px;font-weight:700;color:#2c2c2c;">{m}</p>'
+        for m in materials
+    ) if materials else '<p style="margin:4px 0;font-family:Arial,sans-serif;font-size:15px;color:#2c2c2c;">Delivery items confirmed</p>'
+
+    address_row = f"<tr><td style='padding-bottom:16px;'><p style='margin:0;font-family:Arial,sans-serif;font-size:11px;font-weight:600;color:#999999;text-transform:uppercase;letter-spacing:0.06em;'>Delivery Address</p><p style='margin:5px 0 0;font-family:Outfit,Arial,sans-serif;font-size:16px;font-weight:700;color:#2c2c2c;'>{address_line}</p></td></tr>" if address_line else ""
+
+    content = f"""
+      <h1 style="margin:0 0 12px;font-family:Outfit,Arial,sans-serif;font-size:26px;font-weight:800;color:#2c2c2c;letter-spacing:-0.02em;line-height:1.25;mso-line-height-rule:exactly;text-align:center;">Delivery confirmed! &#x1F333;</h1>
+      <p style="margin:0;font-family:Arial,sans-serif;font-size:16px;color:#666666;line-height:1.65;text-align:center;">Hi {first_name} &#8212; your delivery from East Meadow Garden Center is scheduled. Here&#8217;s everything you need to know.</p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;border-spacing:0;">
+        <tr><td height="8" style="font-size:0;line-height:0;">&nbsp;</td></tr>
+        <tr><td style="background-color:#f4f8f4;border:1px solid #c8dfc8;border-radius:10px;padding:22px 26px;">
+          <p style="margin:0 0 14px;font-family:Outfit,Arial,sans-serif;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#3d5a45;">Delivery Details</p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr><td style="padding-bottom:16px;">
+              <p style="margin:0;font-family:Arial,sans-serif;font-size:11px;font-weight:600;color:#999999;text-transform:uppercase;letter-spacing:0.06em;">Date</p>
+              <p style="margin:5px 0 0;font-family:Outfit,Arial,sans-serif;font-size:18px;font-weight:700;color:#2c2c2c;">{scheduled_date}</p>
+            </td></tr>
+            <tr><td style="padding-bottom:16px;">
+              <p style="margin:0;font-family:Arial,sans-serif;font-size:11px;font-weight:600;color:#999999;text-transform:uppercase;letter-spacing:0.06em;">Arrival Window</p>
+              <p style="margin:5px 0 0;font-family:Outfit,Arial,sans-serif;font-size:18px;font-weight:700;color:#2c2c2c;">{window_label} &mdash; {time_range}</p>
+            </td></tr>
+            {address_row}
+            <tr><td>
+              <p style="margin:0 0 8px;font-family:Arial,sans-serif;font-size:11px;font-weight:600;color:#999999;text-transform:uppercase;letter-spacing:0.06em;">Your Order</p>
+              {materials_html}
+            </td></tr>
+          </table>
+        </td></tr>
+        <tr><td height="8" style="font-size:0;line-height:0;">&nbsp;</td></tr>
+      </table>
+      {_info_box('&#x1F3E1; &nbsp;Please ensure your <strong>delivery area is clear and accessible</strong> on the day of delivery. We&#8217;ll send you another message when your driver is on the way.')}
+      <p style="margin:20px 0 0;font-family:Arial,sans-serif;font-size:14px;color:#999999;line-height:1.65;">Questions? Reply to this email or call us at <a href="tel:4135668733" style="color:#4a7052;text-decoration:none;">(413) 566-8733</a>.</p>
+    """
+    return send_email(to, subject, _layout('#4a7052', content, f"Your East Meadow delivery is confirmed for {scheduled_date} — {window_label}"))
