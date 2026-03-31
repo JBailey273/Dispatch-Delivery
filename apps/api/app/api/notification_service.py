@@ -110,6 +110,13 @@ def notify_customer(
             )
             dedupe_key = f"pickup-ready-sms-{drop.id}"
 
+        elif notification_type == "delivered":
+            sms_message = (
+                f"Your East Meadow Garden Center delivery has been completed! "
+                f"Thank you for your order."
+            )
+            dedupe_key = f"drop-delivered-{drop.id}"
+
         if sms_message and dedupe_key:
             job = {
                 "type": "SEND_SMS",
@@ -155,6 +162,21 @@ def notify_customer(
                     customer.name,
                     drop.order_number,
                     items,
+                )
+
+            elif notification_type == "delivered":
+                pod_photo_url = context.get("pod_photo_url")
+                from zoneinfo import ZoneInfo
+                eastern = ZoneInfo("America/New_York")
+                local_now = now_utc().astimezone(eastern)
+                tz_label = "EDT" if local_now.dst() else "EST"
+                date_label = local_now.strftime("%A, %B %d at %-I:%M %p") + f" {tz_label}"
+                from app.api.email_service import send_delivery_confirmation_email
+                result.email_sent = send_delivery_confirmation_email(
+                    customer.email,
+                    customer.name,
+                    date_label,
+                    pod_photo_url,
                 )
         except Exception:
             logger.exception(f"Email send failed for {notification_type} drop={drop.id}")
