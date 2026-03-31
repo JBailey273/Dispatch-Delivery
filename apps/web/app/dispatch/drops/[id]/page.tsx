@@ -56,7 +56,7 @@ const STATUS_PILL: Record<string, string> = {
   exception: 'pill-red', cancelled: 'pill-red', new: 'pill-amber',
 };
 const STATUS_LABEL: Record<string, string> = {
-  assigned: 'Assigned', loaded_leaving: 'En Route', delivered: 'Delivered',
+  assigned: 'Scheduled', loaded_leaving: 'En Route', delivered: 'Delivered',
   exception: 'Exception', cancelled: 'Cancelled', new: 'Pending',
 };
 
