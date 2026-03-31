@@ -651,6 +651,7 @@ def schedule_embed_order(
 
     # ── Notify customer ───────────────────────────────────────────────────────
     try:
+        customer = db.execute(select(Customer).where(Customer.id == drop.customer_id)).scalar_one_or_none()
         address = db.execute(select(CustomerAddress).where(CustomerAddress.id == drop.address_id)).scalar_one_or_none()
         if customer:
             date_str = payload.scheduled_date.strftime("%A, %B %d")
