@@ -508,17 +508,13 @@ def delete_drop(
         "external_order_id": external_order_id,
     })
 
-    # Delete loads first, then drop
-    for load in loads:
-        db.delete(load)
-    db.delete(drop)
-    db.commit()
-
-    # Sync cancellation to WooCommerce (non-fatal — order is already gone locally)
+    # Fetch WC credentials before commit while session is still live
+    wc_store_url = None
+    wc_consumer_key = None
+    wc_consumer_secret = None
     if external_order_id:
         try:
             from app.models.entities import Channel, ChannelType
-            from app.api.woocommerce_service import sync_order_status
             channel = db.execute(
                 select(Channel).where(
                     Channel.tenant_id == user.tenant_id,
@@ -527,14 +523,24 @@ def delete_drop(
                 )
             ).scalar_one_or_none()
             if channel and channel.wc_store_url and channel.wc_consumer_key:
-                sync_order_status(
-                    channel.wc_store_url,
-                    channel.wc_consumer_key,
-                    channel.wc_consumer_secret,
-                    external_order_id,
-                    "cancelled",
-                )
-                logger.info(f"WooCommerce order {external_order_id} marked cancelled after drop deletion")
+                wc_store_url = channel.wc_store_url
+                wc_consumer_key = channel.wc_consumer_key
+                wc_consumer_secret = channel.wc_consumer_secret
+        except Exception:
+            logger.exception("Could not fetch WC channel credentials before drop deletion")
+
+    # Delete loads first, then drop
+    for load in loads:
+        db.delete(load)
+    db.delete(drop)
+    db.commit()
+
+    # Sync cancellation to WooCommerce (non-fatal — order is already deleted locally)
+    if external_order_id and wc_store_url and wc_consumer_key:
+        try:
+            from app.api.woocommerce_service import sync_order_status
+            sync_order_status(wc_store_url, wc_consumer_key, wc_consumer_secret, external_order_id, "cancelled")
+            logger.info(f"WooCommerce order {external_order_id} marked cancelled after drop deletion")
         except Exception:
             logger.exception(f"WooCommerce cancel sync failed for order {external_order_id} — drop is deleted locally")
 
