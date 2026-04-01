@@ -29,10 +29,10 @@ logger = logging.getLogger("dispatch.ops")
 
 
 def _build_order_ref(drop: Drop) -> str:
-    if drop.external_order_id:
-        return drop.external_order_id
     if drop.order_number:
-        return f"D-{drop.order_number:05d}"
+        return str(drop.order_number)
+    if drop.qd_number:
+        return f"QD-{drop.qd_number}"
     return str(drop.id)[:8].upper()
 
 
