@@ -302,6 +302,7 @@ class Drop(Base, TenantScopedMixin, TimestampMixin):
     customer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=False)
     address_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("customer_addresses.id"), nullable=False)
     order_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    qd_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     external_order_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source: Mapped[str] = mapped_column(String(60), nullable=False, default="manual")
     is_priority: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
