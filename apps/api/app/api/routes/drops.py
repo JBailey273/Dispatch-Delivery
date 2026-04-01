@@ -470,20 +470,25 @@ def delete_drop(
     user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)),
     db: Session = Depends(db_dep),
 ):
+    # Load without lock first for read/validation
     drop = db.execute(
-        select(Drop).where(Drop.id == drop_id, Drop.tenant_id == user.tenant_id).with_for_update()
+        select(Drop).where(Drop.id == drop_id, Drop.tenant_id == user.tenant_id)
     ).scalar_one_or_none()
     if not drop:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
 
-    # Block deletion if any load is out for delivery or delivered
     loads = db.execute(select(Load).where(Load.drop_id == drop.id)).scalars().all()
+
+    # Block deletion if any load is out for delivery or delivered
     active_statuses = [LoadStatus.LOADED_LEAVING, LoadStatus.DELIVERED]
     if any(l.status in active_statuses for l in loads):
         raise HTTPException(status_code=409, detail={
             "code": "drop_active",
             "message": "Cannot delete an order that is out for delivery or already delivered.",
         })
+
+    # Capture WC order id before deletion
+    external_order_id = drop.external_order_id
 
     # Release capacity if scheduled and not priority
     if drop.scheduled_date and drop.scheduled_window and not drop.is_priority:
@@ -492,7 +497,7 @@ def delete_drop(
                 WindowCapacity.tenant_id == user.tenant_id,
                 WindowCapacity.service_date == drop.scheduled_date,
                 WindowCapacity.window_code == drop.scheduled_window,
-            ).with_for_update()
+            )
         ).scalar_one_or_none()
         if cap:
             cap.capacity_used = max(0, cap.capacity_used - len(loads))
@@ -500,6 +505,7 @@ def delete_drop(
     log_event(db, user.tenant_id, "drop.deleted", "api", {
         "drop_id": drop_id,
         "scheduled_date": str(drop.scheduled_date) if drop.scheduled_date else None,
+        "external_order_id": external_order_id,
     })
 
     # Delete loads first, then drop
@@ -507,4 +513,29 @@ def delete_drop(
         db.delete(load)
     db.delete(drop)
     db.commit()
+
+    # Sync cancellation to WooCommerce (non-fatal — order is already gone locally)
+    if external_order_id:
+        try:
+            from app.models.entities import Channel, ChannelType
+            from app.api.woocommerce_service import sync_order_status
+            channel = db.execute(
+                select(Channel).where(
+                    Channel.tenant_id == user.tenant_id,
+                    Channel.channel_type == ChannelType.WOOCOMMERCE,
+                    Channel.is_active == True,  # noqa: E712
+                )
+            ).scalar_one_or_none()
+            if channel and channel.wc_store_url and channel.wc_consumer_key:
+                sync_order_status(
+                    channel.wc_store_url,
+                    channel.wc_consumer_key,
+                    channel.wc_consumer_secret,
+                    external_order_id,
+                    "cancelled",
+                )
+                logger.info(f"WooCommerce order {external_order_id} marked cancelled after drop deletion")
+        except Exception:
+            logger.exception(f"WooCommerce cancel sync failed for order {external_order_id} — drop is deleted locally")
+
     return {"deleted": True, "drop_id": drop_id}
