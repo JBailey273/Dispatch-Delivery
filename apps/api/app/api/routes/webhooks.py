@@ -289,6 +289,7 @@ class JsIngestItem(BaseModel):
 
 class JsIngestExternalOrder(BaseModel):
     id: str
+    number: int | None = None
     placed_at: str | None = None
     url: str | None = None
 
@@ -424,20 +425,21 @@ def js_ingest_order(
         db.commit()
         return {"status": "ignored", "reason": "no matching SKUs", "skipped_skus": skipped_skus}
 
+    wc_order_number = int(payload.get("number") or payload.get("id") or 0) or None
     drop = Drop(
         tenant_id=tenant_id,
         location_id=location.id,
         customer_id=customer.id,
         address_id=address.id,
-        order_number=payload.external_order.number or None,
+        order_number=wc_order_number,
         qd_number=None,
         external_order_id=external_order_id,
         source="woocommerce",
-        delivery_method=payload.delivery_method,
+        delivery_method=delivery_method,
         is_priority=False,
         scheduled_date=None,
         scheduled_window=None,
-        notes=payload.drop.notes or None,
+        notes=notes,
         drop_photos=[],
     )
     db.add(drop)
