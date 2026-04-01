@@ -220,12 +220,14 @@ async def woocommerce_webhook(
     notes = customer_note.strip() or None
 
     # Create drop — unscheduled, dispatcher will assign date/window
+    wc_order_number = int(payload.get("number") or payload.get("id") or 0) or None
     drop = Drop(
         tenant_id=tenant_id,
         location_id=location.id,
         customer_id=customer.id,
         address_id=address.id,
-        order_number=_next_order_number(db, tenant_id),
+        order_number=wc_order_number,
+        qd_number=None,
         external_order_id=external_order_id,
         source="woocommerce",
         delivery_method=delivery_method,
@@ -263,10 +265,11 @@ async def woocommerce_webhook(
     logger.info(f"woocommerce_webhook: order {external_order_id} → drop {drop.id} ({delivery_method})")
     return {"status": "ok", "drop_id": str(drop.id), "delivery_method": delivery_method}
 
-class JsIngestCustomer(BaseModel):
-    name: str
-    phone: str | None = None
-    email: str | None = None
+class JsIngestExternalOrder(BaseModel):
+    id: str
+    number: int | None = None
+    placed_at: str | None = None
+    url: str | None = None
 
 class JsIngestAddress(BaseModel):
     line1: str
@@ -426,7 +429,8 @@ def js_ingest_order(
         location_id=location.id,
         customer_id=customer.id,
         address_id=address.id,
-        order_number=_next_order_number(db, tenant_id),
+        order_number=payload.external_order.number or None,
+        qd_number=None,
         external_order_id=external_order_id,
         source="woocommerce",
         delivery_method=payload.delivery_method,
