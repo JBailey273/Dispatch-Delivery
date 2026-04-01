@@ -47,13 +47,10 @@ async def woocommerce_webhook(
     except Exception:
         return {"status": "ok", "ping": True}
 
-    # Only handle order topics
-    # Return 200 for WooCommerce ping/test requests
     topic = x_wc_webhook_topic or ""
     if not topic.startswith("order."):
         return {"status": "ignored", "topic": topic}
 
-    # Find the active WooCommerce channel
     channel = db.execute(
         select(Channel).where(
             Channel.channel_type == ChannelType.WOOCOMMERCE,
@@ -66,12 +63,10 @@ async def woocommerce_webhook(
 
     tenant_id = channel.tenant_id
 
-    # Only process paid statuses
     wc_status = payload.get("status", "")
     if wc_status not in ("processing", "completed"):
         return {"status": "ignored", "reason": f"order status is '{wc_status}'"}
 
-    # Skip if already ingested
     external_order_id = str(payload.get("id", ""))
     if not external_order_id:
         return {"status": "ignored", "reason": "no order id"}
@@ -85,7 +80,6 @@ async def woocommerce_webhook(
     if existing:
         return {"status": "already_ingested", "drop_id": str(existing.id)}
 
-    # Resolve location
     location = db.execute(
         select(Location).where(
             Location.tenant_id == tenant_id,
@@ -95,7 +89,6 @@ async def woocommerce_webhook(
     if not location:
         raise HTTPException(status_code=400, detail="No active location found")
 
-    # Determine delivery method from shipping lines
     delivery_method = "delivery"
     for line in payload.get("shipping_lines", []):
         method_id = line.get("method_id", "").lower()
@@ -104,12 +97,10 @@ async def woocommerce_webhook(
             delivery_method = "pickup"
             break
 
-    # Use billing address for pickup, shipping address for delivery
     billing  = payload.get("billing", {})
     shipping = payload.get("shipping", {})
     addr     = billing if delivery_method == "pickup" else shipping
 
-    # Upsert customer — match on phone first, then email
     phone = _normalize_phone(billing.get("phone", ""))
     email = billing.get("email", "").strip().lower() or None
 
@@ -142,7 +133,6 @@ async def woocommerce_webhook(
         db.add(customer)
         db.flush()
 
-    # Upsert address
     line1       = addr.get("address_1", "").strip()
     line2       = addr.get("address_2", "").strip() or None
     city        = addr.get("city", "").strip()
@@ -176,10 +166,9 @@ async def woocommerce_webhook(
     else:
         address.last_used_at = now_utc()
 
-    # Match line items to catalog SKUs
-    line_items     = payload.get("line_items", [])
-    matched_items  = []
-    skipped_skus   = []
+    line_items    = payload.get("line_items", [])
+    matched_items = []
+    skipped_skus  = []
 
     for item in line_items:
         sku = (item.get("sku") or "").strip()
@@ -209,17 +198,9 @@ async def woocommerce_webhook(
         db.commit()
         return {"status": "ignored", "reason": "no matching SKUs", "skipped_skus": skipped_skus}
 
-    # Build notes from matched items so dispatcher can see what was ordered
-    item_lines = [f"{qty}x {cat.name}" for cat, qty in matched_items]
-    items_note = "Items: " + ", ".join(item_lines)
-    customer_note = payload.get("customer_note", "") or ""
-    notes = "\n".join(filter(None, [customer_note, items_note]))
-
-    # Only keep customer note — items will be stored as Load rows
     customer_note = payload.get("customer_note", "") or ""
     notes = customer_note.strip() or None
 
-    # Create drop — unscheduled, dispatcher will assign date/window
     wc_order_number = int(payload.get("number") or payload.get("id") or 0) or None
     drop = Drop(
         tenant_id=tenant_id,
@@ -240,7 +221,6 @@ async def woocommerce_webhook(
     db.add(drop)
     db.flush()
 
-    # Create Load rows for each matched item
     for catalog_item, qty in matched_items:
         load = Load(
             tenant_id=tenant_id,
@@ -265,11 +245,12 @@ async def woocommerce_webhook(
     logger.info(f"woocommerce_webhook: order {external_order_id} → drop {drop.id} ({delivery_method})")
     return {"status": "ok", "drop_id": str(drop.id), "delivery_method": delivery_method}
 
-class JsIngestExternalOrder(BaseModel):
-    id: str
-    number: int | None = None
-    placed_at: str | None = None
-    url: str | None = None
+
+class JsIngestCustomer(BaseModel):
+    name: str
+    phone: str | None = None
+    email: str | None = None
+
 
 class JsIngestAddress(BaseModel):
     line1: str
@@ -279,19 +260,23 @@ class JsIngestAddress(BaseModel):
     postal_code: str
     country: str = 'US'
 
+
 class JsIngestDrop(BaseModel):
     address: JsIngestAddress
     notes: str = ''
 
+
 class JsIngestItem(BaseModel):
     sku: str
     qty: int
+
 
 class JsIngestExternalOrder(BaseModel):
     id: str
     number: int | None = None
     placed_at: str | None = None
     url: str | None = None
+
 
 class JsIngestIn(BaseModel):
     external_order: JsIngestExternalOrder
@@ -315,7 +300,6 @@ def js_ingest_order(
     tenant_id = channel.tenant_id
     external_order_id = payload.external_order.id
 
-    # Already ingested? Return success so JS loads iframe immediately
     existing = db.execute(
         select(Drop).where(
             Drop.tenant_id == tenant_id,
@@ -325,7 +309,6 @@ def js_ingest_order(
     if existing:
         return {"status": "already_ingested", "drop_id": str(existing.id)}
 
-    # Resolve location
     location = db.execute(
         select(Location).where(
             Location.tenant_id == tenant_id,
@@ -335,7 +318,6 @@ def js_ingest_order(
     if not location:
         raise HTTPException(status_code=400, detail="No active location found")
 
-    # Resolve or create customer
     raw_phone = payload.customer.phone or ''
     phone_e164 = _normalize_phone(raw_phone)
     email = (payload.customer.email or '').strip().lower() or None
@@ -365,7 +347,6 @@ def js_ingest_order(
         db.add(customer)
         db.flush()
 
-    # Resolve or create address
     addr = payload.drop.address
     line1 = addr.line1.strip().title()
     city  = addr.city.strip().title()
@@ -397,7 +378,6 @@ def js_ingest_order(
     else:
         address.last_used_at = now_utc()
 
-    # Match SKUs to catalog
     matched_items = []
     skipped_skus = []
     for item in payload.items:
@@ -425,21 +405,20 @@ def js_ingest_order(
         db.commit()
         return {"status": "ignored", "reason": "no matching SKUs", "skipped_skus": skipped_skus}
 
-    wc_order_number = int(payload.get("number") or payload.get("id") or 0) or None
     drop = Drop(
         tenant_id=tenant_id,
         location_id=location.id,
         customer_id=customer.id,
         address_id=address.id,
-        order_number=wc_order_number,
+        order_number=payload.external_order.number or None,
         qd_number=None,
         external_order_id=external_order_id,
         source="woocommerce",
-        delivery_method=delivery_method,
+        delivery_method=payload.delivery_method,
         is_priority=False,
         scheduled_date=None,
         scheduled_window=None,
-        notes=notes,
+        notes=payload.drop.notes or None,
         drop_photos=[],
     )
     db.add(drop)
