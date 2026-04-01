@@ -27,6 +27,13 @@ def next_order_number(db: Session, tenant_id) -> int:
     ).scalar_one()
     return current_max + 1
 
+def next_qd_number(db: Session, tenant_id) -> int:
+    """Generate the next sequential QD number for internal/quick drops."""
+    current_max = db.execute(
+        select(func.coalesce(func.max(Drop.qd_number), 1000)).where(Drop.tenant_id == tenant_id)
+    ).scalar_one()
+    return current_max + 1
+
 
 def check_priority_warning(db: Session, tenant_id, scheduled_date: date) -> str | None:
     """Returns a warning message if priority load count is high, else None."""
@@ -257,7 +264,8 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
             location_id=location.id,
             customer_id=customer.id,
             address_id=address.id,
-            order_number=next_order_number(db, user.tenant_id),
+            order_number=None,
+            qd_number=next_qd_number(db, user.tenant_id),
             external_order_id=None,
             source="manual",
             is_priority=is_priority,
