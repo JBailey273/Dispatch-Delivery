@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { clearSession, getSession, Session } from './auth';
 import { LocationProvider, useLocation } from './location-context';
 
-function SidebarLink({ href, icon, children }: { href: string; icon: string; children: React.ReactNode }) {
+function SidebarLink({ href, children, icon }: { href: string; children: React.ReactNode; icon: React.ReactNode }) {
   const pathname = usePathname();
   const isActive = pathname === href || (href !== '/' && pathname.startsWith(href));
   return (
@@ -16,6 +16,38 @@ function SidebarLink({ href, icon, children }: { href: string; icon: string; chi
     </Link>
   );
 }
+
+const Icons = {
+  dashboard: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor"/><rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.5"/><rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.5"/><rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.5"/></svg>,
+  schedule: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M5 1V4M11 1V4M1 7h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+  quickdrop: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v7M5 6l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M2 11v1a2 2 0 002 2h8a2 2 0 002-2v-1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+  neworder: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.5"/><path d="M8 5v6M5 8h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+  customers: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="5" r="3" stroke="currentColor" strokeWidth="1.5"/><path d="M2 14c0-3.314 2.686-5 6-5s6 1.686 6 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+  allorders: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h8M2 12h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+  pickup: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="5" width="14" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><path d="M4 5V4a4 4 0 018 0v1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+  settings: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.5"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M3.05 12.95l1.06-1.06M11.89 4.11l1.06-1.06" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+  locations: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.5C5.515 1.5 3.5 3.515 3.5 6c0 3.75 4.5 8.5 4.5 8.5s4.5-4.75 4.5-8.5c0-2.485-2.015-4.5-4.5-4.5zm0 6a1.5 1.5 0 110-3 1.5 1.5 0 010 3z" fill="currentColor"/></svg>,
+  catalog: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="4" width="14" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><path d="M4 4V3a1 1 0 011-1h6a1 1 0 011 1v1" stroke="currentColor" strokeWidth="1.5"/></svg>,
+  users: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="6" cy="5" r="2.5" stroke="currentColor" strokeWidth="1.5"/><path d="M1 13c0-2.761 2.239-4 5-4s5 1.239 5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M11 7.5a2 2 0 100-4M15 13c0-2-1.5-3.5-4-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+  channels: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="3" cy="8" r="2" stroke="currentColor" strokeWidth="1.5"/><circle cx="13" cy="3" r="2" stroke="currentColor" strokeWidth="1.5"/><circle cx="13" cy="13" r="2" stroke="currentColor" strokeWidth="1.5"/><path d="M5 7.5l6-3.5M5 8.5l6 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+  billing: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M1 7h14" stroke="currentColor" strokeWidth="1.5"/><path d="M4 10.5h2M10 10.5h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+  loads: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1 11l4-8 3 5 2-3 5 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  signout: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
+  sun: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>,
+  moon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>,
+  pin: <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 1.5C5.515 1.5 3.5 3.515 3.5 6c0 3.75 4.5 8.5 4.5 8.5s4.5-4.75 4.5-8.5c0-2.485-2.015-4.5-4.5-4.5zm0 6a1.5 1.5 0 110-3 1.5 1.5 0 010 3z" fill="currentColor"/></svg>,
+  chevron: <svg width="10" height="10" viewBox="0 0 16 16" fill="none" style={{ opacity: 0.4, marginLeft: 'auto' }}><path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  check: <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+};
+
+const LogoMark = () => (
+  <svg width="20" height="20" viewBox="0 0 22 22" fill="none">
+    <circle cx="4" cy="15" r="2.5" fill="white"/>
+    <circle cx="11" cy="7" r="2.5" fill="white"/>
+    <circle cx="18" cy="12" r="2.5" fill="white"/>
+    <path d="M6 14L9.5 8.5M13 8L16 11.5" stroke="white" strokeWidth="1.8" strokeLinecap="round"/>
+  </svg>
+);
 
 function LocationSwitcher() {
   const { locations, activeLocation, setActiveLocation } = useLocation();
@@ -34,9 +66,7 @@ function LocationSwitcher() {
     if (!activeLocation) return null;
     return (
       <div className="nav-location-static">
-        <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
-          <path d="M8 1.5C5.515 1.5 3.5 3.515 3.5 6c0 3.75 4.5 8.5 4.5 8.5s4.5-4.75 4.5-8.5c0-2.485-2.015-4.5-4.5-4.5zm0 6a1.5 1.5 0 110-3 1.5 1.5 0 010 3z" fill="currentColor"/>
-        </svg>
+        {Icons.pin}
         {activeLocation.name}
       </div>
     );
@@ -45,16 +75,12 @@ function LocationSwitcher() {
   return (
     <div className="nav-location-switcher" ref={ref}>
       <button className="nav-location-btn" onClick={() => setOpen(o => !o)}>
-        <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
-          <path d="M8 1.5C5.515 1.5 3.5 3.515 3.5 6c0 3.75 4.5 8.5 4.5 8.5s4.5-4.75 4.5-8.5c0-2.485-2.015-4.5-4.5-4.5zm0 6a1.5 1.5 0 110-3 1.5 1.5 0 010 3z" fill="currentColor"/>
-        </svg>
+        {Icons.pin}
         <span>{activeLocation?.name ?? 'Select location'}</span>
-        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" style={{ opacity: 0.5, marginLeft: 'auto' }}>
-          <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
+        {Icons.chevron}
       </button>
       {open && (
-        <div className="nav-location-dropdown" role="listbox">
+        <div className="nav-location-dropdown">
           {locations.map(loc => (
             <button
               key={loc.id}
@@ -62,11 +88,7 @@ function LocationSwitcher() {
               onClick={() => { setActiveLocation(loc); setOpen(false); }}
             >
               {loc.name}
-              {activeLocation?.id === loc.id && (
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                  <path d="M3 8l4 4 6-7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              )}
+              {activeLocation?.id === loc.id && Icons.check}
             </button>
           ))}
         </div>
@@ -95,15 +117,7 @@ function ThemeToggle() {
 
   return (
     <button className="app-sidebar-footer-btn" onClick={toggle} title={dark ? 'Light mode' : 'Dark mode'}>
-      {dark ? (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-        </svg>
-      ) : (
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-        </svg>
-      )}
+      {dark ? Icons.sun : Icons.moon}
     </button>
   );
 }
@@ -112,73 +126,60 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
   const isAdmin = session.role === 'admin';
   const isDriver = session.role === 'driver';
   const router = useRouter();
-
   const initials = session.role.slice(0, 2).toUpperCase();
 
   return (
     <div className="app-shell">
       <aside className="app-sidebar">
-        {/* Brand */}
         <Link href={isDriver ? '/driver/loads' : '/ops-dashboard'} className="app-sidebar-brand">
-          <div className="app-sidebar-brand-icon">EM</div>
+          <div className="app-sidebar-brand-icon">
+            <LogoMark />
+          </div>
           <div className="app-sidebar-brand-text">
-            <span className="app-sidebar-brand-name">{session.tenant_name || 'East Meadow'}</span>
-            <span className="app-sidebar-brand-sub">Dispatch</span>
+            <span className="app-sidebar-brand-name">Loadout</span>
+            <span className="app-sidebar-brand-sub">Dispatch Platform</span>
           </div>
         </Link>
 
-        {/* Nav */}
         <nav className="app-sidebar-nav">
           {!isDriver && (
             <>
-              <SidebarLink href="/ops-dashboard" icon="⬡">Dashboard</SidebarLink>
-              <SidebarLink href="/dispatch-schedule" icon="📅">Schedule</SidebarLink>
-              <SidebarLink href="/new-drop" icon="⚡">Quick Drop</SidebarLink>
-              <SidebarLink href="/dispatch/new-order" icon="＋">New Order</SidebarLink>
-              <SidebarLink href="/customer-search" icon="👤">Customers</SidebarLink>
-              <SidebarLink href="/all-orders" icon="📋">All Orders</SidebarLink>
-              <SidebarLink href="/pickup" icon="🏪">Pickup Queue</SidebarLink>
+              <SidebarLink href="/ops-dashboard" icon={Icons.dashboard}>Dashboard</SidebarLink>
+              <SidebarLink href="/dispatch-schedule" icon={Icons.schedule}>Schedule</SidebarLink>
+              <SidebarLink href="/new-drop" icon={Icons.quickdrop}>Quick Drop</SidebarLink>
+              <SidebarLink href="/dispatch/new-order" icon={Icons.neworder}>New Order</SidebarLink>
+              <SidebarLink href="/customer-search" icon={Icons.customers}>Customers</SidebarLink>
+              <SidebarLink href="/all-orders" icon={Icons.allorders}>All Orders</SidebarLink>
+              <SidebarLink href="/pickup" icon={Icons.pickup}>Pickup Queue</SidebarLink>
             </>
           )}
-
           {isDriver && (
-            <SidebarLink href="/driver/loads" icon="🚚">My Loads</SidebarLink>
+            <SidebarLink href="/driver/loads" icon={Icons.loads}>My Loads</SidebarLink>
           )}
-
           {isAdmin && (
             <>
               <div className="app-sidebar-divider" />
               <div className="app-sidebar-section-label">Admin</div>
-              <SidebarLink href="/admin/tenant" icon="⚙">Settings</SidebarLink>
-              <SidebarLink href="/admin/locations" icon="📍">Locations</SidebarLink>
-              <SidebarLink href="/admin/catalog" icon="📦">Catalog</SidebarLink>
-              <SidebarLink href="/admin/users" icon="👥">Users</SidebarLink>
-              <SidebarLink href="/admin/channels" icon="🔗">Channels</SidebarLink>
-              <SidebarLink href="/admin/billing" icon="💳">Billing</SidebarLink>
+              <SidebarLink href="/admin/tenant" icon={Icons.settings}>Settings</SidebarLink>
+              <SidebarLink href="/admin/locations" icon={Icons.locations}>Locations</SidebarLink>
+              <SidebarLink href="/admin/catalog" icon={Icons.catalog}>Catalog</SidebarLink>
+              <SidebarLink href="/admin/users" icon={Icons.users}>Users</SidebarLink>
+              <SidebarLink href="/admin/channels" icon={Icons.channels}>Channels</SidebarLink>
+              <SidebarLink href="/admin/billing" icon={Icons.billing}>Billing</SidebarLink>
             </>
           )}
         </nav>
 
-        {/* Footer */}
         <div className="app-sidebar-footer">
           {!isDriver && <LocationSwitcher />}
-
           <div className="app-sidebar-user">
             <div className="app-sidebar-user-avatar">{initials}</div>
-            <div className="app-sidebar-user-info">
-              <div className="app-sidebar-user-role">{session.role}</div>
-            </div>
+            <div className="app-sidebar-user-role">{session.role}</div>
           </div>
-
           <div className="app-sidebar-footer-actions">
             <ThemeToggle />
-            <button
-              className="app-sidebar-signout"
-              onClick={() => { clearSession(); router.push('/login'); }}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
-              </svg>
+            <button className="app-sidebar-signout" onClick={() => { clearSession(); router.push('/login'); }}>
+              {Icons.signout}
               Sign out
             </button>
           </div>
