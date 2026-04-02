@@ -377,11 +377,22 @@ export default function NewOrderPage() {
   }, [addrZip, deliveryMethod, addrState]);
 
   const handleRoleChange = (role: string | null) => {
-    setWcRole(role); setIsContractor(role === 'contractor'); loadProducts(role);
-    setLineItems(prev => prev.map(l => {
-      const prod = products.find(p => p.id === l.product_id);
-      return prod ? { ...l, unit_price: priceForRole(prod, role) } : l;
-    }));
+    setWcRole(role);
+    setIsContractor(role === 'contractor');
+    // Load fresh products for this role, then reprice cart from the fresh data
+    setProductsLoading(true);
+    const params = role ? `?role=${role}` : '';
+    api(`/internal-orders/wc-products${params}`)
+      .then(data => {
+        const freshProducts: WcProduct[] = data.products || [];
+        setProducts(freshProducts);
+        setLineItems(prev => prev.map(l => {
+          const prod = freshProducts.find(p => p.id === l.product_id);
+          return prod ? { ...l, unit_price: priceForRole(prod, role) } : l;
+        }));
+      })
+      .catch(() => {})
+      .finally(() => setProductsLoading(false));
   };
 
   const addProduct = (product: WcProduct) => {
