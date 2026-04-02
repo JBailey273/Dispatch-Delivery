@@ -598,10 +598,14 @@ const dashStyles = `
     padding: 11px 16px;
     border-bottom: 1px solid var(--border-light);
   }
-  .dash-action-head--red { background: var(--red-50); }
-  .dash-action-head--amber { background: #fffbeb; }
-  .dash-action-head--blue { background: #eff6ff; }
-  .dash-action-head--green { background: var(--green-50); }
+  .dash-action-head--red { background: rgba(220,38,38,0.08); border-bottom: 1px solid rgba(220,38,38,0.12); }
+  .dash-action-head--red .dash-action-label { color: var(--red-600); }
+  .dash-action-head--amber { background: rgba(217,119,6,0.08); border-bottom: 1px solid rgba(217,119,6,0.12); }
+  .dash-action-head--amber .dash-action-label { color: var(--amber-700); }
+  .dash-action-head--blue { background: rgba(37,99,235,0.08); border-bottom: 1px solid rgba(37,99,235,0.10); }
+  .dash-action-head--blue .dash-action-label { color: var(--blue-600); }
+  .dash-action-head--green { background: rgba(74,112,82,0.08); border-bottom: 1px solid rgba(74,112,82,0.10); }
+  .dash-action-head--green .dash-action-label { color: var(--brand); }
   .dash-action-icon { font-size: 15px; flex-shrink: 0; }
   .dash-action-label {
     flex: 1;
