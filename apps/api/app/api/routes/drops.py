@@ -316,7 +316,7 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
 
     return {
         "drop_id": str(drop.id),
-        "order_ref": _build_order_ref(drop),
+        "order_ref": f"QD-{drop.qd_number}" if drop.qd_number else str(drop.order_number) if drop.order_number else str(drop.id)[:8].upper(),
         "order_number": drop.order_number,
         "qd_number": drop.qd_number,
         "load_ids": load_ids,
