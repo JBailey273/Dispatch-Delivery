@@ -201,6 +201,7 @@ async def woocommerce_webhook(
     customer_note = payload.get("customer_note", "") or ""
     notes = customer_note.strip() or None
 
+    logger.info(f"woocommerce_webhook: number={payload.get('number')!r} id={payload.get('id')!r}")
     wc_order_number = int(payload.get("number") or payload.get("id") or 0) or None
     drop = Drop(
         tenant_id=tenant_id,
