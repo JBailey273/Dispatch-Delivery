@@ -1228,17 +1228,17 @@ const styles = `
 .no-section { padding: 16px; }
 .no-section-head { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--gray-500); margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
 .no-lookup-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.no-spinner { width: 16px; height: 16px; border: 2px solid var(--gray-200); border-top-color: var(--green-500, #22c55e); border-radius: 50%; animation: no-spin 0.7s linear infinite; flex-shrink: 0; }
+.no-spinner { width: 16px; height: 16px; border: 2px solid var(--gray-200); border-top-color: var(--brand); border-radius: 50%; animation: no-spin 0.7s linear infinite; flex-shrink: 0; }
 @keyframes no-spin { to { transform: rotate(360deg); } }
 .no-lookup-miss { font-size: 12px; color: var(--gray-400); margin-bottom: 10px; }
-.no-found-banner { background: var(--green-50, #f0fdf4); border: 1.5px solid var(--green-200, #bbf7d0); border-radius: 9px; padding: 10px 12px; margin-bottom: 12px; }
+.no-found-banner { background: var(--blue-25); border: 1.5px solid var(--blue-100); border-radius: 9px; padding: 10px 12px; margin-bottom: 12px; }
 .no-found-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
 .no-found-name { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .no-found-meta { font-size: 12px; color: var(--gray-500); margin-bottom: 6px; }
 .no-role-pill { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 100px; white-space: nowrap; }
-.no-history { border-top: 1px solid var(--green-100, #dcfce7); padding-top: 8px; margin-top: 6px; }
+.no-history { border-top: 1px solid var(--border-light); padding-top: 8px; margin-top: 6px; }
 .no-history-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gray-400); margin-bottom: 6px; }
-.no-history-row { padding: 6px 0; border-bottom: 1px solid var(--green-100, #dcfce7); }
+.no-history-row { padding: 6px 0; border-bottom: 1px solid var(--border-light); }
 .no-history-row:last-child { border-bottom: none; }
 .no-history-info { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
 .no-history-num { font-size: 12px; font-weight: 600; }
@@ -1258,29 +1258,29 @@ const styles = `
 .no-field { display: flex; flex-direction: column; gap: 4px; flex: 1; }
 .no-field label { font-size: 12px; font-weight: 600; color: var(--gray-600, #4b5563); }
 .no-input { width: 100%; padding: 8px 10px; border: 1.5px solid var(--gray-200, #e5e7eb); border-radius: 7px; font-size: 14px; font-family: inherit; background: var(--gray-50, #f9fafb); transition: border-color 0.15s; box-sizing: border-box; }
-.no-input:focus { outline: none; border-color: var(--green-500, #22c55e); background: white; }
+.no-input:focus { outline: none; border-color: var(--brand); box-shadow: var(--shadow-blue); background: white; }
 .no-seg { display: flex; border: 1.5px solid var(--gray-200, #e5e7eb); border-radius: 8px; overflow: hidden; }
 .no-seg-btn { flex: 1; padding: 8px 6px; font-size: 12px; font-weight: 500; background: none; border: none; border-right: 1.5px solid var(--gray-200, #e5e7eb); cursor: pointer; color: var(--gray-600); transition: background 0.1s, color 0.1s; white-space: nowrap; }
 .no-seg-btn:last-child { border-right: none; }
-.no-seg-btn.active { background: var(--green-600, #16a34a); color: white; }
+.no-seg-btn.active { background: var(--brand); color: white; }
 .no-optins { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 2px; }
 .no-check-label { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
 .no-check-hint { font-size: 10px; color: var(--amber-600, #d97706); font-weight: 500; }
 .no-zone { font-size: 12px; font-weight: 500; padding: 6px 10px; border-radius: 6px; margin-top: 4px; }
 .no-zone-checking { background: var(--gray-100, #f3f4f6); color: var(--gray-500); }
-.no-zone-ok { background: #f0fdf4; color: #15803d; }
+.no-zone-ok { background: var(--blue-25); color: var(--blue-700); }
 .no-zone-err { background: #fef2f2; color: #dc2626; }
 .no-pickup-note { font-size: 13px; color: var(--gray-500); background: var(--gray-50); border-radius: 8px; padding: 10px 12px; }
 .no-pay-note { font-size: 13px; color: var(--gray-500); }
 .no-card-element { border: 1.5px solid var(--gray-200, #e5e7eb); border-radius: 8px; padding: 12px; background: var(--gray-50); margin-bottom: 4px; }
-.no-saved-card { display: flex; align-items: center; justify-content: space-between; background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
+.no-saved-card { display: flex; align-items: center; justify-content: space-between; background: var(--blue-25); border: 1.5px solid var(--blue-100); border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
 .no-saved-card-info { display: flex; align-items: center; gap: 10px; }
 .no-saved-card-label { font-size: 14px; font-weight: 600; }
 .no-saved-card-exp { font-size: 11px; color: var(--gray-400); }
-.no-saved-card-badge { font-size: 11px; font-weight: 600; color: #15803d; background: #dcfce7; padding: 2px 8px; border-radius: 100px; }
+.no-saved-card-badge { font-size: 11px; font-weight: 600; color: var(--blue-700); background: var(--blue-50); padding: 2px 8px; border-radius: 100px; }
 .no-product-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .no-product-btn { position: relative; display: flex; flex-direction: column; align-items: flex-start; padding: 10px 12px; background: var(--gray-50); border: 1.5px solid var(--gray-200); border-radius: 9px; cursor: pointer; text-align: left; gap: 2px; transition: border-color 0.15s, background 0.15s; }
-.no-product-btn:hover { border-color: var(--green-400, #4ade80); background: #f0fdf4; }
+.no-product-btn:hover { border-color: var(--blue-300
 .no-product-btn.in-cart { border-color: var(--green-500, #22c55e); background: #f0fdf4; }
 .no-product-name { font-size: 13px; font-weight: 600; color: var(--gray-800); }
 .no-product-price { font-size: 13px; color: var(--green-700, #15803d); font-weight: 600; }
