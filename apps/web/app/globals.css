@@ -83,12 +83,12 @@
   --sidebar-width: 220px;
   --sidebar-bg: #111111;
   --sidebar-border: rgba(255,255,255,0.07);
-  --sidebar-text: rgba(255,255,255,0.45);
-  --sidebar-text-hover: rgba(255,255,255,0.90);
+  --sidebar-text: rgba(255,255,255,0.70);
+  --sidebar-text-hover: #FFFFFF;
   --sidebar-text-active: #FFFFFF;
-  --sidebar-active-bg: rgba(255,255,255,0.10);
-  --sidebar-hover-bg: rgba(255,255,255,0.06);
-  --sidebar-section-label: rgba(255,255,255,0.25);
+  --sidebar-active-bg: var(--brand);
+  --sidebar-hover-bg: rgba(255,255,255,0.08);
+  --sidebar-section-label: rgba(255,255,255,0.30);
 
   /* Legacy — sidebar replaces top nav */
   --nav-height: 0px;
@@ -295,11 +295,10 @@ a { color: var(--brand); text-decoration-thickness: 1px; text-underline-offset: 
   background: var(--sidebar-hover-bg);
 }
 .app-sidebar-link.active {
-  color: var(--sidebar-text-active);
-  background: var(--sidebar-active-bg);
-  font-weight: 600;
+  color: #FFFFFF;
+  background: var(--brand);
+  font-weight: 700;
 }
-
 .app-sidebar-icon {
   font-size: 15px;
   width: 18px;
