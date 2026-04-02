@@ -25,12 +25,11 @@ function LocationSwitcher() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  // Single location — show static label, no dropdown
   if (locations.length <= 1) {
     if (!activeLocation) return null;
     return (
       <div className="nav-location-static">
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
           <path d="M8 1.5C5.515 1.5 3.5 3.515 3.5 6c0 3.75 4.5 8.5 4.5 8.5s4.5-4.75 4.5-8.5c0-2.485-2.015-4.5-4.5-4.5zm0 6a1.5 1.5 0 110-3 1.5 1.5 0 010 3z" fill="currentColor"/>
         </svg>
         {activeLocation.name}
@@ -46,15 +45,14 @@ function LocationSwitcher() {
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
           <path d="M8 1.5C5.515 1.5 3.5 3.515 3.5 6c0 3.75 4.5 8.5 4.5 8.5s4.5-4.75 4.5-8.5c0-2.485-2.015-4.5-4.5-4.5zm0 6a1.5 1.5 0 110-3 1.5 1.5 0 010 3z" fill="currentColor"/>
         </svg>
         <span>{activeLocation?.name ?? 'Select location'}</span>
-        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" style={{ opacity: 0.6 }}>
+        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" style={{ opacity: 0.5 }}>
           <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       </button>
-
       {open && (
         <div className="nav-location-dropdown" role="listbox">
           {locations.map(loc => (
@@ -79,6 +77,31 @@ function LocationSwitcher() {
   );
 }
 
+function ThemeToggle() {
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const isDark = saved ? saved === 'dark' : prefersDark;
+    setDark(isDark);
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  }, []);
+
+  const toggle = () => {
+    const next = !dark;
+    setDark(next);
+    document.documentElement.setAttribute('data-theme', next ? 'dark' : 'light');
+    localStorage.setItem('theme', next ? 'dark' : 'light');
+  };
+
+  return (
+    <button className="nav-theme-toggle" onClick={toggle} title={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
+      {dark ? '☀️' : '🌙'}
+    </button>
+  );
+}
+
 function ShellInner({ children, session }: { children: React.ReactNode; session: Session }) {
   const isAdmin = session.role === 'admin';
   const isDriver = session.role === 'driver';
@@ -88,8 +111,11 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
     <>
       <nav className="app-nav">
         <Link href={isDriver ? '/driver/loads' : '/ops-dashboard'} className="app-nav-brand">
-          <span className="app-nav-brand-icon">D</span>
-          {session.tenant_name || session.tenant_slug || 'Dispatch'}
+          <div className="app-nav-brand-icon">EM</div>
+          <div className="app-nav-brand-text">
+            <span className="app-nav-brand-name">{session.tenant_name || 'East Meadow'}</span>
+            <span className="app-nav-brand-sub">Dispatch</span>
+          </div>
         </Link>
 
         {!isDriver && (
@@ -123,6 +149,7 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
 
         <div className="app-nav-user">
           {!isDriver && <LocationSwitcher />}
+          <ThemeToggle />
           <span className="app-nav-role">{session.role}</span>
           <button className="btn btn-ghost btn-sm" onClick={() => { clearSession(); router.push('/login'); }}>
             Sign out
