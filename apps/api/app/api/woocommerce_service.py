@@ -1,7 +1,7 @@
-import base64
 import json
 import logging
 import urllib.error
+import urllib.parse
 import urllib.request
 
 logger = logging.getLogger("dispatch.woocommerce")
@@ -22,17 +22,17 @@ def sync_order_status(
         logger.warning("woocommerce_sync skipped — missing credentials or order id")
         return False
 
-    url = f"{wc_store_url.rstrip('/')}/wp-json/wc/v3/orders/{external_order_id}"
-    credentials = base64.b64encode(
-        f"{wc_consumer_key}:{wc_consumer_secret}".encode("utf-8")
-    ).decode("utf-8")
+    url = (
+        f"{wc_store_url.rstrip('/')}/wp-json/wc/v3/orders/{external_order_id}"
+        f"?consumer_key={urllib.parse.quote(wc_consumer_key)}"
+        f"&consumer_secret={urllib.parse.quote(wc_consumer_secret)}"
+    )
 
     payload = json.dumps({"status": wc_status}).encode("utf-8")
     req = urllib.request.Request(
         url,
         data=payload,
         headers={
-            "Authorization": f"Basic {credentials}",
             "Content-Type": "application/json",
             "User-Agent": "dispatch-app/1.0",
         },
