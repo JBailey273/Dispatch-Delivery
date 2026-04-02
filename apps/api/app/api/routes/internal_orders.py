@@ -490,11 +490,13 @@ def create_internal_order(
         if not wc_customer_id:
             wc_role_to_set = "contractor" if payload.is_contractor else (payload.wc_role or "customer")
             try:
+                import secrets
                 new_wc_customer = _wc_request("customers", method="POST", payload={
                     "first_name": payload.first_name,
                     "last_name": payload.last_name,
                     "email": payload.email or f"noemail+{payload.phone.replace('+','').replace(' ','')}@internal.emgc",
                     "username": (payload.email or f"{payload.first_name.lower()}{payload.last_name.lower()}{payload.phone[-4:]}").replace(" ", ""),
+                    "password": secrets.token_urlsafe(16),
                     "billing": {
                         "first_name": payload.first_name,
                         "last_name": payload.last_name,
