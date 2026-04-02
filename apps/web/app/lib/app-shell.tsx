@@ -6,10 +6,15 @@ import { useEffect, useRef, useState } from 'react';
 import { clearSession, getSession, Session } from './auth';
 import { LocationProvider, useLocation } from './location-context';
 
-function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
+function SidebarLink({ href, icon, children }: { href: string; icon: string; children: React.ReactNode }) {
   const pathname = usePathname();
   const isActive = pathname === href || (href !== '/' && pathname.startsWith(href));
-  return <Link href={href} className={`app-nav-link${isActive ? ' active' : ''}`}>{children}</Link>;
+  return (
+    <Link href={href} className={`app-sidebar-link${isActive ? ' active' : ''}`}>
+      <span className="app-sidebar-icon">{icon}</span>
+      {children}
+    </Link>
+  );
 }
 
 function LocationSwitcher() {
@@ -39,17 +44,12 @@ function LocationSwitcher() {
 
   return (
     <div className="nav-location-switcher" ref={ref}>
-      <button
-        className="nav-location-btn"
-        onClick={() => setOpen(o => !o)}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-      >
+      <button className="nav-location-btn" onClick={() => setOpen(o => !o)}>
         <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
           <path d="M8 1.5C5.515 1.5 3.5 3.515 3.5 6c0 3.75 4.5 8.5 4.5 8.5s4.5-4.75 4.5-8.5c0-2.485-2.015-4.5-4.5-4.5zm0 6a1.5 1.5 0 110-3 1.5 1.5 0 010 3z" fill="currentColor"/>
         </svg>
         <span>{activeLocation?.name ?? 'Select location'}</span>
-        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" style={{ opacity: 0.5 }}>
+        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" style={{ opacity: 0.5, marginLeft: 'auto' }}>
           <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       </button>
@@ -59,8 +59,6 @@ function LocationSwitcher() {
             <button
               key={loc.id}
               className={`nav-location-option${activeLocation?.id === loc.id ? ' active' : ''}`}
-              role="option"
-              aria-selected={activeLocation?.id === loc.id}
               onClick={() => { setActiveLocation(loc); setOpen(false); }}
             >
               {loc.name}
@@ -96,8 +94,16 @@ function ThemeToggle() {
   };
 
   return (
-    <button className="nav-theme-toggle" onClick={toggle} title={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
-      {dark ? '☀️' : '🌙'}
+    <button className="app-sidebar-footer-btn" onClick={toggle} title={dark ? 'Light mode' : 'Dark mode'}>
+      {dark ? (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+      ) : (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      )}
     </button>
   );
 }
@@ -107,57 +113,82 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
   const isDriver = session.role === 'driver';
   const router = useRouter();
 
+  const initials = session.role.slice(0, 2).toUpperCase();
+
   return (
-    <>
-      <nav className="app-nav">
-        <Link href={isDriver ? '/driver/loads' : '/ops-dashboard'} className="app-nav-brand">
-          <div className="app-nav-brand-icon">EM</div>
-          <div className="app-nav-brand-text">
-            <span className="app-nav-brand-name">{session.tenant_name || 'East Meadow'}</span>
-            <span className="app-nav-brand-sub">Dispatch</span>
+    <div className="app-shell">
+      <aside className="app-sidebar">
+        {/* Brand */}
+        <Link href={isDriver ? '/driver/loads' : '/ops-dashboard'} className="app-sidebar-brand">
+          <div className="app-sidebar-brand-icon">EM</div>
+          <div className="app-sidebar-brand-text">
+            <span className="app-sidebar-brand-name">{session.tenant_name || 'East Meadow'}</span>
+            <span className="app-sidebar-brand-sub">Dispatch</span>
           </div>
         </Link>
 
-        {!isDriver && (
-          <>
-            <NavLink href="/ops-dashboard">Dashboard</NavLink>
-            <NavLink href="/dispatch-schedule">Schedule</NavLink>
-            <NavLink href="/new-drop">Quick Drop</NavLink>
-            <NavLink href="/dispatch/new-order">New Order</NavLink>
-            <NavLink href="/customer-search">Customers</NavLink>
-            <NavLink href="/all-orders">All Orders</NavLink>
-            <NavLink href="/pickup">Pickup Queue</NavLink>
-          </>
-        )}
-        {isDriver && (
-          <NavLink href="/driver/loads">My Loads</NavLink>
-        )}
+        {/* Nav */}
+        <nav className="app-sidebar-nav">
+          {!isDriver && (
+            <>
+              <SidebarLink href="/ops-dashboard" icon="⬡">Dashboard</SidebarLink>
+              <SidebarLink href="/dispatch-schedule" icon="📅">Schedule</SidebarLink>
+              <SidebarLink href="/new-drop" icon="⚡">Quick Drop</SidebarLink>
+              <SidebarLink href="/dispatch/new-order" icon="＋">New Order</SidebarLink>
+              <SidebarLink href="/customer-search" icon="👤">Customers</SidebarLink>
+              <SidebarLink href="/all-orders" icon="📋">All Orders</SidebarLink>
+              <SidebarLink href="/pickup" icon="🏪">Pickup Queue</SidebarLink>
+            </>
+          )}
 
-        {isAdmin && (
-          <>
-            <div className="app-nav-sep" />
-            <NavLink href="/admin/tenant">Settings</NavLink>
-            <NavLink href="/admin/locations">Locations</NavLink>
-            <NavLink href="/admin/catalog">Catalog</NavLink>
-            <NavLink href="/admin/users">Users</NavLink>
-            <NavLink href="/admin/channels">Channels</NavLink>
-            <NavLink href="/admin/billing">Billing</NavLink>
-          </>
-        )}
+          {isDriver && (
+            <SidebarLink href="/driver/loads" icon="🚚">My Loads</SidebarLink>
+          )}
 
-        <div className="app-nav-spacer" />
+          {isAdmin && (
+            <>
+              <div className="app-sidebar-divider" />
+              <div className="app-sidebar-section-label">Admin</div>
+              <SidebarLink href="/admin/tenant" icon="⚙">Settings</SidebarLink>
+              <SidebarLink href="/admin/locations" icon="📍">Locations</SidebarLink>
+              <SidebarLink href="/admin/catalog" icon="📦">Catalog</SidebarLink>
+              <SidebarLink href="/admin/users" icon="👥">Users</SidebarLink>
+              <SidebarLink href="/admin/channels" icon="🔗">Channels</SidebarLink>
+              <SidebarLink href="/admin/billing" icon="💳">Billing</SidebarLink>
+            </>
+          )}
+        </nav>
 
-        <div className="app-nav-user">
+        {/* Footer */}
+        <div className="app-sidebar-footer">
           {!isDriver && <LocationSwitcher />}
-          <ThemeToggle />
-          <span className="app-nav-role">{session.role}</span>
-          <button className="btn btn-ghost btn-sm" onClick={() => { clearSession(); router.push('/login'); }}>
-            Sign out
-          </button>
+
+          <div className="app-sidebar-user">
+            <div className="app-sidebar-user-avatar">{initials}</div>
+            <div className="app-sidebar-user-info">
+              <div className="app-sidebar-user-role">{session.role}</div>
+            </div>
+          </div>
+
+          <div className="app-sidebar-footer-actions">
+            <ThemeToggle />
+            <button
+              className="app-sidebar-signout"
+              onClick={() => { clearSession(); router.push('/login'); }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+              Sign out
+            </button>
+          </div>
         </div>
-      </nav>
-      {children}
-    </>
+      </aside>
+
+      <main className="app-content">
+        {children}
+      </main>
+    </div>
   );
 }
 
