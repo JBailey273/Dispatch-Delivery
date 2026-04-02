@@ -426,7 +426,7 @@ function NewDropPage() {
         <div className="nd-top">
           <div>
             <h1>Quick Drop</h1>
-            <p style={{ color: 'var(--gray-500)', marginTop: 2 }}>For dispatch outside our ordering. Search by name or phone {'\u2014'} pick any available delivery date</p>
+            <p style={{ color: 'var(--gray-500)', marginTop: 2 }}>For dispatch outside our payment systems. Search by name or phone {'\u2014'} pick any available delivery date</p>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={() => router.push('/dispatch-schedule')}>Cancel</button>
         </div>
