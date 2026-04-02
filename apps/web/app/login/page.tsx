@@ -46,10 +46,16 @@ export default function LoginPage() {
       <div className="login-page">
         <div className="login-card card">
           <div className="login-header">
-            <div className="login-logo">D</div>
-            <h1 className="login-title">Dispatch & Delivery</h1>
-            <p className="login-subtitle">Sign in to your account</p>
+            <div className="login-logo">
+            <svg width="24" height="24" viewBox="0 0 22 22" fill="none">
+              <circle cx="4" cy="15" r="2.5" fill="white"/>
+              <circle cx="11" cy="7" r="2.5" fill="white"/>
+              <circle cx="18" cy="12" r="2.5" fill="white"/>
+              <path d="M6 14L9.5 8.5M13 8L16 11.5" stroke="white" strokeWidth="1.8" strokeLinecap="round"/>
+            </svg>
           </div>
+          <h1 className="login-title">Loadout</h1>
+          <p className="login-subtitle">Sign in to your account</p>
 
           <form className="login-form" onSubmit={onSubmit}>
             {error && <div className="alert alert-error"><span>⚠</span>{error}</div>}
@@ -115,27 +121,30 @@ const loginStyles = `
     align-items: center;
     justify-content: center;
     padding: 24px;
-    background: var(--gray-900);
+    background: #0C0F14;
     position: relative;
     overflow: hidden;
   }
   .login-page::before {
     content: '';
     position: absolute;
-    top: -40%;
-    right: -20%;
-    width: 70%;
-    height: 120%;
-    background: radial-gradient(ellipse, rgba(26,158,58,0.12) 0%, transparent 70%);
+    top: -30%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(ellipse, rgba(37,99,235,0.08) 0%, transparent 70%);
     pointer-events: none;
   }
   .login-card {
     width: 100%;
-    max-width: 420px;
+    max-width: 400px;
     position: relative;
     z-index: 1;
     border-radius: var(--radius-2xl);
-    box-shadow: var(--shadow-xl);
+    box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+    background: #161B24;
+    border: 1px solid rgba(255,255,255,0.08);
   }
   .login-header {
     text-align: center;
@@ -144,28 +153,24 @@ const loginStyles = `
   .login-logo {
     width: 52px;
     height: 52px;
-    border-radius: var(--radius-lg);
-    background: var(--green-600);
-    color: white;
-    font-family: var(--font-heading);
-    font-size: 24px;
-    font-weight: 800;
+    border-radius: 13px;
+    background: #2563EB;
     display: flex;
     align-items: center;
     justify-content: center;
     margin: 0 auto 18px;
-    box-shadow: 0 4px 12px rgba(26,158,58,0.35);
+    box-shadow: 0 4px 16px rgba(37,99,235,0.40);
   }
   .login-title {
     font-family: var(--font-heading);
-    font-size: 24px;
+    font-size: 26px;
     font-weight: 800;
     letter-spacing: -0.03em;
-    color: var(--gray-900);
+    color: #FFFFFF;
   }
   .login-subtitle {
-    font-size: 15px;
-    color: var(--gray-500);
+    font-size: 14px;
+    color: rgba(255,255,255,0.40);
     margin-top: 6px;
   }
   .login-form {
@@ -174,17 +179,34 @@ const loginStyles = `
     flex-direction: column;
     gap: 16px;
   }
+  .login-form .form-label {
+    color: rgba(255,255,255,0.50);
+  }
+  .login-form input {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.10);
+    color: #FFFFFF;
+    border-radius: var(--radius-md);
+  }
+  .login-form input::placeholder {
+    color: rgba(255,255,255,0.20);
+  }
+  .login-form input:focus {
+    border-color: #2563EB;
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.20);
+    background: rgba(255,255,255,0.07);
+  }
   .login-footer {
     padding: 16px 32px 28px;
-    border-top: 1px solid var(--border-light);
+    border-top: 1px solid rgba(255,255,255,0.07);
   }
   .login-dev-label {
     font-family: var(--font-heading);
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--gray-400);
+    letter-spacing: 0.08em;
+    color: rgba(255,255,255,0.22);
     margin-bottom: 10px;
     text-align: center;
   }
@@ -197,35 +219,33 @@ const loginStyles = `
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 10px 14px;
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-lg);
-    background: var(--surface);
+    padding: 9px 12px;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: var(--radius-md);
+    background: rgba(255,255,255,0.03);
     cursor: pointer;
-    transition: all 0.18s var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+    transition: all 0.12s;
     font-family: inherit;
   }
   .login-dev-btn:hover {
-    background: var(--green-25);
-    border-color: var(--green-200);
-    transform: translateY(-1px);
-    box-shadow: var(--shadow-sm);
+    background: rgba(255,255,255,0.07);
+    border-color: rgba(255,255,255,0.12);
   }
   .login-dev-role {
     font-family: var(--font-heading);
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--green-700);
-    background: var(--green-50);
-    padding: 3px 10px;
-    border-radius: 12px;
-    min-width: 76px;
+    letter-spacing: 0.06em;
+    color: #2563EB;
+    background: rgba(37,99,235,0.12);
+    padding: 3px 8px;
+    border-radius: 6px;
+    min-width: 72px;
     text-align: center;
   }
   .login-dev-email {
-    font-size: 13px;
-    color: var(--gray-600);
+    font-size: 12px;
+    color: rgba(255,255,255,0.35);
   }
 `;
