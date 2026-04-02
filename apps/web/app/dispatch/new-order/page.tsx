@@ -781,12 +781,10 @@ export default function NewOrderPage() {
       <style>{styles}</style>
       <div className="page no-page">
 
-        <div className="no-header">
+      <div className="no-header">
           <div>
             <h1>New Order</h1>
-            <p style={{ color: 'var(--gray-500)', marginTop: 2, fontSize: 13 }}>
-              Phone order · Walk-in · WooCommerce
-            </p>
+            <p className="no-header-sub">Phone order · Walk-in · WooCommerce</p>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={() => router.back()}>← Back</button>
         </div>
