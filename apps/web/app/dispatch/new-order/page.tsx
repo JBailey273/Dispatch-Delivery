@@ -241,6 +241,7 @@ export default function NewOrderPage() {
   const [taxRate, setTaxRate] = useState<number>(0);
   const [taxLabel, setTaxLabel] = useState<string>('Sales Tax');
   const [taxLoading, setTaxLoading] = useState(false);
+  const [taxExempt, setTaxExempt] = useState(false);
 
   // Payment
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'payment_link' | 'invoice'>('cash');
@@ -416,7 +417,7 @@ export default function NewOrderPage() {
     : [];
   const deliveryFee = qualifyingDeliveryItems.length > 0 && shipping?.found
     ? parseFloat(shipping.fee || '0') * qualifyingDeliveryItems.length : 0;
-  const taxAmount = (subtotal + deliveryFee) * taxRate;
+  const taxAmount = taxExempt ? 0 : subtotal * taxRate;
   const total = subtotal + deliveryFee + taxAmount;
   const totalCents = Math.round(total * 100);
   const underMinItems = deliveryMethod === 'delivery' ? lineItems.filter(l => l.quantity < 3) : [];
@@ -887,7 +888,7 @@ export default function NewOrderPage() {
                 </div>
                 <div className="no-field">
                   <label>Pricing Tier</label>
-                  <div className="no-seg">
+                 <div className="no-seg">
                     {[
                       { value: null, label: 'Retail' },
                       { value: 'contractor', label: '🏗 Contractor' },
@@ -902,6 +903,10 @@ export default function NewOrderPage() {
                       </button>
                     ))}
                   </div>
+                  <label className="no-check-label" style={{ marginTop: 4 }}>
+                    <input type="checkbox" checked={taxExempt} onChange={e => setTaxExempt(e.target.checked)} />
+                    <span>Tax Exempt</span>
+                  </label>
                 </div>
                 <div className="no-optins">
                   <label className="no-check-label">
