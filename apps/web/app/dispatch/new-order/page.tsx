@@ -729,9 +729,9 @@ export default function NewOrderPage() {
               <button className="btn btn-secondary" onClick={printReceipt}>
                 🖨 Print Receipt
               </button>
-              <button className="btn btn-ghost" onClick={() => router.push('/dispatch-schedule')}>
-                View Schedule
-              </button>
+              <button className="btn btn-secondary" onClick={() => router.push(deliveryMethod === 'pickup' ? '/pickup' : '/dispatch-schedule')}>
+            {deliveryMethod === 'pickup' ? 'View Pickup Queue' : 'View Schedule'}
+          </button>
             </div>
           </div>
         </div>
