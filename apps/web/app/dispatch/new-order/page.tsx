@@ -1221,8 +1221,9 @@ export default function NewOrderPage() {
 
 const styles = `
 .no-page { max-width: 1120px; margin: 0 auto; padding: 20px 16px 80px; }
-.no-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; gap: 12px; }
-.no-header h1 { margin: 0; font-size: 22px; }
+.no-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 28px; gap: 16px; }
+.no-header h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.03em; }
+.no-header-sub { font-size: 14px; color: var(--gray-500); margin-top: 3px; }
 .no-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 @media (max-width: 800px) { .no-layout { grid-template-columns: 1fr; } }
 .no-col { display: flex; flex-direction: column; gap: 16px; }
