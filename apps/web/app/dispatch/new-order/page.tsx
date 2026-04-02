@@ -387,7 +387,8 @@ export default function NewOrderPage() {
   const addProduct = (product: WcProduct) => {
     setLineItems(prev => {
       if (prev.find(l => l.product_id === product.id)) return prev;
-      return [...prev, { product_id: product.id, name: product.name, quantity: 3, unit_price: priceForRole(product, wcRole) }];
+      const defaultQty = deliveryMethod === 'pickup' ? 1 : 3;
+      return [...prev, { product_id: product.id, name: product.name, quantity: defaultQty, unit_price: priceForRole(product, wcRole) }];
     });
   };
 
