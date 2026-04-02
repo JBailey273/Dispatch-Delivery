@@ -384,7 +384,7 @@ function NewDropPage() {
           <div className="nd-success-detail">
             <div className="nd-success-row">
               <span>Order</span>
-              <span>{result.order_number ? result.order_ref || '—'}</span>
+              <span>{result.order_ref || '—'}</span>
             </div>
             <div className="nd-success-row">
               <span>Customer</span>
