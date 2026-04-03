@@ -785,7 +785,7 @@ function NewDropPage() {
                 })}
                 <div className="nd-load-summary">
                   <span>Loads required</span>
-                  <span style={{ fontWeight: 800, fontSize: 18, color: 'var(--green-700)' }}>{requiredLoads}</span>
+                  <span style={{ fontWeight: 800, fontSize: 18, color: 'var(--brand)' }}>{requiredLoads}</span>
                 </div>
               </div>
             )}
@@ -811,8 +811,8 @@ function NewDropPage() {
                     style={{
                       display: 'flex', alignItems: 'center', gap: 10,
                       padding: '12px 14px', borderRadius: 10, cursor: 'pointer',
-                      border: `2px solid ${selectedDriverId === '' ? 'var(--green-600)' : 'var(--gray-200)'}`,
-                      background: selectedDriverId === '' ? 'var(--green-50)' : '#fff',
+                      border: `2px solid ${selectedDriverId === '' ? 'var(--brand)' : 'var(--gray-200)'}`,
+                      background: selectedDriverId === '' ? 'var(--blue-25)' : 'var(--surface)',
                       textAlign: 'left', width: '100%',
                     }}
                   >
@@ -821,7 +821,7 @@ function NewDropPage() {
                       <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--gray-800)' }}>Unassigned</div>
                       <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>Assign later in the scheduler</div>
                     </div>
-                    {selectedDriverId === '' && <span style={{ marginLeft: 'auto', color: 'var(--green-600)', fontWeight: 700 }}>✓</span>}
+                    {selectedDriverId === '' && <span style={{ marginLeft: 'auto', color: 'var(--brand)', fontWeight: 700 }}>✓</span>}
                   </button>
                   {drivers.map(d => (
                     <button
@@ -831,8 +831,8 @@ function NewDropPage() {
                       style={{
                         display: 'flex', alignItems: 'center', gap: 10,
                         padding: '12px 14px', borderRadius: 10, cursor: 'pointer',
-                        border: `2px solid ${selectedDriverId === d.id ? 'var(--green-600)' : 'var(--gray-200)'}`,
-                        background: selectedDriverId === d.id ? 'var(--green-50)' : '#fff',
+                        border: `2px solid ${selectedDriverId === d.id ? 'var(--brand)' : 'var(--gray-200)'}`,
+                        background: selectedDriverId === d.id ? 'var(--blue-25)' : 'var(--surface)',
                         textAlign: 'left', width: '100%',
                       }}
                     >
@@ -846,7 +846,7 @@ function NewDropPage() {
                         {(d.name || d.email).charAt(0).toUpperCase()}
                       </div>
                       <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--gray-800)' }}>{d.name}</div>
-                      {selectedDriverId === d.id && <span style={{ marginLeft: 'auto', color: 'var(--green-600)', fontWeight: 700 }}>✓</span>}
+                      {selectedDriverId === d.id && <span style={{ marginLeft: 'auto', color: 'var(--brand)', fontWeight: 700 }}>✓</span>}
                     </button>
                   ))}
                 </div>
@@ -887,20 +887,20 @@ const pageStyles = `
   .nd-type-toggle { display: flex; gap: 6px; }
   .nd-type-btn { padding: 8px 14px; border: 2px solid var(--border); border-radius: var(--radius-md); background: var(--surface); cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600; color: var(--gray-600); transition: all 0.15s; }
   .nd-type-btn:hover { border-color: var(--gray-300); }
-  .nd-type-btn.active { border-color: var(--green-400); background: var(--green-50); color: var(--green-700); }
+  .nd-type-btn.active { border-color: var(--brand); background: var(--blue-25); color: var(--brand); }
 
   .nd-results { border: 1px solid var(--border-light); border-radius: var(--radius-md); overflow: hidden; margin-top: 12px; }
   .nd-result-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; cursor: pointer; transition: background 0.12s; border-bottom: 1px solid var(--border-light); }
   .nd-result-row:last-child { border-bottom: none; }
-  .nd-result-row:hover { background: var(--green-50); }
+  .nd-result-row:hover { background: var(--blue-25); }
 
-  .nd-returning { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--green-50); border: 1px solid var(--green-200); border-radius: var(--radius-md); }
-  .nd-returning-avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--green-600); color: white; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px; flex-shrink: 0; }
+  .nd-returning { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--blue-25); border: 1px solid var(--blue-100); border-radius: var(--radius-md); margin-bottom: 12px; }
+  .nd-returning-avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--brand); color: white; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px; flex-shrink: 0; }
   .nd-returning-avatar.commercial { background: var(--blue-600, #2563eb); font-size: 18px; font-weight: normal; }
   @media (max-width: 500px) { .nd-returning { flex-wrap: wrap; } }
 
   .nd-priority-card { margin-bottom: 16px; transition: all 0.2s; }
-  .nd-priority-card.priority-active { border-color: var(--blue-300, #93c5fd); background: var(--blue-50, #eff6ff); }
+  .nd-priority-card.priority-active { border-color: var(--blue-300, #93c5fd); background: var(--blue-25); }
   .nd-priority-inner { display: flex; align-items: center; gap: 14px; padding: 16px 20px; }
   .nd-priority-left { display: flex; align-items: center; gap: 12px; flex: 1; }
   .nd-priority-icon { font-size: 24px; flex-shrink: 0; }
@@ -918,15 +918,15 @@ const pageStyles = `
   .nd-priority-switch input:checked + .nd-priority-slider { background: var(--blue-500, #3b82f6); }
   .nd-priority-switch input:checked + .nd-priority-slider:before { transform: translateX(22px); }
 
-  .nd-priority-schedule-note { margin-top: 16px; padding: 12px 16px; background: var(--blue-50, #eff6ff); border: 1px solid var(--blue-200, #bfdbfe); border-radius: var(--radius-md); font-size: 13px; color: var(--blue-700, #1d4ed8); line-height: 1.5; }
-  .pill-blue { background: var(--blue-50, #eff6ff); color: var(--blue-700, #1d4ed8); }
+  .nd-priority-schedule-note { margin-top: 16px; padding: 12px 16px; background: var(--blue-25); border: 1px solid var(--blue-100); border-radius: var(--radius-md); font-size: 13px; color: var(--blue-700, #1d4ed8); line-height: 1.5; }
+  .pill-blue { background: var(--blue-25); color: var(--blue-700, #1d4ed8); }
 
   .nd-addr-list { display: flex; flex-direction: column; gap: 8px; }
   .nd-addr-opt { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 2px solid var(--border-light); border-radius: var(--radius-md); cursor: pointer; transition: all 0.15s; }
   .nd-addr-opt:hover { border-color: var(--gray-300); }
-  .nd-addr-opt.sel { border-color: var(--green-400); background: var(--green-50); }
+  .nd-addr-opt.sel { border-color: var(--brand); background: var(--blue-25); }
   .nd-addr-radio { font-size: 18px; color: var(--gray-300); flex-shrink: 0; }
-  .nd-addr-opt.sel .nd-addr-radio { color: var(--green-600); }
+  .nd-addr-opt.sel .nd-addr-radio { color: var(--brand); }
 
   .nd-new-addr { padding: 16px; background: var(--gray-50); border: 1px solid var(--border-light); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: 10px; }
   .nd-addr-row-3 { display: grid; grid-template-columns: 1fr 80px 100px; gap: 10px; }
@@ -944,9 +944,9 @@ const pageStyles = `
   .nd-cal-cell:hover:not(.other):not(.past) { background: var(--gray-100); }
   .nd-cal-cell.other { opacity: 0.25; pointer-events: none; }
   .nd-cal-cell.past { opacity: 0.3; pointer-events: none; }
-  .nd-cal-cell.sel { background: var(--green-100); }
-  .nd-cal-cell.sel .nd-cal-d { color: var(--green-700); font-weight: 800; }
-  .nd-cal-cell.today .nd-cal-d { background: var(--green-600); color: white; border-radius: 50%; width: 28px; height: 28px; line-height: 28px; margin: 0 auto; }
+  .nd-cal-cell.sel { background: var(--blue-50); }
+  .nd-cal-cell.sel .nd-cal-d { color: var(--brand); font-weight: 800; }
+  .nd-cal-cell.today .nd-cal-d { background: var(--brand); color: white; border-radius: 50%; width: 28px; height: 28px; line-height: 28px; margin: 0 auto; }
   .nd-cal-d { font-size: 14px; font-weight: 600; color: var(--gray-700); }
   .nd-cal-dots { display: flex; justify-content: center; gap: 3px; margin-top: 3px; }
   .nd-cal-dot { width: 5px; height: 5px; border-radius: 50%; }
@@ -960,11 +960,11 @@ const pageStyles = `
   .nd-win-toggle { display: flex; gap: 8px; }
   .nd-win-btn { flex: 1; padding: 14px 12px; border: 2px solid var(--border); border-radius: var(--radius-md); background: var(--surface); font-family: inherit; cursor: pointer; transition: all 0.15s; display: flex; flex-direction: column; align-items: center; gap: 2px; }
   .nd-win-btn:hover { border-color: var(--gray-300); }
-  .nd-win-btn.active { border-color: var(--green-400); background: var(--green-50); }
+  .nd-win-btn.active { border-color: var(--brand); background: var(--blue-25); }
   .nd-win-name { font-size: 14px; font-weight: 700; color: var(--gray-700); }
-  .nd-win-btn.active .nd-win-name { color: var(--green-700); }
+  .nd-win-btn.active .nd-win-name { color: var(--brand); }
   .nd-win-time { font-size: 12px; color: var(--gray-500); }
-  .nd-win-btn.active .nd-win-time { color: var(--green-600); }
+  .nd-win-btn.active .nd-win-time { color: var(--blue-400); }
   .nd-win-cap { font-size: 12px; font-weight: 700; margin-top: 2px; }
   .nd-win-cap.green { color: var(--green-600); }
   .nd-win-cap.amber { color: var(--amber-600); }
@@ -976,12 +976,12 @@ const pageStyles = `
   .nd-load-list { margin-top: 12px; border: 1px solid var(--border-light); border-radius: var(--radius-md); overflow: hidden; }
   .nd-load-row { display: flex; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border-light); font-size: 14px; }
   .nd-load-row:last-child { border-bottom: none; }
-  .nd-load-summary { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--green-50); border-top: 1px solid var(--green-100); font-size: 14px; font-weight: 600; color: var(--gray-700); }
+  .nd-load-summary { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--blue-25); border-top: 1px solid var(--blue-100); font-size: 14px; font-weight: 600; color: var(--gray-700); }
 
   .nd-submit-bar { position: fixed; bottom: 0; left: 0; right: 0; padding: 14px 24px; background: var(--surface); border-top: 1px solid var(--border); box-shadow: 0 -4px 12px rgba(0,0,0,0.06); display: flex; align-items: center; gap: 8px; z-index: 100; }
 
   .nd-success-card { max-width: 460px; margin: 40px auto; text-align: center; }
-  .nd-success-icon { width: 56px; height: 56px; border-radius: 50%; background: var(--green-100); color: var(--green-700); font-size: 24px; font-weight: 800; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; }
+  .nd-success-icon { width: 56px; height: 56px; border-radius: 50%; background: var(--blue-50); color: var(--brand); font-size: 24px; font-weight: 800; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; }
   .nd-success-detail { margin-top: 16px; text-align: left; border: 1px solid var(--border-light); border-radius: var(--radius-md); overflow: hidden; }
   .nd-success-row { display: flex; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border-light); font-size: 14px; }
   .nd-success-row:last-child { border-bottom: none; }
