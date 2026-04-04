@@ -16,6 +16,7 @@ from app.billing.service import ensure_billing_account, get_plan
 from app.models.entities import (
     BlackoutReason,
     CapacityHold,
+    CapacityOverride,
     CustomerAddress,
     Drop,
     EventLog,
