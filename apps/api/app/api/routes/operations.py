@@ -540,6 +540,7 @@ def create_blackout(payload: BlackoutIn, user: AuthUser = Depends(require_roles(
 
 
 @admin_router.delete("/blackouts/{blackout_id}")
+@admin_router.delete("/blackouts/{blackout_id}")
 def remove_blackout(blackout_id: str, user: AuthUser = Depends(require_roles(UserRole.ADMIN)), db: Session = Depends(db_dep)):
     blackout = db.execute(select(OperationalBlackout).where(OperationalBlackout.tenant_id == user.tenant_id, OperationalBlackout.id == blackout_id)).scalar_one_or_none()
     if not blackout:
@@ -548,6 +549,225 @@ def remove_blackout(blackout_id: str, user: AuthUser = Depends(require_roles(Use
     log_event(db, user.tenant_id, "WINDOW_ENABLED" if blackout.window_code else "BLACKOUT_REMOVED", "api", {"blackout_id": blackout_id, "service_date": str(blackout.service_date), "window_code": blackout.window_code.value if blackout.window_code else None})
     db.commit()
     return {"status": "ok"}
+
+
+# ── Capacity override endpoints ──────────────────────────────────────────────
+
+class CapacityOverrideIn(BaseModel):
+    start_date: date
+    end_date: date
+    window_a_capacity: int
+    window_b_capacity: int
+    label: str | None = None
+    location_id: str | None = None
+
+
+@admin_router.get("/capacity-overrides")
+def list_capacity_overrides(
+    location_id: str | None = Query(default=None),
+    user: AuthUser = Depends(require_roles(UserRole.ADMIN)),
+    db: Session = Depends(db_dep),
+):
+    q = select(CapacityOverride).where(CapacityOverride.tenant_id == user.tenant_id)
+    if location_id:
+        q = q.where(CapacityOverride.location_id == location_id)
+    rows = db.execute(q.order_by(CapacityOverride.start_date.asc(), CapacityOverride.created_at.desc())).scalars().all()
+    return {
+        "overrides": [
+            {
+                "id": str(r.id),
+                "location_id": str(r.location_id),
+                "start_date": str(r.start_date),
+                "end_date": str(r.end_date),
+                "window_a_capacity": r.window_a_capacity,
+                "window_b_capacity": r.window_b_capacity,
+                "label": r.label,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in rows
+        ]
+    }
+
+
+@admin_router.post("/capacity-overrides")
+def create_capacity_override(
+    payload: CapacityOverrideIn,
+    user: AuthUser = Depends(require_roles(UserRole.ADMIN)),
+    db: Session = Depends(db_dep),
+):
+    if payload.end_date < payload.start_date:
+        raise HTTPException(status_code=400, detail={"code": "invalid_range", "message": "end_date must be on or after start_date"})
+
+    if payload.location_id:
+        location = db.execute(
+            select(Location).where(Location.id == payload.location_id, Location.tenant_id == user.tenant_id)
+        ).scalar_one_or_none()
+        if not location:
+            raise HTTPException(status_code=404, detail={"code": "location_not_found", "message": "Location not found"})
+    else:
+        location = db.execute(
+            select(Location)
+            .where(Location.tenant_id == user.tenant_id, Location.is_active == True)  # noqa: E712
+            .order_by(Location.created_at)
+        ).scalars().first()
+        if not location:
+            raise HTTPException(status_code=400, detail={"code": "no_location", "message": "No active location found"})
+
+    override = CapacityOverride(
+        tenant_id=user.tenant_id,
+        location_id=location.id,
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        window_a_capacity=payload.window_a_capacity,
+        window_b_capacity=payload.window_b_capacity,
+        label=payload.label,
+    )
+    db.add(override)
+
+    # Apply override as source of truth: upsert WindowCapacity rows for every date in range
+    current = payload.start_date
+    while current <= payload.end_date:
+        for window_code, cap_val in [(WindowCode.A, payload.window_a_capacity), (WindowCode.B, payload.window_b_capacity)]:
+            existing = db.execute(
+                select(WindowCapacity).where(
+                    WindowCapacity.tenant_id == user.tenant_id,
+                    WindowCapacity.location_id == location.id,
+                    WindowCapacity.service_date == current,
+                    WindowCapacity.window_code == window_code,
+                )
+            ).scalar_one_or_none()
+            if existing:
+                existing.capacity_total = cap_val
+            else:
+                db.add(WindowCapacity(
+                    tenant_id=user.tenant_id,
+                    location_id=location.id,
+                    service_date=current,
+                    window_code=window_code,
+                    capacity_total=cap_val,
+                    capacity_used=0,
+                ))
+        current = current + timedelta(days=1)
+
+    log_event(db, user.tenant_id, "CAPACITY_OVERRIDE_CREATED", "api", {
+        "location_id": str(location.id),
+        "start_date": str(payload.start_date),
+        "end_date": str(payload.end_date),
+        "window_a_capacity": payload.window_a_capacity,
+        "window_b_capacity": payload.window_b_capacity,
+    })
+    db.commit()
+    return {"status": "ok"}
+
+
+@admin_router.delete("/capacity-overrides/{override_id}")
+def delete_capacity_override(
+    override_id: str,
+    user: AuthUser = Depends(require_roles(UserRole.ADMIN)),
+    db: Session = Depends(db_dep),
+):
+    override = db.execute(
+        select(CapacityOverride).where(
+            CapacityOverride.id == override_id,
+            CapacityOverride.tenant_id == user.tenant_id,
+        )
+    ).scalar_one_or_none()
+    if not override:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Override not found"})
+
+    location = db.execute(select(Location).where(Location.id == override.location_id)).scalar_one_or_none()
+    default_cap = location.capacity_per_window if location else 4
+
+    current = override.start_date
+    while current <= override.end_date:
+        for window_code in [WindowCode.A, WindowCode.B]:
+            existing = db.execute(
+                select(WindowCapacity).where(
+                    WindowCapacity.tenant_id == user.tenant_id,
+                    WindowCapacity.location_id == override.location_id,
+                    WindowCapacity.service_date == current,
+                    WindowCapacity.window_code == window_code,
+                )
+            ).scalar_one_or_none()
+            if existing and existing.capacity_used == 0:
+                db.delete(existing)
+            elif existing:
+                existing.capacity_total = max(existing.capacity_used, default_cap)
+        current = current + timedelta(days=1)
+
+    db.delete(override)
+    log_event(db, user.tenant_id, "CAPACITY_OVERRIDE_DELETED", "api", {
+        "override_id": override_id,
+        "location_id": str(override.location_id),
+        "start_date": str(override.start_date),
+        "end_date": str(override.end_date),
+    })
+    db.commit()
+    return {"status": "ok"}
+
+
+@admin_router.get("/base-capacity")
+def get_base_capacity(
+    location_id: str | None = Query(default=None),
+    user: AuthUser = Depends(require_roles(UserRole.ADMIN)),
+    db: Session = Depends(db_dep),
+):
+    if location_id:
+        location = db.execute(
+            select(Location).where(Location.id == location_id, Location.tenant_id == user.tenant_id)
+        ).scalar_one_or_none()
+    else:
+        location = db.execute(
+            select(Location)
+            .where(Location.tenant_id == user.tenant_id, Location.is_active == True)  # noqa: E712
+            .order_by(Location.created_at)
+        ).scalars().first()
+
+    if not location:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Location not found"})
+
+    return {
+        "location_id": str(location.id),
+        "location_name": location.name,
+        "capacity_per_window": location.capacity_per_window,
+    }
+
+
+class BaseCapacityIn(BaseModel):
+    capacity_per_window: int
+    location_id: str | None = None
+
+
+@admin_router.put("/base-capacity")
+def update_base_capacity(
+    payload: BaseCapacityIn,
+    user: AuthUser = Depends(require_roles(UserRole.ADMIN)),
+    db: Session = Depends(db_dep),
+):
+    if payload.capacity_per_window < 1:
+        raise HTTPException(status_code=400, detail={"code": "invalid_value", "message": "Capacity must be at least 1"})
+
+    if payload.location_id:
+        location = db.execute(
+            select(Location).where(Location.id == payload.location_id, Location.tenant_id == user.tenant_id)
+        ).scalar_one_or_none()
+    else:
+        location = db.execute(
+            select(Location)
+            .where(Location.tenant_id == user.tenant_id, Location.is_active == True)  # noqa: E712
+            .order_by(Location.created_at)
+        ).scalars().first()
+
+    if not location:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Location not found"})
+
+    location.capacity_per_window = payload.capacity_per_window
+    log_event(db, user.tenant_id, "BASE_CAPACITY_UPDATED", "api", {
+        "location_id": str(location.id),
+        "capacity_per_window": payload.capacity_per_window,
+    })
+    db.commit()
+    return {"status": "ok", "capacity_per_window": payload.capacity_per_window}
 
 
 @admin_router.get("/diagnostics/anomalies")
