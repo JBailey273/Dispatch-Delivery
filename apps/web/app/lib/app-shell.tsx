@@ -164,6 +164,7 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
               <SidebarLink href="/admin/locations" icon={Icons.locations}>Locations</SidebarLink>
               <SidebarLink href="/admin/catalog" icon={Icons.catalog}>Catalog</SidebarLink>
               <SidebarLink href="/admin/users" icon={Icons.users}>Users</SidebarLink>
+              <SidebarLink href="/admin/delivery-availability" icon={Icons.schedule}>Availability</SidebarLink>
               <SidebarLink href="/admin/channels" icon={Icons.channels}>Channels</SidebarLink>
               <SidebarLink href="/admin/billing" icon={Icons.billing}>Billing</SidebarLink>
             </>
