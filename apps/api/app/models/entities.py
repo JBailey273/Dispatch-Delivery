@@ -409,6 +409,29 @@ class OperationalBlackout(Base, TenantScopedMixin, TimestampMixin):
 
 
 # ---------------------------------------------------------------------------
+# Capacity Overrides — date-range-scoped capacity boosts/reductions
+# ---------------------------------------------------------------------------
+
+class CapacityOverride(Base, TenantScopedMixin, TimestampMixin):
+    __tablename__ = "capacity_overrides"
+    __table_args__ = (
+        CheckConstraint("end_date >= start_date", name="ck_capacity_override_date_range"),
+        CheckConstraint("window_a_capacity >= 0", name="ck_capacity_override_a_nonneg"),
+        CheckConstraint("window_b_capacity >= 0", name="ck_capacity_override_b_nonneg"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    location_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("locations.id"), nullable=False, index=True
+    )
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    window_a_capacity: Mapped[int] = mapped_column(Integer, nullable=False)
+    window_b_capacity: Mapped[int] = mapped_column(Integer, nullable=False)
+    label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+# ---------------------------------------------------------------------------
 # Channels, Billing, Events — tenant-scoped, no location needed
 # ---------------------------------------------------------------------------
 
