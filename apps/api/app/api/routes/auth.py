@@ -21,5 +21,5 @@ def login(payload: LoginRequest, db: Session = Depends(db_dep)) -> TokenResponse
             detail={"code": "invalid_credentials", "message": "Email or password is invalid"},
         )
     tenant = db.execute(select(Tenant).where(Tenant.id == user.tenant_id)).scalar_one()
-    token = create_access_token(subject=str(user.id), extra_claims={"role": user.role.value, "tenant_id": str(user.tenant_id), "tenant_slug": tenant.slug})
+    token = create_access_token(subject=str(user.id), extra_claims={"role": user.role.value, "tenant_id": str(user.tenant_id), "tenant_slug": tenant.slug, "name": user.display_name or user.email})
     return TokenResponse(access_token=token, role=user.role.value, tenant_id=str(user.tenant_id))
