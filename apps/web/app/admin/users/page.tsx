@@ -15,9 +15,10 @@ export default function UsersPage() {
   const [success, setSuccess] = useState('');
 
   // Modal
-  const [modal, setModal] = useState<'create' | 'edit' | null>(null);
+  const [modal, setModal] = useState<'create' | 'edit' | 'reset_password' | null>(null);
   const [editUser, setEditUser] = useState<UserItem | null>(null);
   const [form, setForm] = useState({ email: '', password: 'password', first_name: '', last_name: '', role: 'dispatcher', default_truck_identifier: '' });
+  const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -41,6 +42,24 @@ export default function UsersPage() {
     setForm({ email: u.email, password: '', first_name: u.first_name || '', last_name: u.last_name || '', role: u.role, default_truck_identifier: u.default_truck_identifier || '' });
     setEditUser(u);
     setModal('edit');
+  };
+
+  const openResetPassword = (u: UserItem) => {
+    setEditUser(u);
+    setNewPassword('');
+    setModal('reset_password');
+  };
+
+  const resetPassword = async () => {
+    if (!editUser || !newPassword.trim()) return;
+    setSaving(true);
+    setError('');
+    try {
+      await api(`/users/${editUser.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: newPassword }) });
+      setSuccess(`Password updated for ${editUser.display_name || editUser.email}`);
+      setModal(null);
+    } catch (err) { setError((err as ApiError).message || 'Failed to reset password'); }
+    finally { setSaving(false); }
   };
 
   const saveUser = async () => {
@@ -146,6 +165,7 @@ export default function UsersPage() {
                     <td>
                       <div style={{ display: 'flex', gap: 4 }}>
                         <button className="btn btn-ghost btn-sm" onClick={() => openEdit(u)}>Edit</button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => openResetPassword(u)}>Reset PW</button>
                         <button className="btn btn-ghost btn-sm" onClick={() => toggleActive(u)}>
                           {u.is_active ? 'Disable' : 'Enable'}
                         </button>
@@ -160,7 +180,33 @@ export default function UsersPage() {
         )}
 
         {/* Create/Edit modal */}
-        {modal && (
+        {modal === 'reset_password' && editUser && (
+          <div className="modal-overlay">
+            <div className="modal-card">
+              <div className="modal-header">
+                <h2>Reset Password</h2>
+                <button className="btn btn-ghost btn-sm" onClick={() => setModal(null)}>✕</button>
+              </div>
+              <div className="modal-body">
+                <p style={{ fontSize: 14, color: 'var(--gray-600)', marginBottom: 16 }}>
+                  Setting a new password for <strong>{editUser.display_name || editUser.email}</strong>.
+                </p>
+                <div className="form-group">
+                  <label className="form-label">New Password</label>
+                  <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} autoFocus placeholder="Enter new password" />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-ghost" onClick={() => setModal(null)}>Cancel</button>
+                <button className="btn btn-primary" onClick={resetPassword} disabled={saving || !newPassword.trim()}>
+                  {saving ? 'Saving…' : 'Update Password'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {modal && modal !== 'reset_password' && (
           <div className="modal-overlay" onClick={() => setModal(null)}>
             <div className="modal-card" onClick={e => e.stopPropagation()}>
               <div className="modal-header">
