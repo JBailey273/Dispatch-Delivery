@@ -660,6 +660,14 @@ const schedulerStyles = `
   .week-col:hover { background: var(--gray-25); }
   .week-col.today { background: var(--green-25); }
   .week-col.selected { background: rgba(15,133,48,0.04); }
+  .wk-drops { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; overflow-y: auto; flex: 1; }
+  .wk-drop-chip { padding: 5px 8px; border-radius: var(--radius-sm); font-family: var(--font-heading); border-left: 3px solid; cursor: pointer; transition: all 0.12s; }
+  .wk-drop-chip:hover { transform: translateX(2px); box-shadow: var(--shadow-sm); }
+  .wk-chip-am { background: rgba(26,158,58,0.07); border-left-color: var(--green-500); }
+  .wk-chip-pm { background: rgba(37,99,235,0.05); border-left-color: var(--blue-500); }
+  .wk-chip-priority { background: rgba(245,158,11,0.1); border-left-color: var(--amber-500, #f59e0b); }
+  .wk-chip-name { display: block; font-size: 11.5px; font-weight: 700; color: var(--gray-800); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wk-chip-mat { display: block; font-size: 10px; font-weight: 500; color: var(--gray-500); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   /* ── Capacity bars ── */
   .cap-row { display: flex; flex-direction: column; gap: 4px; }
