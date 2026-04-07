@@ -362,7 +362,12 @@ export default function DriverPage() {
           <div className="drv-header-row">
             <div>
               <div className="drv-title">Today&apos;s Deliveries</div>
-              <div className="drv-date">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</div>
+              <div className="drv-date">
+                {new Date(todayStr() + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                {typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('date') && (
+                  <span style={{ marginLeft: 8, fontSize: 12, background: '#fde68a', color: '#92400e', padding: '2px 8px', borderRadius: 20, fontWeight: 700 }}>TEST MODE</span>
+                )}
+              </div>
             </div>
             <button className="drv-refresh" onClick={() => { setLoading(true); fetchDrops(); }}>↻</button>
           </div>
