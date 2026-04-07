@@ -644,9 +644,8 @@ const schedulerStyles = `
   .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
 
   /* ── Week view ── */
-  .week-grid { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-  .week-header { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--border); overflow-y: scroll; scrollbar-width: none; }
-  .week-header::-webkit-scrollbar { display: none; }
+  .week-grid { flex: 1; overflow-y: auto; }
+  .week-header { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 2; background: var(--surface); }
   .whd { text-align: center; padding: 12px 4px; cursor: pointer; transition: all 0.15s var(--ease-out); border-right: 1px solid var(--border-light); }
   .whd:last-child { border-right: none; }
   .whd:hover { background: var(--gray-50); }
@@ -655,7 +654,7 @@ const schedulerStyles = `
   .whd-name { font-family: var(--font-heading); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--gray-400); }
   .whd-date { font-family: var(--font-heading); font-size: 22px; font-weight: 800; margin-top: 2px; color: var(--gray-900); letter-spacing: -0.02em; }
   .whd.today .whd-date { color: var(--green-600); }
-  .week-body { display: grid; grid-template-columns: repeat(7, 1fr); flex: 1; overflow-y: auto; }
+  .week-body { display: grid; grid-template-columns: repeat(7, 1fr); }
   .week-col { border-right: 1px solid var(--border-light); padding: 14px 10px; cursor: pointer; transition: background 0.12s; display: flex; flex-direction: column; gap: 8px; min-height: 160px; }
   .week-col:last-child { border-right: none; }
   .week-col:hover { background: var(--gray-25); }
