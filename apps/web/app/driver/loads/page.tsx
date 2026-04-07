@@ -61,6 +61,11 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
    ═══════════════════════════════════════════════════════════════════════════ */
 
 function todayStr() {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    const override = params.get('date');
+    if (override && /^\d{4}-\d{2}-\d{2}$/.test(override)) return override;
+  }
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
