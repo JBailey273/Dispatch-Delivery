@@ -119,7 +119,7 @@ def delete_user(user_id: str, actor: AuthUser = Depends(require_roles(UserRole.A
     db.execute(
         sa_update(Load)
         .where(Load.driver_user_id == target.id, Load.status.in_(['assigned', 'loaded_leaving']))
-        .values(driver_user_id=None, driver_name=None)
+        .values(driver_user_id=None)
     )
 
     db.delete(target)
