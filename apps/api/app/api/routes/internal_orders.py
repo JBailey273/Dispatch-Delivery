@@ -687,7 +687,7 @@ def create_internal_order(
         ).scalar_one_or_none()
 
         if not existing_addr:
-            db.add(CustomerAddress(
+            existing_addr = CustomerAddress(
                 tenant_id=user.tenant_id,
                 customer_id=local_customer.id,
                 line1=payload.address_line1.strip(),
@@ -698,9 +698,11 @@ def create_internal_order(
                 country="US",
                 is_default=True,
                 last_used_at=now_utc(),
-            ))
+            )
+            db.add(existing_addr)
         else:
             existing_addr.last_used_at = now_utc()
+        db.flush()
     log_event(db, user.tenant_id, "internal_order.created", "api", {
         "wc_order_id": wc_order_id,
         "order_number": order_number,
@@ -732,18 +734,8 @@ def create_internal_order(
                 ).order_by(Location.created_at)
             ).scalars().first()
 
-        # Resolve delivery address for the drop — reuse the object from Step 4
-        # to avoid flush timing issues with re-querying a just-added address
+        # Resolve delivery address — use object already upserted in Step 4
         drop_address = existing_addr if payload.delivery_method == "delivery" else None
-        if drop_address is None and payload.delivery_method == "delivery" and payload.address_line1.strip():
-            drop_address = db.execute(
-                select(CustomerAddress).where(
-                    CustomerAddress.tenant_id == user.tenant_id,
-                    CustomerAddress.customer_id == local_customer.id,
-                    CustomerAddress.line1.ilike(payload.address_line1.strip()),
-                    CustomerAddress.postal_code == payload.address_postal_code.strip(),
-                )
-            ).scalar_one_or_none()
 
         if drop_location:
             # Match WC order line items to catalog by SKU
