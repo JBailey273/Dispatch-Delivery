@@ -644,9 +644,9 @@ const schedulerStyles = `
   .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
 
   /* ── Week view ── */
-  .week-grid { flex: 1; display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: auto 1fr; overflow: hidden; }
-  .week-header { display: contents; }
-  .whd { text-align: center; padding: 12px 4px; cursor: pointer; transition: all 0.15s var(--ease-out); border-right: 1px solid var(--border-light); border-bottom: 1px solid var(--border); grid-row: 1; }
+  .week-grid { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .week-header { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--border); }
+  .whd { text-align: center; padding: 12px 4px; cursor: pointer; transition: all 0.15s var(--ease-out); border-right: 1px solid var(--border-light); }
   .whd:last-child { border-right: none; }
   .whd:hover { background: var(--gray-50); }
   .whd.today { background: var(--green-25); }
@@ -654,21 +654,12 @@ const schedulerStyles = `
   .whd-name { font-family: var(--font-heading); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--gray-400); }
   .whd-date { font-family: var(--font-heading); font-size: 22px; font-weight: 800; margin-top: 2px; color: var(--gray-900); letter-spacing: -0.02em; }
   .whd.today .whd-date { color: var(--green-600); }
-  .week-body { display: contents; }
-  .week-col { grid-row: 2; grid-column: auto; border-right: 1px solid var(--border-light); padding: 14px 10px; cursor: pointer; transition: background 0.12s; display: flex; flex-direction: column; gap: 8px; min-height: 160px; overflow-y: auto; }
-  .week-col:first-child { grid-column: 1; }
+  .week-body { display: grid; grid-template-columns: repeat(7, 1fr); flex: 1; overflow-y: auto; }
+  .week-col { border-right: 1px solid var(--border-light); padding: 14px 10px; cursor: pointer; transition: background 0.12s; display: flex; flex-direction: column; gap: 8px; min-height: 160px; }
   .week-col:last-child { border-right: none; }
   .week-col:hover { background: var(--gray-25); }
   .week-col.today { background: var(--green-25); }
   .week-col.selected { background: rgba(15,133,48,0.04); }
-  .wk-drops { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; overflow-y: auto; flex: 1; }
-  .wk-drop-chip { padding: 5px 8px; border-radius: var(--radius-sm); font-family: var(--font-heading); border-left: 3px solid; cursor: pointer; transition: all 0.12s; }
-  .wk-drop-chip:hover { transform: translateX(2px); box-shadow: var(--shadow-sm); }
-  .wk-chip-am { background: rgba(26,158,58,0.07); border-left-color: var(--green-500); }
-  .wk-chip-pm { background: rgba(37,99,235,0.05); border-left-color: var(--blue-500); }
-  .wk-chip-priority { background: rgba(245,158,11,0.1); border-left-color: var(--amber-500, #f59e0b); }
-  .wk-chip-name { display: block; font-size: 11.5px; font-weight: 700; color: var(--gray-800); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .wk-chip-mat { display: block; font-size: 10px; font-weight: 500; color: var(--gray-500); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   /* ── Capacity bars ── */
   .cap-row { display: flex; flex-direction: column; gap: 4px; }
