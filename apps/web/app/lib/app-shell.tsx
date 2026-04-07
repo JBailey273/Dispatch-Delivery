@@ -126,7 +126,8 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
   const isAdmin = session.role === 'admin';
   const isDriver = session.role === 'driver';
   const router = useRouter();
-  const initials = session.role.slice(0, 2).toUpperCase();
+  const name = session.name || session.role;
+  const initials = name.split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase();
 
   return (
     <div className="app-shell">
@@ -175,7 +176,7 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
           {!isDriver && <LocationSwitcher />}
           <div className="app-sidebar-user">
             <div className="app-sidebar-user-avatar">{initials}</div>
-            <div className="app-sidebar-user-role">{session.role}</div>
+            <div className="app-sidebar-user-name">{session.name || session.role}</div>
           </div>
           <div className="app-sidebar-footer-actions">
             <ThemeToggle />
