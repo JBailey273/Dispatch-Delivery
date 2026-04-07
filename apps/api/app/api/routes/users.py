@@ -28,6 +28,7 @@ class UserUpdateIn(BaseModel):
     role: UserRole | None = None
     is_active: bool | None = None
     default_truck_identifier: str | None = None
+    password: str | None = None
 
 
 def _active_admin_count(db: Session, tenant_id: str) -> int:
@@ -82,8 +83,11 @@ def update_user(user_id: str, payload: UserUpdateIn, actor: AuthUser = Depends(r
         raise HTTPException(status_code=400, detail={"code": "last_admin", "message": "Cannot disable the last active Admin"})
 
     updates = payload.model_dump(exclude_unset=True)
+    raw_password = updates.pop('password', None)
     for key, value in updates.items():
         setattr(target, key, value)
+    if raw_password:
+        target.hashed_password = get_password_hash(raw_password)
     db.add(target)
     log_event(db, actor.tenant_id, "user.updated", "api", {"user_id": user_id, "updates": updates})
     db.commit()
