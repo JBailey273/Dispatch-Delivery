@@ -1,6 +1,6 @@
 'use client';
 
-export type Session = { token: string; role: string; tenant_id: string; tenant_slug?: string; tenant_name?: string };
+export type Session = { token: string; role: string; tenant_id: string; tenant_slug?: string; tenant_name?: string; name?: string };
 
 export class ApiError extends Error {
   status: number;
