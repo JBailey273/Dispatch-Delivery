@@ -655,12 +655,12 @@ const schedulerStyles = `
   .whd-date { font-family: var(--font-heading); font-size: 22px; font-weight: 800; margin-top: 2px; color: var(--gray-900); letter-spacing: -0.02em; }
   .whd.today .whd-date { color: var(--green-600); }
   .week-body { display: grid; grid-template-columns: repeat(7, 1fr); }
-  .week-col { border-right: 1px solid var(--border-light); padding: 14px 10px; cursor: pointer; transition: background 0.12s; display: flex; flex-direction: column; gap: 8px; min-height: 160px; }
+  .week-col { border-right: 1px solid var(--border-light); padding: 14px 10px; cursor: pointer; transition: background 0.12s; display: flex; flex-direction: column; gap: 8px; min-height: 160px; min-width: 0; }
   .week-col:last-child { border-right: none; }
   .week-col:hover { background: var(--gray-25); }
   .week-col.today { background: var(--green-25); }
   .week-col.selected { background: rgba(15,133,48,0.04); }
-  .wk-drops { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; overflow-y: auto; flex: 1; }
+  .wk-drops { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; overflow-y: auto; flex: 1; overflow-x: hidden; }
   .wk-drop-chip { padding: 5px 8px; border-radius: var(--radius-sm); font-family: var(--font-heading); border-left: 3px solid; cursor: pointer; transition: all 0.12s; }
   .wk-drop-chip:hover { transform: translateX(2px); box-shadow: var(--shadow-sm); }
   .wk-chip-am { background: rgba(26,158,58,0.07); border-left-color: var(--green-500); }
