@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update as sa_update
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
 from app.api.services import log_event
 from app.billing.service import evaluate_limit
 from app.core.security import get_password_hash
-from app.models.entities import User, UserRole
+from app.models.entities import Load, User, UserRole
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -101,6 +101,27 @@ def delete_user(user_id: str, actor: AuthUser = Depends(require_roles(UserRole.A
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "User not found"})
     if target.role == UserRole.ADMIN and target.is_active and _active_admin_count(db, actor.tenant_id) <= 1:
         raise HTTPException(status_code=400, detail={"code": "last_admin", "message": "Cannot delete the last active Admin"})
+
+    # Block hard delete if user has any completed load history
+    completed_load_count = db.execute(
+        select(func.count(Load.id)).where(
+            Load.driver_user_id == target.id,
+            Load.status.in_(['delivered', 'exception', 'cancelled'])
+        )
+    ).scalar_one()
+    if completed_load_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "user_has_history", "message": "This user has delivery history and cannot be deleted. Disable the account instead."}
+        )
+
+    # Null out any active/in-progress loads before deleting
+    db.execute(
+        sa_update(Load)
+        .where(Load.driver_user_id == target.id, Load.status.in_(['assigned', 'loaded_leaving']))
+        .values(driver_user_id=None, driver_name=None)
+    )
+
     db.delete(target)
     log_event(db, actor.tenant_id, "user.deleted", "api", {"user_id": user_id, "email": target.email})
     db.commit()
