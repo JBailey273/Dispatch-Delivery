@@ -51,7 +51,7 @@ def _build_load_dict(load: Load, drop: Drop, driver: User | None, customer: Cust
         "customer_email": customer.email,
         "customer_sms_opt_in": customer.sms_opt_in,
         "customer_email_opt_in": customer.email_opt_in,
-        "address_short": f"{address.line1}, {address.city}",
+        "address_short": f"{address.line1}, {address.city}" if address else "Pickup",
         "driver_name": driver_display,
         "driver_user_id": str(driver.id) if driver else None,
         "is_priority": drop.is_priority,
@@ -115,7 +115,7 @@ def dispatch_schedule(
         .join(Drop, Drop.id == Load.drop_id)
         .outerjoin(User, User.id == Load.driver_user_id)
         .join(Customer, Customer.id == Drop.customer_id)
-        .join(CustomerAddress, CustomerAddress.id == Drop.address_id)
+        .outerjoin(CustomerAddress, CustomerAddress.id == Drop.address_id)
         .where(Load.tenant_id == user.tenant_id, Load.route_date == day)
     )
     if location_id:
@@ -267,7 +267,7 @@ def list_orders(
         select(Load, Drop, Customer, CustomerAddress, User)
         .join(Drop, Drop.id == Load.drop_id)
         .join(Customer, Customer.id == Drop.customer_id)
-        .join(CustomerAddress, CustomerAddress.id == Drop.address_id)
+        .outerjoin(CustomerAddress, CustomerAddress.id == Drop.address_id)
         .outerjoin(User, User.id == Load.driver_user_id)
         .where(
             Load.tenant_id == user.tenant_id,
@@ -321,7 +321,7 @@ def list_orders(
             "delivery_method": drop.delivery_method,
             "customer_name": customer.name,
             "customer_phone": customer.phone_e164,
-            "address_short": f"{address.line1}, {address.city}",
+            "address_short": f"{address.line1}, {address.city}" if address else "Pickup",
             "material": load.material_name_snapshot,
             "qty": load.qty,
             "unit": load.unit,
