@@ -31,7 +31,8 @@ export default function LoginPage() {
         tenantSettings = await tRes.json();
       } catch { tenantSettings = null; }
 
-      setSession({ token: data.access_token, role: data.role, tenant_id: data.tenant_id, tenant_slug: tenantSettings?.slug, tenant_name: tenantSettings?.name });
+      const jwtPayload = JSON.parse(atob(data.access_token.split('.')[1]));
+      setSession({ token: data.access_token, role: data.role, tenant_id: data.tenant_id, tenant_slug: tenantSettings?.slug, tenant_name: tenantSettings?.name, name: jwtPayload.name || null });
       router.push(data.role === 'driver' ? '/driver/loads' : '/ops-dashboard');
     } catch {
       setError('Network error — is the API running?');
