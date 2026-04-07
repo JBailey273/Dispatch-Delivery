@@ -645,7 +645,8 @@ const schedulerStyles = `
 
   /* ── Week view ── */
   .week-grid { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-  .week-header { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--border); }
+  .week-header { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--border); overflow-y: scroll; scrollbar-width: none; }
+  .week-header::-webkit-scrollbar { display: none; }
   .whd { text-align: center; padding: 12px 4px; cursor: pointer; transition: all 0.15s var(--ease-out); border-right: 1px solid var(--border-light); }
   .whd:last-child { border-right: none; }
   .whd:hover { background: var(--gray-50); }
