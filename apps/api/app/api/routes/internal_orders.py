@@ -732,9 +732,10 @@ def create_internal_order(
                 ).order_by(Location.created_at)
             ).scalars().first()
 
-        # Resolve delivery address for the drop
-        drop_address = None
-        if payload.delivery_method == "delivery" and payload.address_line1.strip():
+        # Resolve delivery address for the drop — reuse the object from Step 4
+        # to avoid flush timing issues with re-querying a just-added address
+        drop_address = existing_addr if payload.delivery_method == "delivery" else None
+        if drop_address is None and payload.delivery_method == "delivery" and payload.address_line1.strip():
             drop_address = db.execute(
                 select(CustomerAddress).where(
                     CustomerAddress.tenant_id == user.tenant_id,
