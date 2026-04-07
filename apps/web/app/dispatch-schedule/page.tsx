@@ -655,7 +655,8 @@ const schedulerStyles = `
   .whd-date { font-family: var(--font-heading); font-size: 22px; font-weight: 800; margin-top: 2px; color: var(--gray-900); letter-spacing: -0.02em; }
   .whd.today .whd-date { color: var(--green-600); }
   .week-body { display: contents; }
-  .week-col { grid-row: 2; border-right: 1px solid var(--border-light); padding: 14px 10px; cursor: pointer; transition: background 0.12s; display: flex; flex-direction: column; gap: 8px; min-height: 160px; overflow-y: auto; }
+  .week-col { grid-row: 2; grid-column: auto; border-right: 1px solid var(--border-light); padding: 14px 10px; cursor: pointer; transition: background 0.12s; display: flex; flex-direction: column; gap: 8px; min-height: 160px; overflow-y: auto; }
+  .week-col:first-child { grid-column: 1; }
   .week-col:last-child { border-right: none; }
   .week-col:hover { background: var(--gray-25); }
   .week-col.today { background: var(--green-25); }
