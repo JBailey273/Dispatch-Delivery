@@ -135,11 +135,11 @@ function DispatchSchedulePage() {
   /* ── Compute visible date range ── */
   const visibleRange = useMemo(() => {
     if (viewMode === 'week') {
-      const base = new Date(today);
-      base.setDate(base.getDate() - base.getDay() + navOffset * 7);
-      return Array.from({ length: 7 }, (_, i) => {
-        const d = new Date(base); d.setDate(base.getDate() + i); return d;
-      });
+        const base = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        base.setDate(base.getDate() - base.getDay() + navOffset * 7);
+        return Array.from({ length: 7 }, (_, i) => {
+          const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i); return d;
+        });
     } else {
       const baseMonth = today.getMonth() + navOffset;
       const y = today.getFullYear() + Math.floor(baseMonth / 12);
