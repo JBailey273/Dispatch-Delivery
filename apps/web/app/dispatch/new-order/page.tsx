@@ -292,8 +292,9 @@ export default function NewOrderPage() {
         setLastName(data.last_name || '');
         setEmail(data.email || '');
         setPhone(data.billing?.phone || data.phone || '');
-        setWcRole(data.role || null);
-        setIsContractor(data.role === 'contractor');
+        const resolvedRole = data.role || (data.invoice_billing ? 'contractor' : null);
+        setWcRole(resolvedRole);
+        setIsContractor(resolvedRole === 'contractor');
         setInvoiceBilling(data.invoice_billing || false);
         if (data.invoice_billing) setPaymentMethod('invoice');
         setStripeCustomerId(data.stripe_customer_id || null);
@@ -307,7 +308,7 @@ export default function NewOrderPage() {
           setAddrState(data.billing.state || 'MA');
           setAddrZip(data.billing.postcode || '');
         }
-        if (data.role) loadProducts(data.role);
+        if (resolvedRole) loadProducts(resolvedRole);
       } else {
         setWcCustomer({ found: false });
       }
