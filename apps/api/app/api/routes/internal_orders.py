@@ -1075,7 +1075,7 @@ def toggle_invoice_billing(
         "customer_id": customer_id,
         "invoice_billing": payload.invoice_billing,
         "wc_customer_id": payload.wc_customer_id,
-        "changed_by": str(user.id),
+        "changed_by": str(user.user_id),
     })
 
     return {"success": True, "invoice_billing": customer.invoice_billing}
