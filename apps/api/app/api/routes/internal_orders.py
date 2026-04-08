@@ -783,6 +783,10 @@ def create_internal_order(
                     scheduled_window=None,
                     notes=payload.notes,
                     drop_photos=[],
+                    payment_method=payload.payment_method,
+                    payment_status=payload.payment_status,
+                    payment_note=payload.payment_note or None,
+                    wc_customer_id=wc_customer_id,
                 )
                 db.add(new_drop)
                 db.flush()
