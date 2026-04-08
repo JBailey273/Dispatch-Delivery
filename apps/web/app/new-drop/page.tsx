@@ -89,6 +89,7 @@ function NewDropPage() {
   const [result, setResult] = useState<any>(null);
   const [drivers, setDrivers] = useState<{ id: string; name: string; email: string }[]>([]);
   const [selectedDriverId, setSelectedDriverId] = useState<string>('');
+  const [deliveryNotes, setDeliveryNotes] = useState('');
 
   /* ── Load catalog ── */
   useEffect(() => {
@@ -330,6 +331,7 @@ function NewDropPage() {
         address: { address_id: addressId },
         items,
         is_priority: isPriority,
+        notes: deliveryNotes.trim() || null,
         ...(activeLocation ? { location_id: activeLocation.id } : {}),
       };
       if (!schedLater) {
@@ -854,6 +856,24 @@ function NewDropPage() {
             </div>
           </div>
         )}
+
+        {/* ═══ DELIVERY NOTES ═══ */}
+        <div className="nd-card card">
+          <div className="nd-card-head">
+            <span className="nd-card-icon">📋</span>
+            <span className="nd-card-title">Delivery Notes</span>
+            <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--gray-400)', fontWeight: 500 }}>Optional</span>
+          </div>
+          <div className="nd-card-body">
+            <textarea
+              placeholder="e.g. Gate code #1234, leave at side door, call before arrival…"
+              value={deliveryNotes}
+              onChange={e => setDeliveryNotes(e.target.value)}
+              rows={3}
+              style={{ width: '100%', resize: 'vertical', fontFamily: 'inherit', fontSize: 14, padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', color: 'var(--gray-800)', background: 'var(--surface)', boxSizing: 'border-box' }}
+            />
+          </div>
+        </div>
 
         {/* ═══ SUBMIT BAR ═══ */}
         <div className="nd-submit-bar">
