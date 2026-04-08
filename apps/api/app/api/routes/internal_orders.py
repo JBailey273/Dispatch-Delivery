@@ -153,6 +153,8 @@ def lookup_wc_customer(
     # Check WC registered customer for role + invoice billing flag
     wc_role = None
     invoice_billing = False
+    phone = billing.get("phone", "")
+    email = billing.get("email", "")
 
     # If order didn't have a customer_id, try to find the WC user by email
     if not wc_customer_id and email:
@@ -176,8 +178,6 @@ def lookup_wc_customer(
 
     # Check local dispatch customer record
     local = None
-    phone = billing.get("phone", "")
-    email = billing.get("email", "")
 
     if phone:
         try:
