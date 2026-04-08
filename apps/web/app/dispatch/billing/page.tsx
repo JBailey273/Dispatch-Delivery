@@ -23,15 +23,9 @@ type ContractorGroup = {
   company_name: string | null;
   email: string | null;
   phone: string | null;
-  local_customer_id: string | null;
   stripe_customer_id: string | null;
   orders: InvoiceOrder[];
-  total: number;
 };
-
-function fmt(n: number) {
-  return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-}
 
 export default function BillingPage() {
   const [groups, setGroups] = useState<ContractorGroup[]>([]);
@@ -50,7 +44,6 @@ export default function BillingPage() {
     setError('');
     try {
       const data = await api('/internal-orders/invoiced-orders');
-      // Group by customer name+email
       const map = new Map<string, ContractorGroup>();
       for (const order of data.invoiced as InvoiceOrder[]) {
         const key = order.email || order.customer_name;
@@ -60,17 +53,14 @@ export default function BillingPage() {
             company_name: order.company_name,
             email: order.email,
             phone: order.phone,
-            local_customer_id: null,
             stripe_customer_id: null,
             orders: [],
-            total: 0,
           });
         }
-        // We'll need to fetch totals from WC — for now use payment_note or mark as pending
         map.get(key)!.orders.push(order);
       }
       setGroups(Array.from(map.values()));
-    } catch (e) {
+    } catch {
       setError('Failed to load invoiced orders.');
     } finally {
       setLoading(false);
@@ -114,93 +104,225 @@ export default function BillingPage() {
   };
 
   return (
-    <div className="page">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Contractor Billing</h1>
-          <p className="page-subtitle">Outstanding invoice orders by contractor</p>
+    <>
+      <style>{styles}</style>
+      <div className="page billing-page">
+
+        <div className="page-header">
+          <div>
+            <h1>Contractor Billing</h1>
+            <p className="page-header-sub">Outstanding invoice orders by contractor</p>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={load} disabled={loading}>↻ Refresh</button>
         </div>
-        <button className="btn btn-ghost btn-sm" onClick={load}>↻ Refresh</button>
-      </div>
 
-      {loading && <div className="page-empty">Loading…</div>}
-      {error && <div className="alert alert-error">{error}</div>}
+        {error && (
+          <div className="alert alert-error" style={{ marginBottom: 16 }}>
+            <span>⚠</span> {error}
+            <button className="btn btn-ghost btn-sm" onClick={() => setError('')} style={{ marginLeft: 'auto' }}>✕</button>
+          </div>
+        )}
 
-      {!loading && groups.length === 0 && (
-        <div className="page-empty">No outstanding invoiced orders. All clear.</div>
-      )}
+        {loading && (
+          <div style={{ textAlign: 'center', padding: 60 }}>
+            <div className="spinner spinner-lg" style={{ margin: '0 auto' }} />
+          </div>
+        )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 780 }}>
-        {groups.map(group => {
-          const key = group.email || group.customer_name;
-          const succeeded = chargeSuccess[key];
-          return (
-            <div key={key} className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              {/* Header */}
-              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--gray-100)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 15 }}>
-                    {group.customer_name}
-                    {group.company_name && <span style={{ fontWeight: 400, color: 'var(--gray-400)', marginLeft: 8, fontSize: 13 }}>{group.company_name}</span>}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
-                    {group.email && <span>{group.email}</span>}
-                    {group.phone && <span style={{ marginLeft: 12 }}>{group.phone}</span>}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ fontSize: 13, color: 'var(--gray-500)' }}>
-                    {group.orders.length} order{group.orders.length !== 1 ? 's' : ''}
-                  </div>
-                  {!group.stripe_customer_id && (
-                    <span style={{ fontSize: 11, background: '#fef3c7', color: '#92400e', borderRadius: 6, padding: '2px 8px', fontWeight: 600 }}>
-                      No card on file
-                    </span>
-                  )}
-                  {succeeded ? (
-                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--green-600)' }}>✓ Charged</span>
-                  ) : (
-                    <button
-                      className="btn btn-primary btn-sm"
-                      disabled={charging === key || !group.stripe_customer_id}
-                      onClick={() => handleCharge(group)}
-                    >
-                      {charging === key ? 'Charging…' : 'Charge Now'}
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Order rows */}
-              <div style={{ padding: '8px 0' }}>
-                {group.orders.map(order => (
-                  <div key={order.drop_id} style={{ padding: '10px 20px', display: 'grid', gridTemplateColumns: '1fr auto', gap: '4px 16px', borderBottom: '1px solid var(--gray-50)' }}>
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                      <span style={{ fontWeight: 600, fontSize: 13 }}>#{order.order_number}</span>
-                      <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>{order.scheduled_date || order.created_at?.slice(0, 10) || '—'}</span>
-                      <span style={{ fontSize: 11, background: 'var(--gray-100)', color: 'var(--gray-500)', borderRadius: 4, padding: '1px 6px', textTransform: 'capitalize' }}>{order.delivery_method}</span>
-                    </div>
-                    <div style={{ fontSize: 13, color: 'var(--gray-400)', textAlign: 'right' }}>
-                      {order.payment_status === 'paid'
-                        ? <span style={{ color: 'var(--green-600)', fontWeight: 600 }}>Paid</span>
-                        : <span style={{ color: 'var(--gray-500)' }}>Unpaid</span>}
-                    </div>
-                    {order.payment_note && (
-                      <div style={{ fontSize: 12, color: 'var(--gray-400)', gridColumn: '1 / -1' }}>{order.payment_note}</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {chargeError[key] && (
-                <div style={{ padding: '10px 20px', background: '#fef2f2', color: '#dc2626', fontSize: 13 }}>
-                  ⚠ {chargeError[key]}
-                </div>
-              )}
+        {!loading && groups.length === 0 && !error && (
+          <div className="card">
+            <div className="empty-state">
+              <div className="empty-state-icon">🧾</div>
+              <div className="empty-state-title">No outstanding invoices</div>
+              <div className="empty-state-desc">Invoice orders will appear here once contractors place orders with invoice billing.</div>
             </div>
-          );
-        })}
+          </div>
+        )}
+
+        {!loading && groups.length > 0 && (
+          <div className="billing-list">
+            {groups.map(group => {
+              const key = group.email || group.customer_name;
+              const succeeded = chargeSuccess[key];
+              return (
+                <div key={key} className="card billing-card">
+                  <div className="billing-card-header">
+                    <div className="billing-card-customer">
+                      <div className="billing-card-name">
+                        {group.customer_name}
+                        {group.company_name && (
+                          <span className="billing-card-company">{group.company_name}</span>
+                        )}
+                      </div>
+                      <div className="billing-card-contact">
+                        {group.email && <span>{group.email}</span>}
+                        {group.phone && <span>{group.phone}</span>}
+                      </div>
+                    </div>
+                    <div className="billing-card-actions">
+                      <span className="billing-order-count">
+                        {group.orders.length} order{group.orders.length !== 1 ? 's' : ''}
+                      </span>
+                      {!group.stripe_customer_id && (
+                        <span className="pill pill-amber">No card on file</span>
+                      )}
+                      {succeeded ? (
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--green-600)' }}>✓ Charged</span>
+                      ) : (
+                        <button
+                          className="btn btn-primary btn-sm"
+                          disabled={charging === key || !group.stripe_customer_id}
+                          onClick={() => handleCharge(group)}
+                        >
+                          {charging === key ? 'Charging…' : 'Charge Now'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="billing-order-list">
+                    {group.orders.map(order => (
+                      <div key={order.drop_id} className="billing-order-row">
+                        <div className="billing-order-meta">
+                          <span className="billing-order-num">#{order.order_number}</span>
+                          <span className="billing-order-date">
+                            {order.scheduled_date || order.created_at?.slice(0, 10) || '—'}
+                          </span>
+                          <span className="pill pill-gray" style={{ fontSize: 11, padding: '1px 6px' }}>
+                            {order.delivery_method}
+                          </span>
+                        </div>
+                        <div>
+                          {order.payment_status === 'paid'
+                            ? <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--green-600)' }}>Paid</span>
+                            : <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>Unpaid</span>}
+                        </div>
+                        {order.payment_note && (
+                          <div className="billing-order-note">{order.payment_note}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {chargeError[key] && (
+                    <div className="billing-charge-error">⚠ {chargeError[key]}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
-    </div>
+    </>
   );
 }
+
+const styles = `
+  .billing-page { max-width: 780px; }
+
+  .billing-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .billing-card { padding: 0; }
+
+  .billing-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-subtle);
+    flex-wrap: wrap;
+  }
+
+  .billing-card-name {
+    font-family: var(--font-heading);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--gray-900);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .billing-card-company {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--gray-400);
+  }
+
+  .billing-card-contact {
+    display: flex;
+    gap: 12px;
+    font-size: 12px;
+    color: var(--gray-400);
+    margin-top: 3px;
+  }
+
+  .billing-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .billing-order-count {
+    font-size: 13px;
+    color: var(--gray-400);
+  }
+
+  .billing-order-list {
+    padding: 4px 0;
+  }
+
+  .billing-order-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 8px 16px;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .billing-order-row:last-child { border-bottom: none; }
+
+  .billing-order-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .billing-order-num {
+    font-family: var(--font-heading);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--gray-800);
+  }
+
+  .billing-order-date {
+    font-size: 12px;
+    color: var(--gray-400);
+  }
+
+  .billing-order-note {
+    font-size: 12px;
+    color: var(--gray-400);
+    grid-column: 1 / -1;
+  }
+
+  .billing-charge-error {
+    padding: 10px 20px;
+    background: var(--red-50);
+    color: var(--red-600);
+    font-size: 13px;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  @media (max-width: 600px) {
+    .billing-card-header { flex-direction: column; align-items: flex-start; }
+    .billing-card-actions { width: 100%; justify-content: flex-end; }
+  }
+`;
