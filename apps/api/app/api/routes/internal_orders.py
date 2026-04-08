@@ -173,8 +173,11 @@ def lookup_wc_customer(
                 wc_role = role
             meta = {m["key"]: m["value"] for m in wc_user.get("meta_data", [])}
             invoice_billing = meta.get("emgc_invoice_billing") == "1"
-        except Exception:
-            pass
+            logger.info(f"invoice_billing_debug: wc_customer_id={wc_customer_id} role={role} emgc_invoice_billing={meta.get('emgc_invoice_billing')!r} invoice_billing={invoice_billing}")
+        except Exception as e:
+            logger.warning(f"invoice_billing_debug: exception fetching customer {wc_customer_id}: {e}")
+    else:
+        logger.info(f"invoice_billing_debug: no wc_customer_id resolved, email={email!r}")
 
     # Check local dispatch customer record
     local = None
