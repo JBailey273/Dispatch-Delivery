@@ -150,24 +150,10 @@ def lookup_wc_customer(
     billing = o.get("billing", {})
     wc_customer_id = o.get("customer_id") or None  # 0 = guest, treat as None
 
-    # Check WC registered customer for role + invoice billing flag
+    # Check WC registered customer for role if customer_id exists
     wc_role = None
-    invoice_billing = False
     phone = billing.get("phone", "")
     email = billing.get("email", "")
-
-    # If order didn't have a customer_id, try to find the WC user by email
-    if not wc_customer_id and email:
-        try:
-            results = _wc_request(f"customers?email={urllib.parse.quote(email.lower())}&per_page=1")
-            if not results:
-                # fallback to search in case email casing differs
-                results = _wc_request(f"customers?search={urllib.parse.quote(email)}&per_page=1")
-            if results:
-                wc_customer_id = results[0]["id"]
-                logger.info(f"invoice_billing_debug: resolved wc_customer_id={wc_customer_id} via email lookup")
-        except Exception as e:
-            logger.warning(f"invoice_billing_debug: email lookup failed: {e}")
 
     if wc_customer_id:
         try:
@@ -175,13 +161,8 @@ def lookup_wc_customer(
             role = wc_user.get("role", "customer")
             if role in (WC_ROLE_CONTRACTOR, WC_ROLE_WHOLESALE):
                 wc_role = role
-            meta = {m["key"]: m["value"] for m in wc_user.get("meta_data", [])}
-            invoice_billing = meta.get("emgc_invoice_billing") == "1"
-            logger.info(f"invoice_billing_debug: wc_customer_id={wc_customer_id} role={role} emgc_invoice_billing={meta.get('emgc_invoice_billing')!r} invoice_billing={invoice_billing}")
-        except Exception as e:
-            logger.warning(f"invoice_billing_debug: exception fetching customer {wc_customer_id}: {e}")
-    else:
-        logger.info(f"invoice_billing_debug: no wc_customer_id resolved, email={email!r}")
+        except Exception:
+            pass
 
     # Check local dispatch customer record
     local = None
@@ -261,7 +242,8 @@ def lookup_wc_customer(
         "local_customer_id": str(local.id) if local else None,
         "sms_opt_in": local.sms_opt_in if local else False,
         "email_opt_in": local.email_opt_in if local else False,
-        "invoice_billing": invoice_billing,
+        "invoice_billing": local.invoice_billing if local else False,
+        "local_customer_id": str(local.id) if local else None,
     }
 
 
@@ -1050,6 +1032,54 @@ def get_invoiced_orders(
             for d, c in drops
         ]
     }
+
+class InvoiceBillingToggle(BaseModel):
+    invoice_billing: bool
+    wc_customer_id: int | None = None
+
+
+@router.patch("/customer/{customer_id}/invoice-billing")
+def toggle_invoice_billing(
+    customer_id: str,
+    payload: InvoiceBillingToggle,
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
+    db: Session = Depends(db_dep),
+):
+    """Toggle invoice billing on a local customer record and sync to WC if wc_customer_id provided."""
+    import uuid as _uuid
+    customer = db.execute(
+        select(Customer).where(
+            Customer.tenant_id == user.tenant_id,
+            Customer.id == _uuid.UUID(customer_id),
+        )
+    ).scalar_one_or_none()
+
+    if not customer:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Customer not found"})
+
+    customer.invoice_billing = payload.invoice_billing
+    db.commit()
+
+    # Sync to WC user meta if we have a wc_customer_id
+    if payload.wc_customer_id:
+        try:
+            _wc_request(f"customers/{payload.wc_customer_id}", method="PUT", payload={
+                "meta_data": [
+                    {"key": "emgc_invoice_billing", "value": "1" if payload.invoice_billing else "0"}
+                ]
+            })
+        except Exception as e:
+            logger.warning(f"Could not sync invoice_billing to WC customer {payload.wc_customer_id}: {e}")
+
+    log_event(db, user.tenant_id, "customer.invoice_billing_toggled", "api", {
+        "customer_id": customer_id,
+        "invoice_billing": payload.invoice_billing,
+        "wc_customer_id": payload.wc_customer_id,
+        "changed_by": str(user.id),
+    })
+
+    return {"success": True, "invoice_billing": customer.invoice_billing}
+
 
 class ContractorChargeIn(BaseModel):
     wc_customer_id: int
