@@ -150,9 +150,19 @@ def lookup_wc_customer(
     billing = o.get("billing", {})
     wc_customer_id = o.get("customer_id") or None  # 0 = guest, treat as None
 
-    # Check WC registered customer for role + invoice billing flag if customer_id exists
+    # Check WC registered customer for role + invoice billing flag
     wc_role = None
     invoice_billing = False
+
+    # If order didn't have a customer_id, try to find the WC user by email
+    if not wc_customer_id and email:
+        try:
+            results = _wc_request(f"customers?search={urllib.parse.quote(email)}&per_page=1")
+            if results:
+                wc_customer_id = results[0]["id"]
+        except Exception:
+            pass
+
     if wc_customer_id:
         try:
             wc_user = _wc_request(f"customers/{wc_customer_id}")
