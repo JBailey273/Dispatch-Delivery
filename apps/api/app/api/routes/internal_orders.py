@@ -1026,6 +1026,8 @@ def get_invoiced_orders(
                 "company_name": c.company_name,
                 "phone": c.phone_e164,
                 "email": c.email,
+                "stripe_customer_id": c.stripe_customer_id,
+                "local_customer_id": str(c.id),
                 "payment_note": d.payment_note,
                 "payment_status": d.payment_status,
                 "delivery_method": d.delivery_method,
