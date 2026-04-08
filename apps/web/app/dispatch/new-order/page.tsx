@@ -61,6 +61,7 @@ type WcCustomer = {
   local_customer_id?: string | null;
   sms_opt_in?: boolean;
   email_opt_in?: boolean;
+  invoice_billing?: boolean;
 };
 
 type LineItem = {
@@ -219,6 +220,7 @@ export default function NewOrderPage() {
   const [emailOptIn, setEmailOptIn] = useState(false);
   const [wcRole, setWcRole] = useState<string | null>(null);
   const [isContractor, setIsContractor] = useState(false);
+  const [invoiceBilling, setInvoiceBilling] = useState(false);
   const [stripeCustomerId, setStripeCustomerId] = useState<string | null>(null);
   const [savedCard, setSavedCard] = useState<SavedCard | null>(null);
 
@@ -292,6 +294,8 @@ export default function NewOrderPage() {
         setPhone(data.billing?.phone || data.phone || '');
         setWcRole(data.role || null);
         setIsContractor(data.role === 'contractor');
+        setInvoiceBilling(data.invoice_billing || false);
+        if (data.invoice_billing) setPaymentMethod('invoice');
         setStripeCustomerId(data.stripe_customer_id || null);
         setSavedCard(data.saved_card || null);
         setSmsOptIn(data.sms_opt_in || false);
@@ -323,7 +327,7 @@ export default function NewOrderPage() {
   const clearCustomer = () => {
     setWcCustomer(null); setLookupQuery(''); setLookupDone(false);
     setFirstName(''); setLastName(''); setEmail(''); setPhone(''); setCompanyName('');
-    setWcRole(null); setIsContractor(false); setStripeCustomerId(null); setSavedCard(null);
+    setWcRole(null); setIsContractor(false); setInvoiceBilling(false); setStripeCustomerId(null); setSavedCard(null);
     setSmsOptIn(false); setEmailOptIn(false);
     setAddrLine1(''); setAddrLine2(''); setAddrCity(''); setAddrState('MA'); setAddrZip('');
     setShipping(null); loadProducts(null);
@@ -1011,7 +1015,14 @@ export default function NewOrderPage() {
 
             {/* Payment */}
             <div className="card no-section">
-              <div className="no-section-head">Payment</div>
+              <div className="no-section-head">
+                Payment
+                {invoiceBilling && (
+                  <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, background: '#dbeafe', color: '#1d4ed8', borderRadius: 6, padding: '2px 8px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Invoice Account
+                  </span>
+                )}
+              </div>
               <div className="no-seg" style={{ marginBottom: 14 }}>
                 {([
                   { value: 'cash', label: '💵 Cash' },
