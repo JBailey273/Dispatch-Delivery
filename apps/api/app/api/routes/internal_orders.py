@@ -150,14 +150,17 @@ def lookup_wc_customer(
     billing = o.get("billing", {})
     wc_customer_id = o.get("customer_id") or None  # 0 = guest, treat as None
 
-    # Check WC registered customer for role if customer_id exists
+    # Check WC registered customer for role + invoice billing flag if customer_id exists
     wc_role = None
+    invoice_billing = False
     if wc_customer_id:
         try:
             wc_user = _wc_request(f"customers/{wc_customer_id}")
             role = wc_user.get("role", "customer")
             if role in (WC_ROLE_CONTRACTOR, WC_ROLE_WHOLESALE):
                 wc_role = role
+            meta = {m["key"]: m["value"] for m in wc_user.get("meta_data", [])}
+            invoice_billing = meta.get("emgc_invoice_billing") == "1"
         except Exception:
             pass
 
@@ -241,6 +244,7 @@ def lookup_wc_customer(
         "local_customer_id": str(local.id) if local else None,
         "sms_opt_in": local.sms_opt_in if local else False,
         "email_opt_in": local.email_opt_in if local else False,
+        "invoice_billing": invoice_billing,
     }
 
 
@@ -1029,6 +1033,137 @@ def get_invoiced_orders(
             for d, c in drops
         ]
     }
+
+class ContractorChargeIn(BaseModel):
+    wc_customer_id: int
+    stripe_customer_id: str
+    wc_order_ids: list[int]
+
+
+@router.post("/charge-contractor")
+def charge_contractor(
+    payload: ContractorChargeIn,
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
+    db: Session = Depends(db_dep),
+):
+    """
+    Charge a contractor's saved Stripe card for all provided WC order IDs,
+    then mark those orders paid in WooCommerce and update local drop payment_status.
+    """
+    _stripe()
+
+    # Fetch orders from WC to get totals and verify they're still unpaid
+    orders_to_charge = []
+    for wc_order_id in payload.wc_order_ids:
+        try:
+            wc_order = _wc_request(f"orders/{wc_order_id}")
+            status = wc_order.get("status", "")
+            if status in ("pending", "on-hold", "processing"):
+                orders_to_charge.append({
+                    "wc_order_id": wc_order_id,
+                    "total": wc_order.get("total", "0"),
+                    "order_number": wc_order.get("number", str(wc_order_id)),
+                })
+        except Exception as e:
+            logger.warning(f"Could not fetch WC order {wc_order_id} for contractor charge: {e}")
+
+    if not orders_to_charge:
+        raise HTTPException(status_code=400, detail={"code": "no_chargeable_orders", "message": "No chargeable orders found."})
+
+    batch_total_cents = int(sum(float(o["total"]) for o in orders_to_charge) * 100)
+    if batch_total_cents <= 0:
+        raise HTTPException(status_code=400, detail={"code": "zero_total", "message": "Batch total is zero."})
+
+    order_numbers = ", ".join(f"#{o['order_number']}" for o in orders_to_charge)
+
+    # Fetch the customer's default payment method from Stripe
+    try:
+        payment_methods = stripe.PaymentMethod.list(
+            customer=payload.stripe_customer_id,
+            type="card",
+        )
+        if not payment_methods.data:
+            raise HTTPException(status_code=400, detail={"code": "no_payment_method", "message": "No saved card on file for this contractor."})
+        pm = payment_methods.data[0]
+    except stripe.error.StripeError as e:
+        raise HTTPException(status_code=402, detail={"code": "stripe_error", "message": str(e)})
+
+    # Create and confirm the PaymentIntent
+    try:
+        intent = stripe.PaymentIntent.create(
+            amount=batch_total_cents,
+            currency="usd",
+            customer=payload.stripe_customer_id,
+            payment_method=pm.id,
+            confirm=True,
+            off_session=True,
+            description=f"Weekly invoice batch — orders {order_numbers}",
+            metadata={
+                "wc_customer_id": str(payload.wc_customer_id),
+                "order_ids": ",".join(str(i) for i in payload.wc_order_ids),
+                "charged_by": str(user.id),
+            },
+        )
+    except stripe.error.CardError as e:
+        raise HTTPException(status_code=402, detail={"code": "card_declined", "message": str(e.user_message)})
+    except stripe.error.StripeError as e:
+        raise HTTPException(status_code=402, detail={"code": "stripe_error", "message": str(e)})
+
+    if intent.status != "succeeded":
+        raise HTTPException(status_code=402, detail={"code": "payment_failed", "message": f"Payment status: {intent.status}"})
+
+    # Mark each WC order as paid
+    charged_order_ids = []
+    failed_order_ids = []
+    for o in orders_to_charge:
+        try:
+            _wc_request(f"orders/{o['wc_order_id']}", method="PUT", payload={
+                "status": "completed",
+                "set_paid": True,
+                "meta_data": [
+                    {"key": "_stripe_payment_intent_id", "value": intent.id},
+                    {"key": "_emgc_invoice_charged", "value": "1"},
+                    {"key": "_emgc_invoice_batch_date", "value": str(now_utc().date())},
+                ],
+            })
+            charged_order_ids.append(o["wc_order_id"])
+        except Exception as e:
+            logger.error(f"Failed to mark WC order {o['wc_order_id']} paid after charge: {e}")
+            failed_order_ids.append(o["wc_order_id"])
+
+    # Update local drops payment_status
+    for wc_order_id in charged_order_ids:
+        try:
+            drop = db.execute(
+                select(Drop).where(
+                    Drop.tenant_id == user.tenant_id,
+                    Drop.external_order_id == str(wc_order_id),
+                )
+            ).scalars().first()
+            if drop:
+                drop.payment_status = "paid"
+        except Exception as e:
+            logger.warning(f"Could not update local drop for WC order {wc_order_id}: {e}")
+
+    db.commit()
+
+    log_event(db, user.tenant_id, "invoice.batch_charged", "api", {
+        "stripe_payment_intent_id": intent.id,
+        "wc_customer_id": payload.wc_customer_id,
+        "charged_order_ids": charged_order_ids,
+        "failed_order_ids": failed_order_ids,
+        "total_cents": batch_total_cents,
+        "charged_by": str(user.id),
+    })
+
+    return {
+        "success": True,
+        "stripe_payment_intent_id": intent.id,
+        "total_charged": batch_total_cents / 100,
+        "charged_order_ids": charged_order_ids,
+        "failed_order_ids": failed_order_ids,
+    }
+
 
 @router.get("/tax-rate")
 def get_tax_rate(
