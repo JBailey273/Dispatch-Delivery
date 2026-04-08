@@ -226,6 +226,7 @@ class Customer(Base, TenantScopedMixin, TimestampMixin):
     wc_customer_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     stripe_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     is_contractor: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    invoice_billing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class CustomerAddress(Base, TenantScopedMixin, TimestampMixin):
