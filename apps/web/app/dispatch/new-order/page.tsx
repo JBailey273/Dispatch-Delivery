@@ -260,6 +260,7 @@ export default function NewOrderPage() {
   const [dropPolling, setDropPolling] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [scheduled, setScheduled] = useState<string | null>(null);
+  const [deliveryNotes, setDeliveryNotes] = useState('');
 
   if (!requireRole(['dispatcher', 'admin'])) {
     return <div className="page"><p>Unauthorized</p></div>;
@@ -612,6 +613,7 @@ export default function NewOrderPage() {
           address_postal_code: addrZip.trim(),
           delivery_fee: deliveryFee.toFixed(2),
           shipping_instance_id: shipping?.instance_id || '3',
+          notes: deliveryNotes.trim() || null,
           payment_method: paymentMethod,
           payment_note: paymentNote.trim(),
           stripe_payment_intent_id: stripePaymentIntentId,
@@ -992,6 +994,19 @@ export default function NewOrderPage() {
                   Customer picks up at the Hampden location. No delivery fee.
                 </div>
               )}
+            </div>
+
+            {/* Delivery Notes */}
+            <div className="card no-section">
+              <div className="no-section-head">Delivery Notes <span style={{ fontWeight: 400, color: 'var(--gray-400)', textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>Optional</span></div>
+              <textarea
+                className="no-input"
+                placeholder="e.g. Gate code #1234, leave at side door, call before arrival…"
+                value={deliveryNotes}
+                onChange={e => setDeliveryNotes(e.target.value)}
+                rows={3}
+                style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: 14 }}
+              />
             </div>
 
             {/* Payment */}
