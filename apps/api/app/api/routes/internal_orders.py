@@ -159,11 +159,15 @@ def lookup_wc_customer(
     # If order didn't have a customer_id, try to find the WC user by email
     if not wc_customer_id and email:
         try:
-            results = _wc_request(f"customers?search={urllib.parse.quote(email)}&per_page=1")
+            results = _wc_request(f"customers?email={urllib.parse.quote(email.lower())}&per_page=1")
+            if not results:
+                # fallback to search in case email casing differs
+                results = _wc_request(f"customers?search={urllib.parse.quote(email)}&per_page=1")
             if results:
                 wc_customer_id = results[0]["id"]
-        except Exception:
-            pass
+                logger.info(f"invoice_billing_debug: resolved wc_customer_id={wc_customer_id} via email lookup")
+        except Exception as e:
+            logger.warning(f"invoice_billing_debug: email lookup failed: {e}")
 
     if wc_customer_id:
         try:
