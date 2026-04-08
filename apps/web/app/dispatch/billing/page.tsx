@@ -10,6 +10,8 @@ type InvoiceOrder = {
   company_name: string | null;
   phone: string | null;
   email: string | null;
+  stripe_customer_id: string | null;
+  local_customer_id: string | null;
   payment_note: string | null;
   payment_status: string;
   delivery_method: string;
@@ -45,20 +47,20 @@ export default function BillingPage() {
     try {
       const data = await api('/internal-orders/invoiced-orders');
       const map = new Map<string, ContractorGroup>();
-      for (const order of data.invoiced as InvoiceOrder[]) {
-        const key = order.email || order.customer_name;
-        if (!map.has(key)) {
-          map.set(key, {
-            customer_name: order.customer_name,
-            company_name: order.company_name,
-            email: order.email,
-            phone: order.phone,
-            stripe_customer_id: null,
-            orders: [],
-          });
+        for (const order of data.invoiced as InvoiceOrder[]) {
+          const key = order.email || order.customer_name;
+          if (!map.has(key)) {
+            map.set(key, {
+              customer_name: order.customer_name,
+              company_name: order.company_name,
+              email: order.email,
+              phone: order.phone,
+              stripe_customer_id: order.stripe_customer_id || null,
+              orders: [],
+            });
+          }
+          map.get(key)!.orders.push(order);
         }
-        map.get(key)!.orders.push(order);
-      }
       setGroups(Array.from(map.values()));
     } catch {
       setError('Failed to load invoiced orders.');
