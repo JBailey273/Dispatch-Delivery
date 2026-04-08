@@ -59,7 +59,7 @@ export default function LoginPage() {
             <p className="login-subtitle">Sign in to your account</p>
           </div>
 
-          <form className="login-form" onSubmit={onSubmit}>
+          <form className="login-form" onSubmit={onSubmit} action="#" method="post">
             {error && <div className="alert alert-error"><span>⚠</span>{error}</div>}
 
             <div className="form-group">
