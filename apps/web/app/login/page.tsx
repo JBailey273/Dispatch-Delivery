@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import { setSession } from '../lib/auth';
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('dispatcher@example.com');
-  const [password, setPassword] = useState('password');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -91,24 +91,9 @@ export default function LoginPage() {
           </form>
 
           <div className="login-footer">
-            <div className="login-dev-label">Dev accounts</div>
-            <div className="login-dev-accounts">
-              {[
-                { email: 'admin@example.com', role: 'Admin' },
-                { email: 'dispatcher@example.com', role: 'Dispatcher' },
-                { email: 'driver@example.com', role: 'Driver' },
-              ].map(a => (
-                <button
-                  key={a.email}
-                  className="login-dev-btn"
-                  type="button"
-                  onClick={() => { setEmail(a.email); setPassword('password'); }}
-                >
-                  <span className="login-dev-role">{a.role}</span>
-                  <span className="login-dev-email">{a.email}</span>
-                </button>
-              ))}
-            </div>
+            <p style={{ textAlign: 'center', fontSize: 12, color: 'rgba(255,255,255,0.20)', margin: 0 }}>
+              Loadout · Dispatch Platform
+            </p>
           </div>
         </div>
       </div>
@@ -197,55 +182,7 @@ const loginStyles = `
     color: rgba(255,255,255,0.20);
   }
   .login-footer {
-    padding: 16px 32px 28px;
+    padding: 16px 32px 24px;
     border-top: 1px solid rgba(255,255,255,0.07);
-  }
-  .login-dev-label {
-    font-family: var(--font-heading);
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: rgba(255,255,255,0.25);
-    margin-bottom: 10px;
-    text-align: center;
-  }
-  .login-dev-accounts {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .login-dev-btn {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: var(--radius-lg);
-    background: rgba(255,255,255,0.04);
-    cursor: pointer;
-    transition: all 0.15s;
-    font-family: inherit;
-  }
-  .login-dev-btn:hover {
-    background: rgba(255,255,255,0.08);
-    border-color: rgba(255,255,255,0.14);
-  }
-  .login-dev-role {
-    font-family: var(--font-heading);
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #2563EB;
-    background: rgba(37,99,235,0.12);
-    padding: 3px 10px;
-    border-radius: 12px;
-    min-width: 76px;
-    text-align: center;
-  }
-  .login-dev-email {
-    font-size: 13px;
-    color: rgba(255,255,255,0.40);
   }
 `;
