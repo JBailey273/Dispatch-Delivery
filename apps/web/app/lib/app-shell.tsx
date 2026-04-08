@@ -152,6 +152,7 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
               <SidebarLink href="/customer-search" icon={Icons.customers}>Customers</SidebarLink>
               <SidebarLink href="/all-orders" icon={Icons.allorders}>All Orders</SidebarLink>
               <SidebarLink href="/pickup" icon={Icons.pickup}>Pickup Queue</SidebarLink>
+              <SidebarLink href="/dispatch/billing" icon={Icons.billing}>Billing</SidebarLink>
             </>
           )}
           {isDriver && (
