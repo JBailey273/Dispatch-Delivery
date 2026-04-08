@@ -452,6 +452,9 @@ class InternalOrderIn(BaseModel):
     stripe_customer_id: str | None = None
     payment_status: str = "unpaid"  # "paid" | "unpaid" | "pending_link"
 
+    # Notes
+    notes: str | None = None
+
     # Location
     location_id: str | None = None
 
@@ -775,7 +778,7 @@ def create_internal_order(
                     is_priority=False,
                     scheduled_date=None,
                     scheduled_window=None,
-                    notes=None,
+                    notes=payload.notes,
                     drop_photos=[],
                 )
                 db.add(new_drop)
