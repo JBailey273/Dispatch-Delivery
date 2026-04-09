@@ -115,6 +115,8 @@ def _customer_dict(c: Customer, last_ordered=None):
         "email": c.email,
         "sms_opt_in": c.sms_opt_in,
         "email_opt_in": c.email_opt_in,
+        "invoice_billing": c.invoice_billing,
+        "stripe_customer_id": c.stripe_customer_id,
     }
 
 def _get_customer_or_404(db: Session, customer_id: str, tenant_id) -> Customer:
