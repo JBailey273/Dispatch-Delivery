@@ -529,10 +529,16 @@ def create_internal_order(
 
     # ── Step 2: Create WooCommerce order ─────────────────────────────────────
 
-    wc_line_items = [
-        {"product_id": item.product_id, "quantity": item.quantity}
-        for item in payload.line_items
-    ]
+    wc_line_items = []
+    for item in payload.line_items:
+        unit_price = float(item.price or "0")
+        line_total = str(round(unit_price * item.quantity, 2))
+        wc_line_items.append({
+            "product_id": item.product_id,
+            "quantity": item.quantity,
+            "subtotal": line_total,
+            "total": line_total,
+        })
 
     fee_lines = []
     
