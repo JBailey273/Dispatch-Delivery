@@ -1042,6 +1042,7 @@ def get_invoiced_orders(
 class InvoiceBillingToggle(BaseModel):
     invoice_billing: bool
     wc_customer_id: int | None = None
+    stripe_customer_id: str | None = None
 
 
 @router.patch("/customer/{customer_id}/invoice-billing")
