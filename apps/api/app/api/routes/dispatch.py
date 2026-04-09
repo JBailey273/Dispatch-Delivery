@@ -532,7 +532,7 @@ def assign_loads(payload: AssignIn, user: AuthUser = Depends(require_roles(UserR
         l.truck_label = payload.truck_label
         if l.status == LoadStatus.CANCELLED:
             continue
-        l.status = LoadStatus.ASSIGNED if payload.driver_user_id else LoadStatus.NEW
+        l.status = LoadStatus.ASSIGNED if payload.driver_user_id else LoadStatus.ASSIGNED
     log_event(db, user.tenant_id, "loads.assigned" if payload.driver_user_id else "loads.unassigned", "api", payload.model_dump())
     db.commit()
     invalidate_suggestion_cache(str(user.tenant_id))
