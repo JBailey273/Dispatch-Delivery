@@ -969,7 +969,7 @@ const createCustomer = async () => {
                                       )}
                                       <button
                                         className="cs-edit-btn"
-                                        onClick={e => { e.stopPropagation(); setShowCardCapture(r.id); setCardError(''); }}
+                                        onClick={e => { e.stopPropagation(); setShowCardCapture(r.id); }}
                                       >
                                         {r.stripe_customer_id ? 'Update' : 'Add Card'}
                                       </button>
