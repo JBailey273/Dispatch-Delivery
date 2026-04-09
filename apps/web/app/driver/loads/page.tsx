@@ -398,7 +398,7 @@ export default function DriverPage() {
             <div className="drv-big-icon">⚠️</div>
             <div className="drv-center-title">Something went wrong</div>
             <p className="drv-muted">{error}</p>
-            <button className="drv-btn drv-btn--green" style={{ marginTop: 16, maxWidth: 200 }} onClick={() => { setLoading(true); fetchDrops(); }}>Refresh</button>
+            <button className="drv-btn drv-btn--blue" style={{ marginTop: 16, maxWidth: 200, margin: '16px auto 0' }} onClick={() => { setLoading(true); fetchDrops(); }}>Refresh</button>
           </div>
         )}
 
@@ -408,7 +408,7 @@ export default function DriverPage() {
             <div className="drv-big-icon">🚚</div>
             <div className="drv-center-title">No deliveries today</div>
             <p className="drv-muted">You&apos;re all set! Check back later.</p>
-            <button className="drv-btn drv-btn--green" style={{ marginTop: 16, maxWidth: 200 }} onClick={() => { setLoading(true); fetchDrops(); }}>Refresh</button>
+            <button className="drv-btn drv-btn--blue" style={{ marginTop: 16, maxWidth: 200, margin: '16px auto 0' }} onClick={() => { setLoading(true); fetchDrops(); }}>Refresh</button>
           </div>
         )}
 
@@ -891,6 +891,7 @@ const STYLES = `
   .drv-btn--red { background: var(--red6); color: #fff; }
   .drv-btn--outline { background: #fff; color: var(--g7); border: 1.5px solid var(--g2); }
   .drv-btn--ghost { background: var(--g1); color: var(--g7); }
+  .drv-btn--blue { background: var(--blu6); color: #fff; }
 
   /* ── Actions ── */
   .drv-actions { margin-top: 24px; display: flex; flex-direction: column; gap: 14px; }
