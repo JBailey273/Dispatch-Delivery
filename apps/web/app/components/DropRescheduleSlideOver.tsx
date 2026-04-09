@@ -94,7 +94,6 @@ const STATUS_OPTIONS = [
   { value: 'loaded_leaving', label: 'Out for Delivery',  pill: 'pill-blue'  },
   { value: 'delivered',      label: 'Delivered',         pill: 'pill-green' },
   { value: 'exception',      label: 'Exception',         pill: 'pill-red'   },
-  { value: 'cancelled',      label: 'Cancelled',         pill: 'pill-red'   },
 ];
 
 function statusPill(s: string) { return STATUS_OPTIONS.find(o => o.value === s)?.pill ?? 'pill-gray'; }
