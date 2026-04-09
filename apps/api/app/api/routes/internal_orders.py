@@ -1064,6 +1064,8 @@ def toggle_invoice_billing(
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Customer not found"})
 
     customer.invoice_billing = payload.invoice_billing
+    if payload.stripe_customer_id:
+        customer.stripe_customer_id = payload.stripe_customer_id
     db.commit()
 
     # Sync to WC user meta if we have a wc_customer_id
