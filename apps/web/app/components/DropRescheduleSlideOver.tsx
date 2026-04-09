@@ -199,11 +199,15 @@ export default function DropRescheduleSlideOver({
     if (!edit) return;
     setSavingLoadId(loadId);
     try {
-      await api('/dispatch/loads/assign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ load_ids: [loadId], driver_user_id: edit.driverId || null }),
-      });
+      const originalLoad = dropDetail?.loads.find(l => l.id === loadId);
+      const driverChanged = edit.driverId !== (originalLoad?.driver_user_id ?? '');
+      if (driverChanged) {
+        await api('/dispatch/loads/assign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ load_ids: [loadId], driver_user_id: edit.driverId || null }),
+        });
+      }
       if (edit.status) {
         await api(`/dispatch/loads/${loadId}/status`, {
           method: 'POST',
