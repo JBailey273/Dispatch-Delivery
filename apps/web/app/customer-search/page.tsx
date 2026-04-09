@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, api, requireRole } from '../lib/auth';
 
-type CustomerResult = { id: string; first_name: string; last_name: string; company_name: string | null; name: string; phone_e164: string; customer_type: string; last_ordered: string | null; email: string | null; sms_opt_in: boolean; email_opt_in: boolean; exact_phone_match?: boolean; };
+type CustomerResult = { id: string; first_name: string; last_name: string; company_name: string | null; name: string; phone_e164: string; customer_type: string; last_ordered: string | null; email: string | null; sms_opt_in: boolean; email_opt_in: boolean; invoice_billing: boolean; stripe_customer_id: string | null; exact_phone_match?: boolean; };
 type Address = {
   id: string; line1: string; line2?: string | null;
   city: string; state: string; postal_code: string; is_default?: boolean;
@@ -27,6 +27,103 @@ function fmtDate(ds: string) {
 
 function fmtAddrLine(a: Address) {
   return `${a.line1}${a.line2 ? `, ${a.line2}` : ''}, ${a.city}, ${a.state} ${a.postal_code}`;
+}
+
+const stripePromise = typeof window !== 'undefined'
+  ? import('@stripe/stripe-js').then(m => m.loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || ''))
+  : Promise.resolve(null);
+
+function CardCaptureModal({
+  customer,
+  onClose,
+  onSuccess,
+}: {
+  customer: CustomerResult;
+  onClose: () => void;
+  onSuccess: (stripeCustomerId: string) => void;
+}) {
+  const [stripeInstance, setStripeInstance] = useState<any>(null);
+  const [cardElements, setCardElements] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cardEl: any = null;
+    stripePromise.then(s => {
+      if (!s || !cardRef.current) return;
+      setStripeInstance(s);
+      const els = (s as any).elements();
+      setCardElements(els);
+      cardEl = els.create('card', {
+        style: {
+          base: { fontSize: '15px', fontFamily: 'inherit', color: '#1f2937', '::placeholder': { color: '#9ca3af' } },
+          invalid: { color: '#dc2626' },
+        },
+      });
+      cardEl.mount(cardRef.current);
+    });
+    return () => { try { cardEl?.destroy(); } catch {} };
+  }, []);
+
+  const handleSave = async () => {
+    if (!stripeInstance || !cardElements) return;
+    setSaving(true);
+    setError('');
+    try {
+      const intentData = await api('/internal-orders/create-setup-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stripe_customer_id: customer.stripe_customer_id || null,
+          customer_name: `${customer.first_name} ${customer.last_name}`.trim(),
+          customer_email: customer.email || null,
+        }),
+      });
+      const cardElement = cardElements.getElement('card');
+      const { error: stripeError } = await stripeInstance.confirmCardSetup(
+        intentData.client_secret,
+        { payment_method: { card: cardElement } }
+      );
+      if (stripeError) throw new Error(stripeError.message);
+      await api(`/internal-orders/customer/${customer.id}/invoice-billing`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          invoice_billing: customer.invoice_billing,
+          wc_customer_id: null,
+          stripe_customer_id: intentData.stripe_customer_id,
+        }),
+      });
+      onSuccess(intentData.stripe_customer_id);
+    } catch (err: any) {
+      setError(err.message || 'Failed to save card');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+        <div className="modal-header">
+          <h2>Card on File — {customer.first_name} {customer.last_name}</h2>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <p style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 0, marginBottom: 16 }}>
+            This card will be charged weekly for outstanding invoice orders. Stored securely in Stripe — card numbers are never saved here.
+          </p>
+          <div ref={cardRef} style={{ border: '1.5px solid var(--border)', borderRadius: 8, padding: '12px 14px', background: 'var(--bg-primary)' }} />
+          {error && <div className="alert alert-error" style={{ marginTop: 10 }}><span>⚠</span> {error}</div>}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={saving || !stripeInstance} onClick={handleSave}>
+            {saving ? 'Saving…' : 'Save Card'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function CustomerSearchPage() {
@@ -71,8 +168,14 @@ export default function CustomerSearchPage() {
   const [confirmDeleteCustomer, setConfirmDeleteCustomer] = useState<string | null>(null); // customer id
   const [deleting, setDeleting] = useState(false);
 
-  /* ── Type toggle ── */
+ /* ── Type toggle ── */
   const [typeToggling, setTypeToggling] = useState<string | null>(null);
+
+  /* ── Invoice billing toggle ── */
+  const [togglingInvoice, setTogglingInvoice] = useState<string | null>(null);
+
+  /* ── Card capture ── */
+  const [showCardCapture, setShowCardCapture] = useState<string | null>(null);
 
   /* ── Create customer modal ── */
   const [showCreate, setShowCreate] = useState(false);
@@ -274,6 +377,26 @@ const saveCompany = async (customerId: string) => {
     } finally { setSavingCompany(false); }
   };
   
+  const toggleInvoiceBilling = async (customerId: string, current: boolean) => {
+    setTogglingInvoice(customerId);
+    setError('');
+    try {
+      await api(`/internal-orders/customer/${customerId}/invoice-billing`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoice_billing: !current, wc_customer_id: null }),
+      });
+      const update = (list: CustomerResult[]) =>
+        list.map(c => c.id === customerId ? { ...c, invoice_billing: !current } : c);
+      setAllCustomers(update);
+      if (searchResults) setSearchResults(update(searchResults));
+      setSuccess(`Invoice billing ${!current ? 'enabled' : 'disabled'}`);
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err) {
+      setError((err as ApiError).message || 'Failed to update invoice billing');
+    } finally { setTogglingInvoice(null); }
+  };
+
   const toggleOptIn = async (customerId: string, field: 'sms_opt_in' | 'email_opt_in', current: boolean) => {
     setTogglingOptIn(`${customerId}_${field}`);
     try {
@@ -820,6 +943,41 @@ const createCustomer = async () => {
                                 )}
                               </div>
 
+                              {/* Billing */}
+                              <div className="cs-section">
+                                <div className="cs-section-label">Billing</div>
+                                <div className="cs-info-grid">
+                                  <div className="cs-info-field">
+                                    <div className="cs-field-label">Invoice Billing</div>
+                                    <div className="cs-field-value">
+                                      <button
+                                        className={`btn btn-sm ${r.invoice_billing ? 'btn-primary' : 'btn-secondary'}`}
+                                        disabled={togglingInvoice === r.id}
+                                        onClick={e => { e.stopPropagation(); toggleInvoiceBilling(r.id, r.invoice_billing); }}
+                                      >
+                                        {togglingInvoice === r.id ? '…' : r.invoice_billing ? '✓ Enabled' : '○ Disabled'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <div className="cs-info-field">
+                                    <div className="cs-field-label">Card on File</div>
+                                    <div className="cs-field-value">
+                                      {r.stripe_customer_id ? (
+                                        <span style={{ fontSize: 13, color: 'var(--green-600)', fontWeight: 600 }}>✓ Card saved</span>
+                                      ) : (
+                                        <span style={{ fontSize: 13, color: 'var(--gray-400)' }}>No card on file</span>
+                                      )}
+                                      <button
+                                        className="cs-edit-btn"
+                                        onClick={e => { e.stopPropagation(); setShowCardCapture(r.id); setCardError(''); }}
+                                      >
+                                        {r.stripe_customer_id ? 'Update' : 'Add Card'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
                               {/* Footer: New Order + Delete Customer */}
                               <div className="cs-expand-footer">
                                 <button
@@ -860,6 +1018,26 @@ const createCustomer = async () => {
         )}
 
       </div>
+
+      {showCardCapture && (() => {
+        const customer = displayed.find(c => c.id === showCardCapture);
+        if (!customer) return null;
+        return (
+          <CardCaptureModal
+            customer={customer}
+            onClose={() => setShowCardCapture(null)}
+            onSuccess={(stripeCustomerId) => {
+              const update = (list: CustomerResult[]) =>
+                list.map(c => c.id === customer.id ? { ...c, stripe_customer_id: stripeCustomerId } : c);
+              setAllCustomers(update);
+              if (searchResults) setSearchResults(update(searchResults));
+              setShowCardCapture(null);
+              setSuccess('Card saved successfully');
+              setTimeout(() => setSuccess(''), 3000);
+            }}
+          />
+        );
+      })()}
 
       {showCreate && (
         <div className="modal-overlay" onClick={() => setShowCreate(false)}>
