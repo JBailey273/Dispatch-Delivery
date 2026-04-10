@@ -306,7 +306,7 @@ def list_orders(
             if not any([
                 q in (customer.name or '').lower(),
                 q in (customer.phone_e164 or ''),
-                q in f"{address.line1} {address.city}".lower(),
+                q in (f"{address.line1} {address.city}".lower() if address else ''),
                 q in ref,
             ]):
                 continue
