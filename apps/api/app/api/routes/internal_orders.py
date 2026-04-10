@@ -447,6 +447,7 @@ class InternalOrderIn(BaseModel):
     # Pricing
     delivery_fee: str = "0"
     shipping_instance_id: str = "3"
+    tax_exempt: bool = False
 
     # Payment
     payment_method: str = "cash"  # "cash" | "card" | "payment_link" | "invoice"
@@ -533,12 +534,17 @@ def create_internal_order(
     for item in payload.line_items:
         unit_price = float(item.price or "0")
         line_total = str(round(unit_price * item.quantity, 2))
-        wc_line_items.append({
+        li: dict = {
             "product_id": item.product_id,
             "quantity": item.quantity,
             "subtotal": line_total,
             "total": line_total,
-        })
+        }
+        if payload.tax_exempt:
+            li["subtotal_tax"] = "0.00"
+            li["total_tax"] = "0.00"
+            li["taxes"] = []
+        wc_line_items.append(li)
 
     fee_lines = []
     
@@ -570,6 +576,7 @@ def create_internal_order(
         {"key": "_emgc_source", "value": "internal"},
         {"key": "_emgc_payment_method", "value": payload.payment_method},
         {"key": "_emgc_payment_note", "value": payload.payment_note},
+        {"key": "_emgc_tax_exempt", "value": "1" if payload.tax_exempt else "0"},
     ]
     if payload.wc_role:
         meta_data.append({"key": "_emgc_customer_role", "value": payload.wc_role})
@@ -596,6 +603,7 @@ def create_internal_order(
         "shipping_lines": shipping_lines,
         "meta_data": meta_data,
         "set_paid": set_paid,
+        **({"prices_include_tax": False} if payload.tax_exempt else {}),
     }
 
     if wc_customer_id:
