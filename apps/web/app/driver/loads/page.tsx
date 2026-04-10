@@ -427,14 +427,31 @@ export default function DriverPage() {
   });
 
   const sections: { key: string; label: string; emoji: string; drops: typeof drops }[] = [];
-  if (priorityDrops.length > 0) sections.push({ key: 'priority', label: 'Priority', emoji: '⚡', drops: sortDrops(priorityDrops) });
-  if (amDrops.length > 0) sections.push({ key: 'am', label: 'Morning (9am – 1pm)', emoji: '🌅', drops: sortDrops(amDrops) });
-  if (pmDrops.length > 0) sections.push({ key: 'pm', label: 'Afternoon (1pm – 5pm)', emoji: '☀️', drops: sortDrops(pmDrops) });
+  if (priorityDrops.length > 0) sections.push({ key: 'priority', label: 'Priority Deliveries', emoji: '⚡', drops: sortDrops(priorityDrops) });
+  if (amDrops.length > 0) sections.push({ key: 'am', label: 'Morning Window  ·  9am – 1pm', emoji: '🌅', drops: sortDrops(amDrops) });
+  if (pmDrops.length > 0) sections.push({ key: 'pm', label: 'Afternoon Window  ·  1pm – 5pm', emoji: '☀️', drops: sortDrops(pmDrops) });
   if (unwindowedDrops.length > 0) sections.push({ key: 'other', label: 'Other', emoji: '📦', drops: sortDrops(unwindowedDrops) });
 
   return sections.map(section => (
     <div key={section.key}>
-      <div className="drv-window-head">{section.emoji} {section.label}</div>
+
+      <div style={{
+        margin: '14px 14px 4px',
+        padding: '12px 14px',
+        borderRadius: 12,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        background: section.key === 'priority' ? '#dbeafe' : section.key === 'am' ? '#fef9c3' : section.key === 'pm' ? '#ffedd5' : '#f3f4f6',
+        color: section.key === 'priority' ? '#1e40af' : section.key === 'am' ? '#854d0e' : section.key === 'pm' ? '#9a3412' : '#374151',
+      }}>
+        <span style={{ fontSize: 24 }}>{section.emoji}</span>
+        <div style={{ flex: 1, fontFamily: 'var(--fh)', fontSize: 16, fontWeight: 800, lineHeight: 1.2 }}>{section.label}</div>
+        <div style={{ fontSize: 13, fontWeight: 700, opacity: 0.55 }}>
+          {section.drops.length} stop{section.drops.length !== 1 ? 's' : ''}
+        </div>
+      </div>
+
       {section.drops.map(drop => {
         const dropStatus = getDropStatus(drop);
         const isExpanded = expandedDrop === drop.drop_id;
@@ -497,7 +514,7 @@ export default function DriverPage() {
                   })}
                 </div>
 
-                {/* ② Notify customer — "I'm on my way" */}
+                {/* ② Notify customer */}
                 {!isDone && !isException && (
                   <div style={{ marginTop: 16 }}>
                     {drop.notify_sent ? (
