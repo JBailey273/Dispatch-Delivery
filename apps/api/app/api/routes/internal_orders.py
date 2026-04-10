@@ -541,10 +541,10 @@ def create_internal_order(
             "total": line_total,
         }
         if payload.tax_exempt:
+            li["tax_class"] = "zero-rate"
             li["subtotal_tax"] = "0.00"
             li["total_tax"] = "0.00"
             li["taxes"] = []
-        wc_line_items.append(li)
 
     fee_lines = []
     
