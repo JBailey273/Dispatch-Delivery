@@ -617,6 +617,7 @@ export default function NewOrderPage() {
           address_state: addrState.trim(),
           address_postal_code: addrZip.trim(),
           delivery_fee: deliveryFee.toFixed(2),
+          tax_exempt: taxExempt,
           shipping_instance_id: shipping?.instance_id || '3',
           notes: deliveryNotes.trim() || null,
           payment_method: paymentMethod,
