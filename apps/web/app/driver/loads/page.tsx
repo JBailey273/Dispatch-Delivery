@@ -413,259 +413,279 @@ export default function DriverPage() {
         )}
 
         {/* ── Drop Cards ── */}
-        {[...drops].sort((a, b) => {
-          const doneA = ['delivered', 'cancelled', 'exception'].includes(getDropStatus(a));
-          const doneB = ['delivered', 'cancelled', 'exception'].includes(getDropStatus(b));
-          if (doneA === doneB) return 0;
-          return doneA ? 1 : -1;
-        }).map(drop => {
-          const dropStatus = getDropStatus(drop);
-          const isExpanded = expandedDrop === drop.drop_id;
-          const cfg = STATUS_CONFIG[dropStatus] || STATUS_CONFIG.assigned;
-          const isDone = dropStatus === 'delivered' || dropStatus === 'cancelled';
-          const isException = dropStatus === 'exception';
-          const isPriority = drop.is_priority && !isDone;
-          const activeLoads = drop.loads.filter(l => l.status === 'assigned' || l.status === 'loaded_leaving');
-          const siteDocumented = drop.loads.every(l => l.condition_photo_url || l.condition_notes);
+{(() => {
+  const priorityDrops = drops.filter(d => d.is_priority);
+  const amDrops = drops.filter(d => !d.is_priority && d.scheduled_window === 'A');
+  const pmDrops = drops.filter(d => !d.is_priority && d.scheduled_window === 'B');
+  const unwindowedDrops = drops.filter(d => !d.is_priority && !d.scheduled_window);
 
-          return (
-            <div key={drop.drop_id} className={`drv-card${isDone ? ' drv-card--done' : ''}${isException ? ' drv-card--exc' : ''}${isPriority ? ' drv-card--priority' : ''}`}>
+  const sortDrops = (list: typeof drops) => [...list].sort((a, b) => {
+    const doneA = ['delivered', 'cancelled', 'exception'].includes(getDropStatus(a));
+    const doneB = ['delivered', 'cancelled', 'exception'].includes(getDropStatus(b));
+    if (doneA === doneB) return 0;
+    return doneA ? 1 : -1;
+  });
 
-              {/* Priority banner */}
-              {isPriority && <div className="drv-priority-strip">⚡ PRIORITY DELIVERY</div>}
+  const sections: { key: string; label: string; emoji: string; drops: typeof drops }[] = [];
+  if (priorityDrops.length > 0) sections.push({ key: 'priority', label: 'Priority', emoji: '⚡', drops: sortDrops(priorityDrops) });
+  if (amDrops.length > 0) sections.push({ key: 'am', label: 'Morning (9am – 1pm)', emoji: '🌅', drops: sortDrops(amDrops) });
+  if (pmDrops.length > 0) sections.push({ key: 'pm', label: 'Afternoon (1pm – 5pm)', emoji: '☀️', drops: sortDrops(pmDrops) });
+  if (unwindowedDrops.length > 0) sections.push({ key: 'other', label: 'Other', emoji: '📦', drops: sortDrops(unwindowedDrops) });
 
-              {/* Card header */}
-              <div className="drv-card-hd" onClick={() => setExpandedDrop(isExpanded ? null : drop.drop_id)}>
-                <div className="drv-dot" style={{ background: isPriority ? '#2563eb' : cfg.color }} />
-                <div className="drv-card-info">
-                  <div className="drv-name">{drop.customer_name}</div>
-                  <div className="drv-sub">
-                    {drop.loads.length} item{drop.loads.length !== 1 ? 's' : ''}
-                    {drop.address ? ` · ${drop.address.city}` : ''}
-                    {drop.is_priority && !isPriority ? ' · Priority ✓' : ''}
-                  </div>
+  return sections.map(section => (
+    <div key={section.key}>
+      <div className="drv-window-head">{section.emoji} {section.label}</div>
+      {section.drops.map(drop => {
+        const dropStatus = getDropStatus(drop);
+        const isExpanded = expandedDrop === drop.drop_id;
+        const cfg = STATUS_CONFIG[dropStatus] || STATUS_CONFIG.assigned;
+        const isDone = dropStatus === 'delivered' || dropStatus === 'cancelled';
+        const isException = dropStatus === 'exception';
+        const isPriority = drop.is_priority && !isDone;
+        const activeLoads = drop.loads.filter(l => l.status === 'assigned' || l.status === 'loaded_leaving');
+        const siteDocumented = drop.loads.every(l => l.condition_photo_url || l.condition_notes);
+
+        return (
+          <div key={drop.drop_id} className={`drv-card${isDone ? ' drv-card--done' : ''}${isException ? ' drv-card--exc' : ''}${isPriority ? ' drv-card--priority' : ''}`}>
+
+            {/* Priority banner */}
+            {isPriority && <div className="drv-priority-strip">⚡ PRIORITY DELIVERY</div>}
+
+            {/* Card header */}
+            <div className="drv-card-hd" onClick={() => setExpandedDrop(isExpanded ? null : drop.drop_id)}>
+              <div className="drv-dot" style={{ background: isPriority ? '#2563eb' : cfg.color }} />
+              <div className="drv-card-info">
+                <div className="drv-name">{drop.customer_name}</div>
+                <div className="drv-sub">
+                  {drop.loads.length} item{drop.loads.length !== 1 ? 's' : ''}
+                  {drop.address ? ` · ${drop.address.city}` : ''}
+                  {drop.is_priority && !isPriority ? ' · Priority ✓' : ''}
                 </div>
-                {isPriority
-                  ? <div className="drv-badge" style={{ color: '#1e40af', background: '#dbeafe' }}>⚡ Priority</div>
-                  : <div className="drv-badge" style={{ color: cfg.color, background: cfg.bg }}>{cfg.label}</div>
-                }
-                <div className={`drv-chev${isExpanded ? ' drv-chev--open' : ''}`}>▾</div>
               </div>
+              {isPriority
+                ? <div className="drv-badge" style={{ color: '#1e40af', background: '#dbeafe' }}>⚡ Priority</div>
+                : <div className="drv-badge" style={{ color: cfg.color, background: cfg.bg }}>{cfg.label}</div>
+              }
+              <div className={`drv-chev${isExpanded ? ' drv-chev--open' : ''}`}>▾</div>
+            </div>
 
-              {/* Card body */}
-              <div className={`drv-body${isExpanded ? ' drv-body--open' : ''}`}>
-                <div className="drv-inner">
+            {/* Card body */}
+            <div className={`drv-body${isExpanded ? ' drv-body--open' : ''}`}>
+              <div className="drv-inner">
 
-                  {/* ① Load Manifest */}
-                  <div className="drv-manifest">
-                    <div className={`drv-manifest-hd${isPriority ? ' drv-manifest-hd--priority' : ''}`}>
-                      {isPriority ? '⚡ PRIORITY LOAD' : '📋 LOAD MANIFEST'}
+                {/* ① Load Manifest */}
+                <div className="drv-manifest">
+                  <div className={`drv-manifest-hd${isPriority ? ' drv-manifest-hd--priority' : ''}`}>
+                    {isPriority ? '⚡ PRIORITY LOAD' : '📋 LOAD MANIFEST'}
+                  </div>
+                  {drop.loads.map((load, idx) => {
+                    const isActive = load.status === 'assigned' || load.status === 'loaded_leaving';
+                    const lCfg = STATUS_CONFIG[load.status] || STATUS_CONFIG.assigned;
+                    return (
+                      <div key={load.id} className={`drv-manifest-row${idx < drop.loads.length - 1 ? ' drv-manifest-row--border' : ''}`}>
+                        <div className={`drv-manifest-qty-line${isPriority ? ' drv-manifest-qty-line--priority' : ''}`}>
+                          {load.qty} {load.unit}{load.qty !== 1 ? 's' : ''}
+                        </div>
+                        <div className="drv-manifest-material">{load.material}</div>
+                        {!isActive && (
+                          <span className="drv-manifest-badge" style={{ color: lCfg.color, background: lCfg.bg }}>
+                            {lCfg.label}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* ② Notify customer — "I'm on my way" */}
+                {!isDone && !isException && (
+                  <div style={{ marginTop: 16 }}>
+                    {drop.notify_sent ? (
+                      <div className="drv-notified">✅ Customer has been notified</div>
+                    ) : (
+                      <button
+                        className="drv-btn drv-btn--amber"
+                        disabled={actionLoading === `notify-${drop.drop_id}`}
+                        onClick={() => notifyCustomer(drop.drop_id)}
+                      >
+                        <span className="drv-btn-ic">📱</span>
+                        {actionLoading === `notify-${drop.drop_id}` ? 'Sending…' : 'Notify Customer'}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* ③ Navigate */}
+                {drop.address && (
+                  <a href={getGoogleMapsUrl(drop.address)} target="_blank" rel="noopener noreferrer" className="drv-nav" style={{ marginTop: 12 }}>
+                    <div className="drv-nav-icon">🗺️</div>
+                    <div className="drv-nav-info">
+                      <div className="drv-nav-hint">Tap to Navigate</div>
+                      <div className="drv-nav-addr">{formatAddress(drop.address)}</div>
                     </div>
-                    {drop.loads.map((load, idx) => {
-                      const isActive = load.status === 'assigned' || load.status === 'loaded_leaving';
-                      const lCfg = STATUS_CONFIG[load.status] || STATUS_CONFIG.assigned;
-                      return (
-                        <div key={load.id} className={`drv-manifest-row${idx < drop.loads.length - 1 ? ' drv-manifest-row--border' : ''}`}>
-                          <div className={`drv-manifest-qty-line${isPriority ? ' drv-manifest-qty-line--priority' : ''}`}>
-                            {load.qty} {load.unit}{load.qty !== 1 ? 's' : ''}
-                          </div>
-                          <div className="drv-manifest-material">{load.material}</div>
-                          {!isActive && (
-                            <span className="drv-manifest-badge" style={{ color: lCfg.color, background: lCfg.bg }}>
-                              {lCfg.label}
-                            </span>
+                    <div className="drv-nav-go">→</div>
+                  </a>
+                )}
+
+                {/* ④ Customer instructions */}
+                {drop.notes && (
+                  <div className="drv-notes" style={{ marginTop: 12 }}>
+                    <div className="drv-notes-hd">📌 Customer Instructions</div>
+                    <div className="drv-notes-body">{drop.notes}</div>
+                  </div>
+                )}
+
+                {/* ⑤ Customer reference photo */}
+                {drop.drop_photos && drop.drop_photos.length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <div className="drv-label">📸 Customer Reference Photo</div>
+                    <div className="drv-photo-frame" onClick={() => setLightboxUrl(drop.drop_photos[0])}>
+                      <img src={drop.drop_photos[0]} alt="Customer reference" className="drv-photo-img" />
+                      <div className="drv-photo-overlay">Tap to enlarge</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ⑥ Document Site Conditions */}
+                {activeLoads.length > 0 && (
+                  <div className="drv-conditions">
+                    {conditionPhotoTaken === drop.loads[0].id ? (
+                      <div className="drv-cond-block drv-cond-block--green">
+                        <div className="drv-cond-title" style={{ color: '#15803d' }}>📸 Photo Saved — Add a Note?</div>
+                        <div className="drv-cond-desc" style={{ color: '#166534' }}>Describe the condition in more detail, or tap Done to finish.</div>
+                        <textarea
+                          className="drv-ta"
+                          style={{ borderColor: '#86efac', marginBottom: 10 }}
+                          placeholder="e.g. Cracked driveway near the entrance, low-hanging branch over gate…"
+                          value={conditionPhotoNote}
+                          onChange={e => setConditionPhotoNote(e.target.value)}
+                          rows={3}
+                          autoFocus
+                        />
+                        <button className="drv-btn drv-btn--green" onClick={submitConditionPhotoNote} disabled={conditionSaving}>
+                          {conditionSaving ? 'Saving…' : 'Done'}
+                        </button>
+                      </div>
+                    ) : conditionNoteLoadId === drop.loads[0].id ? (
+                      <div className="drv-cond-saved">
+                        <span style={{ fontSize: 20 }}>✅</span>
+                        <div style={{ flex: 1 }}>
+                          <div className="drv-cond-saved-title">Note saved</div>
+                          <div className="drv-cond-saved-sub">Want to add a photo too?</div>
+                        </div>
+                        <button className="drv-btn drv-btn--outline" style={{ fontSize: 13, padding: '8px 14px', whiteSpace: 'nowrap' }} onClick={() => { setConditionNoteLoadId(null); openConditionCamera(drop.loads[0].id); }}>
+                          📸 Add Photo
+                        </button>
+                        <button className="drv-cond-dismiss" onClick={() => setConditionNoteLoadId(null)}>✕</button>
+                      </div>
+                    ) : siteDocumented ? (
+                      <div className="drv-cond-saved">
+                        <span style={{ fontSize: 20 }}>✅</span>
+                        <div>
+                          <div className="drv-cond-saved-title">Site conditions documented</div>
+                          {drop.loads[0].condition_notes && (
+                            <div className="drv-cond-saved-sub">{drop.loads[0].condition_notes}</div>
                           )}
                         </div>
-                      );
-                    })}
+                      </div>
+                    ) : (
+                      <div className="drv-cond-block drv-cond-block--amber">
+                        <div className="drv-cond-title" style={{ color: '#92400e' }}>📋 Document Site Conditions</div>
+                        <div className="drv-cond-desc" style={{ color: '#78350f' }}>Note any pre-existing damage, hazards, or access issues before delivering.</div>
+                        <div className="drv-cond-btns">
+                          <button className="drv-btn drv-btn--outline" style={{ flex: 1, fontSize: 14 }} onClick={() => openConditionCamera(drop.loads[0].id)} disabled={!!actionLoading}>
+                            📸 Take Photo
+                          </button>
+                          <button className="drv-btn drv-btn--outline" style={{ flex: 1, fontSize: 14 }} onClick={() => { setConditionModal({ loadId: drop.loads[0].id }); setConditionNotes(''); }} disabled={!!actionLoading}>
+                            📝 Add Note
+                          </button>
+                          <button className="drv-btn drv-btn--green" style={{ flex: 1, fontSize: 14 }}
+                            onClick={async () => {
+                              try {
+                                await api(`/driver/loads/${drop.loads[0].id}/condition-notes`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ notes: 'No issues noted.' }),
+                                });
+                                showToast('No issues noted.');
+                                await fetchDrops();
+                              } catch { showToast('Failed. Try again.', 'error'); }
+                            }}
+                            disabled={!!actionLoading}
+                          >
+                            ✓ No Issues
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
+                )}
 
-                  {/* ② Notify customer — "I'm on my way" */}
-                  {!isDone && !isException && (
-                    <div style={{ marginTop: 16 }}>
-                      {drop.notify_sent ? (
-                        <div className="drv-notified">✅ Customer has been notified</div>
-                      ) : (
+                {/* ⑦ Mark Delivered */}
+                {activeLoads.length > 0 && (
+                  <div className="drv-actions">
+                    {activeLoads.map(load => (
+                      <div key={`a-${load.id}`} className="drv-act-group">
+                        {activeLoads.length > 1 && <div className="drv-act-label">{load.material}</div>}
                         <button
-                          className="drv-btn drv-btn--amber"
-                          disabled={actionLoading === `notify-${drop.drop_id}`}
-                          onClick={() => notifyCustomer(drop.drop_id)}
+                          className="drv-btn drv-btn--green"
+                          disabled={actionLoading === load.id || !siteDocumented}
+                          onClick={() => markDelivered(load.id)}
                         >
-                          <span className="drv-btn-ic">📱</span>
-                          {actionLoading === `notify-${drop.drop_id}` ? 'Sending…' : 'Notify Customer'}
+                          <span className="drv-btn-ic">📸</span>
+                          {actionLoading === load.id ? 'Saving…' : 'Mark Delivered — Take Photo'}
                         </button>
-                      )}
-                    </div>
-                  )}
-
-                  {/* ③ Navigate */}
-                  {drop.address && (
-                    <a href={getGoogleMapsUrl(drop.address)} target="_blank" rel="noopener noreferrer" className="drv-nav" style={{ marginTop: 12 }}>
-                      <div className="drv-nav-icon">🗺️</div>
-                      <div className="drv-nav-info">
-                        <div className="drv-nav-hint">Tap to Navigate</div>
-                        <div className="drv-nav-addr">{formatAddress(drop.address)}</div>
                       </div>
-                      <div className="drv-nav-go">→</div>
-                    </a>
-                  )}
+                    ))}
+                  </div>
+                )}
 
-                  {/* ④ Customer instructions */}
-                  {drop.notes && (
-                    <div className="drv-notes" style={{ marginTop: 12 }}>
-                      <div className="drv-notes-hd">📌 Customer Instructions</div>
-                      <div className="drv-notes-body">{drop.notes}</div>
+                {/* ⑧ Secondary actions */}
+                {activeLoads.length > 0 && (
+                  <>
+                    <div className="drv-sep">
+                      <div className="drv-sep-line" />
+                      <span className="drv-sep-text">Other Actions</span>
+                      <div className="drv-sep-line" />
                     </div>
-                  )}
-
-                  {/* ⑤ Customer reference photo */}
-                  {drop.drop_photos && drop.drop_photos.length > 0 && (
-                    <div style={{ marginTop: 12 }}>
-                      <div className="drv-label">📸 Customer Reference Photo</div>
-                      <div className="drv-photo-frame" onClick={() => setLightboxUrl(drop.drop_photos[0])}>
-                        <img src={drop.drop_photos[0]} alt="Customer reference" className="drv-photo-img" />
-                        <div className="drv-photo-overlay">Tap to enlarge</div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ⑥ Document Site Conditions */}
-                  {activeLoads.length > 0 && (
-                    <div className="drv-conditions">
-                      {conditionPhotoTaken === drop.loads[0].id ? (
-                        <div className="drv-cond-block drv-cond-block--green">
-                          <div className="drv-cond-title" style={{ color: '#15803d' }}>📸 Photo Saved — Add a Note?</div>
-                          <div className="drv-cond-desc" style={{ color: '#166534' }}>Describe the condition in more detail, or tap Done to finish.</div>
-                          <textarea
-                            className="drv-ta"
-                            style={{ borderColor: '#86efac', marginBottom: 10 }}
-                            placeholder="e.g. Cracked driveway near the entrance, low-hanging branch over gate…"
-                            value={conditionPhotoNote}
-                            onChange={e => setConditionPhotoNote(e.target.value)}
-                            rows={3}
-                            autoFocus
-                          />
-                          <button className="drv-btn drv-btn--green" onClick={submitConditionPhotoNote} disabled={conditionSaving}>
-                            {conditionSaving ? 'Saving…' : 'Done'}
-                          </button>
-                        </div>
-                      ) : conditionNoteLoadId === drop.loads[0].id ? (
-                        <div className="drv-cond-saved">
-                          <span style={{ fontSize: 20 }}>✅</span>
-                          <div style={{ flex: 1 }}>
-                            <div className="drv-cond-saved-title">Note saved</div>
-                            <div className="drv-cond-saved-sub">Want to add a photo too?</div>
-                          </div>
-                          <button className="drv-btn drv-btn--outline" style={{ fontSize: 13, padding: '8px 14px', whiteSpace: 'nowrap' }} onClick={() => { setConditionNoteLoadId(null); openConditionCamera(drop.loads[0].id); }}>
-                            📸 Add Photo
-                          </button>
-                          <button className="drv-cond-dismiss" onClick={() => setConditionNoteLoadId(null)}>✕</button>
-                        </div>
-                      ) : siteDocumented ? (
-                        <div className="drv-cond-saved">
-                          <span style={{ fontSize: 20 }}>✅</span>
-                          <div>
-                            <div className="drv-cond-saved-title">Site conditions documented</div>
-                            {drop.loads[0].condition_notes && (
-                              <div className="drv-cond-saved-sub">{drop.loads[0].condition_notes}</div>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="drv-cond-block drv-cond-block--amber">
-                          <div className="drv-cond-title" style={{ color: '#92400e' }}>📋 Document Site Conditions</div>
-                          <div className="drv-cond-desc" style={{ color: '#78350f' }}>Note any pre-existing damage, hazards, or access issues before delivering.</div>
-                          <div className="drv-cond-btns">
-                            <button className="drv-btn drv-btn--outline" style={{ flex: 1, fontSize: 14 }} onClick={() => openConditionCamera(drop.loads[0].id)} disabled={!!actionLoading}>
-                              📸 Take Photo
-                            </button>
-                            <button className="drv-btn drv-btn--outline" style={{ flex: 1, fontSize: 14 }} onClick={() => { setConditionModal({ loadId: drop.loads[0].id }); setConditionNotes(''); }} disabled={!!actionLoading}>
-                              📝 Add Note
-                            </button>
-                            <button className="drv-btn drv-btn--green" style={{ flex: 1, fontSize: 14 }}
-                              onClick={async () => {
-                                try {
-                                  await api(`/driver/loads/${drop.loads[0].id}/condition-notes`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ notes: 'No issues noted.' }),
-                                  });
-                                  showToast('No issues noted.');
-                                  await fetchDrops();
-                                } catch { showToast('Failed. Try again.', 'error'); }
-                              }}
-                              disabled={!!actionLoading}
-                            >
-                              ✓ No Issues
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* ⑦ Mark Delivered */}
-                  {activeLoads.length > 0 && (
-                    <div className="drv-actions">
+                    <div className="drv-secondary">
                       {activeLoads.map(load => (
-                        <div key={`a-${load.id}`} className="drv-act-group">
-                          {activeLoads.length > 1 && <div className="drv-act-label">{load.material}</div>}
-                          <button
-                            className="drv-btn drv-btn--green"
-                            disabled={actionLoading === load.id || !siteDocumented}
-                            onClick={() => markDelivered(load.id)}
-                          >
-                            <span className="drv-btn-ic">📸</span>
-                            {actionLoading === load.id ? 'Saving…' : 'Mark Delivered — Take Photo'}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* ⑧ Secondary actions */}
-                  {activeLoads.length > 0 && (
-                    <>
-                      <div className="drv-sep">
-                        <div className="drv-sep-line" />
-                        <span className="drv-sep-text">Other Actions</span>
-                        <div className="drv-sep-line" />
-                      </div>
-                      <div className="drv-secondary">
-                        {activeLoads.map(load => (
-                          <button
-                            key={`oos-${load.id}`}
-                            className="drv-btn-sec drv-btn-sec--amber"
-                            disabled={actionLoading === load.id}
-                            onClick={() => setOosConfirm({ loadId: load.id, material: load.material })}
-                          >
-                            📦 {activeLoads.length > 1 ? `Out of Stock — ${load.material}` : 'Out of Stock — Return to Dispatch'}
-                          </button>
-                        ))}
                         <button
-                          className="drv-btn-sec drv-btn-sec--red"
-                          onClick={() => {
-                            const l = activeLoads[0];
-                            if (l) setExceptionModal({ loadId: l.id, dropId: drop.drop_id });
-                          }}
+                          key={`oos-${load.id}`}
+                          className="drv-btn-sec drv-btn-sec--amber"
+                          disabled={actionLoading === load.id}
+                          onClick={() => setOosConfirm({ loadId: load.id, material: load.material })}
                         >
-                          🚨 Report a Problem
+                          📦 {activeLoads.length > 1 ? `Out of Stock — ${load.material}` : 'Out of Stock — Return to Dispatch'}
                         </button>
-                      </div>
-                    </>
-                  )}
+                      ))}
+                      <button
+                        className="drv-btn-sec drv-btn-sec--red"
+                        onClick={() => {
+                          const l = activeLoads[0];
+                          if (l) setExceptionModal({ loadId: l.id, dropId: drop.drop_id });
+                        }}
+                      >
+                        🚨 Report a Problem
+                      </button>
+                    </div>
+                  </>
+                )}
 
-                  {isDone && <div className="drv-banner drv-banner--green">✅ Delivery complete</div>}
-                  {isException && <div className="drv-banner drv-banner--red">⚠️ Exception reported</div>}
+                {isDone && <div className="drv-banner drv-banner--green">✅ Delivery complete</div>}
+                {isException && <div className="drv-banner drv-banner--red">⚠️ Exception reported</div>}
 
-                </div>
               </div>
             </div>
-          );
-        })}
+          </div>
+        );
+      })}
+    </div>
+  ));
+})()}
 
-        <div style={{ height: 40 }} />
-      </div>
+<div style={{ height: 40 }} />
+</div>
 
       {/* ── Lightbox ── */}
       {lightboxUrl && (
@@ -830,7 +850,8 @@ const STYLES = `
   .drv-inner { padding: 0 18px 24px; }
 
   /* ── Priority strip ── */
-  .drv-priority-strip { background: linear-gradient(135deg, #1e40af, #2563eb); color: #fff; padding: 8px 18px; font-family: var(--fh); font-size: 13px; font-weight: 800; letter-spacing: .08em; text-align: center; }
+  .drv-priority-strip {.drv-priority-strip { background: linear-gradient(135deg, #1e40af, #2563eb); color: #fff; padding: 8px 18px; font-family: var(--fh); font-size: 13px; font-weight: 800; letter-spacing: .08em; text-align: center; }
+  .drv-window-head { padding: 14px 16px 6px; font-family: var(--fh); font-size: 13px; font-weight: 800; color: var(--g5); text-transform: uppercase; letter-spacing: .07em; } background: linear-gradient(135deg, #1e40af, #2563eb); color: #fff; padding: 8px 18px; font-family: var(--fh); font-size: 13px; font-weight: 800; letter-spacing: .08em; text-align: center; }
 
   /* ── Labels ── */
   .drv-label { font-family: var(--fh); font-size: 12px; font-weight: 700; color: var(--g4); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
