@@ -187,6 +187,14 @@ def lookup_wc_customer(
             )
         ).scalar_one_or_none()
 
+    if not local and wc_customer_id:
+        local = db.execute(
+            select(Customer).where(
+                Customer.tenant_id == user.tenant_id,
+                Customer.wc_customer_id == wc_customer_id,
+            )
+        ).scalar_one_or_none()
+
     # Fetch saved Stripe card if we have a local record
     stripe_customer_id = local.stripe_customer_id if local else None
     saved_card = None
