@@ -142,13 +142,31 @@ def lookup_wc_customer(
     # Search orders by billing email or phone
     orders = _wc_request(f"orders?per_page=10&search={urllib.parse.quote(search.strip())}&orderby=date&order=desc")
 
+    # If no orders found, try searching WC customers directly (e.g. contractors who signed up but never ordered)
+    wc_customer_id = None
+    billing = {}
     if not orders:
-        return {"found": False}
-
-    # Use the most recent order's billing info
-    o = orders[0]
-    billing = o.get("billing", {})
-    wc_customer_id = o.get("customer_id") or None  # 0 = guest, treat as None
+        try:
+            wc_customers = _wc_request(f"customers?per_page=5&search={urllib.parse.quote(search.strip())}")
+            if not wc_customers:
+                return {"found": False}
+            wc_user = wc_customers[0]
+            wc_customer_id = wc_user.get("id")
+            billing = wc_user.get("billing", {})
+            # Fill in name from top-level fields if billing is sparse
+            if not billing.get("first_name"):
+                billing["first_name"] = wc_user.get("first_name", "")
+            if not billing.get("last_name"):
+                billing["last_name"] = wc_user.get("last_name", "")
+            if not billing.get("email"):
+                billing["email"] = wc_user.get("email", "")
+        except Exception:
+            return {"found": False}
+    else:
+        # Use the most recent order's billing info
+        o = orders[0]
+        billing = o.get("billing", {})
+        wc_customer_id = o.get("customer_id") or None  # 0 = guest, treat as None
 
     # Check WC registered customer for role if customer_id exists
     wc_role = None
