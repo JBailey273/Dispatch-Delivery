@@ -224,6 +224,12 @@ export default function NewOrderPage() {
   const [stripeCustomerId, setStripeCustomerId] = useState<string | null>(null);
   const [savedCard, setSavedCard] = useState<SavedCard | null>(null);
 
+  // Saved addresses
+  type SavedAddress = { id: string; line1: string; line2?: string; city: string; state: string; postal_code: string; is_default: boolean };
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+  const [showNewAddrForm, setShowNewAddrForm] = useState(false);
+
   // Products
   const [products, setProducts] = useState<WcProduct[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
@@ -301,7 +307,38 @@ export default function NewOrderPage() {
         setSavedCard(data.saved_card || null);
         setSmsOptIn(data.sms_opt_in || false);
         setEmailOptIn(data.email_opt_in || false);
-        if (data.billing?.address_1) {
+        // Fetch saved addresses for this customer
+        if (data.local_customer_id) {
+          try {
+            const addrData = await api(`/customers/${data.local_customer_id}/addresses`);
+            const addrs: SavedAddress[] = addrData.addresses || [];
+            setSavedAddresses(addrs);
+            if (addrs.length > 0) {
+              const def = addrs.find(a => a.is_default) || addrs[0];
+              setSelectedAddressId(def.id);
+              setAddrLine1(def.line1 || '');
+              setAddrLine2(def.line2 || '');
+              setAddrCity(def.city || '');
+              setAddrState(def.state || 'MA');
+              setAddrZip(def.postal_code || '');
+              setShowNewAddrForm(false);
+            } else if (data.billing?.address_1) {
+              setAddrLine1(data.billing.address_1 || '');
+              setAddrLine2(data.billing.address_2 || '');
+              setAddrCity(data.billing.city || '');
+              setAddrState(data.billing.state || 'MA');
+              setAddrZip(data.billing.postcode || '');
+            }
+          } catch {
+            if (data.billing?.address_1) {
+              setAddrLine1(data.billing.address_1 || '');
+              setAddrLine2(data.billing.address_2 || '');
+              setAddrCity(data.billing.city || '');
+              setAddrState(data.billing.state || 'MA');
+              setAddrZip(data.billing.postcode || '');
+            }
+          }
+        } else if (data.billing?.address_1) {
           setAddrLine1(data.billing.address_1 || '');
           setAddrLine2(data.billing.address_2 || '');
           setAddrCity(data.billing.city || '');
@@ -329,6 +366,7 @@ export default function NewOrderPage() {
     setWcCustomer(null); setLookupQuery(''); setLookupDone(false);
     setFirstName(''); setLastName(''); setEmail(''); setPhone(''); setCompanyName('');
     setWcRole(null); setIsContractor(false); setInvoiceBilling(false); setStripeCustomerId(null); setSavedCard(null);
+    setSavedAddresses([]); setSelectedAddressId(null); setShowNewAddrForm(false);
     setSmsOptIn(false); setEmailOptIn(false);
     setAddrLine1(''); setAddrLine2(''); setAddrCity(''); setAddrState('MA'); setAddrZip('');
     setShipping(null); loadProducts(null);
@@ -948,28 +986,71 @@ export default function NewOrderPage() {
 
               {deliveryMethod === 'delivery' && (
                 <div className="no-fields">
-                  <div className="no-field">
-                    <label>Street Address *</label>
-                    <input className="no-input" value={addrLine1} onChange={e => setAddrLine1(e.target.value)} placeholder="123 Main St" />
-                  </div>
-                  <div className="no-field">
-                    <label>Apt / Unit</label>
-                    <input className="no-input" value={addrLine2} onChange={e => setAddrLine2(e.target.value)} placeholder="optional" />
-                  </div>
-                  <div className="no-row-3">
-                    <div className="no-field" style={{ flex: 2 }}>
-                      <label>City *</label>
-                      <input className="no-input" value={addrCity} onChange={e => setAddrCity(e.target.value)} />
+                  {savedAddresses.length > 0 && (
+                    <div className="no-addr-list">
+                      {savedAddresses.map(a => (
+                        <div
+                          key={a.id}
+                          className={`no-addr-opt${selectedAddressId === a.id ? ' selected' : ''}`}
+                          onClick={() => {
+                            setSelectedAddressId(a.id);
+                            setAddrLine1(a.line1 || '');
+                            setAddrLine2(a.line2 || '');
+                            setAddrCity(a.city || '');
+                            setAddrState(a.state || 'MA');
+                            setAddrZip(a.postal_code || '');
+                            setShowNewAddrForm(false);
+                            setShipping(null);
+                          }}
+                        >
+                          <span className="no-addr-radio">{selectedAddressId === a.id ? '●' : '○'}</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 600, fontSize: 13 }}>{a.line1}{a.line2 ? `, ${a.line2}` : ''}</div>
+                            <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>{a.city}, {a.state} {a.postal_code}</div>
+                          </div>
+                          {a.is_default && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--brand)', background: 'var(--blue-50)', padding: '2px 6px', borderRadius: 100 }}>Default</span>}
+                        </div>
+                      ))}
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        style={{ marginTop: 6 }}
+                        onClick={() => {
+                          setSelectedAddressId(null);
+                          setShowNewAddrForm(true);
+                          setAddrLine1(''); setAddrLine2(''); setAddrCity(''); setAddrState('MA'); setAddrZip('');
+                          setShipping(null);
+                        }}
+                      >
+                        + Add New Address
+                      </button>
                     </div>
-                    <div className="no-field" style={{ flex: 1 }}>
-                      <label>State</label>
-                      <input className="no-input" value={addrState} onChange={e => setAddrState(e.target.value)} maxLength={2} />
-                    </div>
-                    <div className="no-field" style={{ flex: 1 }}>
-                      <label>ZIP *</label>
-                      <input className="no-input" value={addrZip} onChange={e => setAddrZip(e.target.value)} maxLength={5} placeholder="01020" />
-                    </div>
-                  </div>
+                  )}
+                  {(savedAddresses.length === 0 || showNewAddrForm) && (
+                    <>
+                      <div className="no-field">
+                        <label>Street Address *</label>
+                        <input className="no-input" value={addrLine1} onChange={e => setAddrLine1(e.target.value)} placeholder="123 Main St" />
+                      </div>
+                      <div className="no-field">
+                        <label>Apt / Unit</label>
+                        <input className="no-input" value={addrLine2} onChange={e => setAddrLine2(e.target.value)} placeholder="optional" />
+                      </div>
+                      <div className="no-row-3">
+                        <div className="no-field" style={{ flex: 2 }}>
+                          <label>City *</label>
+                          <input className="no-input" value={addrCity} onChange={e => setAddrCity(e.target.value)} />
+                        </div>
+                        <div className="no-field" style={{ flex: 1 }}>
+                          <label>State</label>
+                          <input className="no-input" value={addrState} onChange={e => setAddrState(e.target.value)} maxLength={2} />
+                        </div>
+                        <div className="no-field" style={{ flex: 1 }}>
+                          <label>ZIP *</label>
+                          <input className="no-input" value={addrZip} onChange={e => setAddrZip(e.target.value)} maxLength={5} placeholder="01020" />
+                        </div>
+                      </div>
+                    </>
+                  )}
                   {shippingLoading && (
                     <div className="no-zone no-zone-checking">Checking delivery zone…</div>
                   )}
@@ -1348,4 +1429,9 @@ const styles = `
 .no-schedule-section { margin-top: 24px; border-top: 1px solid var(--border-light); padding-top: 20px; }
 .no-schedule-label { font-size: 13px; color: var(--gray-500); margin-bottom: 12px; }
 .no-schedule-done { font-size: 14px; font-weight: 600; color: var(--brand); margin-top: 8px; }
+.no-addr-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
+.no-addr-opt { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--bg-primary); transition: border-color 0.15s, background 0.15s; }
+.no-addr-opt:hover { border-color: var(--blue-300); background: var(--blue-25); }
+.no-addr-opt.selected { border-color: var(--brand); background: var(--blue-25); }
+.no-addr-radio { font-size: 14px; color: var(--brand); width: 16px; flex-shrink: 0; }
 `;
