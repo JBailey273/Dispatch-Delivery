@@ -9,6 +9,11 @@ export const metadata = {
     apple: '/icon.svg',
   },
 };
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+};
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
@@ -19,7 +24,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Loadout" />
         <meta name="theme-color" content="#2563EB" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
       <body><AppShell>{children}</AppShell></body>
     </html>
