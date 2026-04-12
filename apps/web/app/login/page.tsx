@@ -174,6 +174,7 @@ const loginStyles = `
     background: rgba(255,255,255,0.05);
     border-color: rgba(255,255,255,0.10);
     color: #FFFFFF;
+    font-size: 16px;
   }
   .login-form input:focus {
     border-color: #2563EB;
