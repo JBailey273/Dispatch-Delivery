@@ -15,7 +15,7 @@ from typing import Any
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
@@ -148,25 +148,97 @@ def lookup_wc_customer(
     if not orders:
         try:
             wc_customers = _wc_request(f"customers?per_page=5&search={urllib.parse.quote(search.strip())}")
-            if not wc_customers:
-                return {"found": False}
-            wc_user = wc_customers[0]
-            wc_customer_id = wc_user.get("id")
-            billing = wc_user.get("billing", {})
-            # Fill in name from top-level fields if billing is sparse
-            if not billing.get("first_name"):
-                billing["first_name"] = wc_user.get("first_name", "")
-            if not billing.get("last_name"):
-                billing["last_name"] = wc_user.get("last_name", "")
-            if not billing.get("email"):
-                billing["email"] = wc_user.get("email", "")
         except Exception:
-            return {"found": False}
+            wc_customers = []
+
+        if not wc_customers:
+            # Last resort — search local Customer table directly
+            like = f"%{search.strip()}%"
+            local = db.execute(
+                select(Customer).where(
+                    Customer.tenant_id == user.tenant_id,
+                    or_(
+                        Customer.name.ilike(like),
+                        Customer.company_name.ilike(like),
+                        Customer.email.ilike(like),
+                        Customer.phone_e164.ilike(like),
+                    )
+                )
+            ).scalars().first()
+
+            if not local:
+                return {"found": False}
+
+            wc_role = WC_ROLE_CONTRACTOR if local.is_contractor else None
+            saved_card = None
+            if local.stripe_customer_id and settings.stripe_api_key:
+                try:
+                    _stripe()
+                    methods = stripe.PaymentMethod.list(customer=local.stripe_customer_id, type="card")
+                    if methods.data:
+                        pm = methods.data[0]
+                        saved_card = {
+                            "payment_method_id": pm.id,
+                            "brand": pm.card.brand,
+                            "last4": pm.card.last4,
+                            "exp_month": pm.card.exp_month,
+                            "exp_year": pm.card.exp_year,
+                        }
+                except Exception as e:
+                    logger.warning(f"Could not fetch Stripe methods: {e}")
+
+            addresses = db.execute(
+                select(CustomerAddress).where(
+                    CustomerAddress.tenant_id == user.tenant_id,
+                    CustomerAddress.customer_id == local.id,
+                ).order_by(CustomerAddress.is_default.desc())
+            ).scalars().all()
+            default_addr = addresses[0] if addresses else None
+
+            return {
+                "found": True,
+                "wc_id": local.wc_customer_id,
+                "email": local.email or "",
+                "first_name": local.first_name,
+                "last_name": local.last_name,
+                "phone": local.phone_e164 or "",
+                "role": wc_role,
+                "billing": {
+                    "first_name": local.first_name,
+                    "last_name": local.last_name,
+                    "email": local.email or "",
+                    "phone": local.phone_e164 or "",
+                    "address_1": default_addr.line1 if default_addr else "",
+                    "address_2": default_addr.line2 if default_addr else "",
+                    "city": default_addr.city if default_addr else "",
+                    "state": default_addr.state if default_addr else "",
+                    "postcode": default_addr.postal_code if default_addr else "",
+                    "company": local.company_name or "",
+                },
+                "stripe_customer_id": local.stripe_customer_id,
+                "saved_card": saved_card,
+                "order_history": [],
+                "local_customer_id": str(local.id),
+                "sms_opt_in": local.sms_opt_in,
+                "email_opt_in": local.email_opt_in,
+                "invoice_billing": local.invoice_billing if hasattr(local, 'invoice_billing') else False,
+            }
+
+        # WC customers API found a match
+        wc_user = wc_customers[0]
+        wc_customer_id = wc_user.get("id")
+        billing = wc_user.get("billing", {})
+        if not billing.get("first_name"):
+            billing["first_name"] = wc_user.get("first_name", "")
+        if not billing.get("last_name"):
+            billing["last_name"] = wc_user.get("last_name", "")
+        if not billing.get("email"):
+            billing["email"] = wc_user.get("email", "")
     else:
         # Use the most recent order's billing info
         o = orders[0]
         billing = o.get("billing", {})
-        wc_customer_id = o.get("customer_id") or None  # 0 = guest, treat as None
+        wc_customer_id = o.get("customer_id") or None
 
     # Check WC registered customer for role if customer_id exists
     wc_role = None
