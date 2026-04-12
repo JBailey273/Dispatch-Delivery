@@ -83,10 +83,13 @@ function formatAddress(addr: DropItem['address']): string {
   return `${addr.line1}, ${addr.city}, ${addr.state} ${addr.postal_code}`;
 }
 
-function getGoogleMapsUrl(addr: DropItem['address']): string {
+function getNavUrl(addr: DropItem['address']): string {
   if (!addr) return '#';
   const q = encodeURIComponent(`${addr.line1}, ${addr.city}, ${addr.state} ${addr.postal_code}`);
-  return `https://www.google.com/maps/dir/?api=1&destination=${q}`;
+  const isIOS = typeof navigator !== 'undefined' && /iP(hone|od|ad)/.test(navigator.userAgent);
+  return isIOS
+    ? `maps://maps.apple.com/?daddr=${q}`
+    : `https://www.google.com/maps/dir/?api=1&destination=${q}`;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -535,7 +538,7 @@ export default function DriverPage() {
 
                 {/* ③ Navigate */}
                 {drop.address && (
-                  <a href={getGoogleMapsUrl(drop.address)} target="_blank" rel="noopener noreferrer" className="drv-nav" style={{ marginTop: 12 }}>
+                  <a href={getNavUrl(drop.address)} target="_blank" rel="noopener noreferrer" className="drv-nav" style={{ marginTop: 12 }}>
                     <div className="drv-nav-icon">🗺️</div>
                     <div className="drv-nav-info">
                       <div className="drv-nav-hint">Tap to Navigate</div>
