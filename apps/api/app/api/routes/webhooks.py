@@ -5,10 +5,11 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 from app.api.deps import db_dep, require_channel, ChannelAuth
-from app.api.services import log_event, now_utc
+from app.api.services import log_event, normalize_us_phone, now_utc
+from app.core.config import settings
 from app.models.entities import (
     Channel, ChannelType, Customer, CustomerAddress, CustomerType,
-    Drop, Load, LoadStatus, Location, ProductCatalogItem,
+    Drop, Load, LoadStatus, Location, ProductCatalogItem, Tenant,
 )
 logger = logging.getLogger("dispatch.webhooks")
 
