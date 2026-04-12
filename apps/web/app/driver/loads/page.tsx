@@ -116,6 +116,8 @@ export default function DriverPage() {
   const [conditionPhotoNote, setConditionPhotoNote] = useState('');
   const [conditionNoteLoadId, setConditionNoteLoadId] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const [podSourceModal, setPodSourceModal] = useState<string | null>(null); // loadId
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   // ── Data fetch ──────────────────────────────────────────────────────────
@@ -162,8 +164,7 @@ export default function DriverPage() {
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => setToast({ msg, type });
 
   const markDelivered = (loadId: string) => {
-    setPhotoTarget({ loadId, type: 'pod' });
-    setTimeout(() => photoInputRef.current?.click(), 100);
+    setPodSourceModal(loadId);
   };
 
   const notifyCustomer = async (dropId: string) => {
@@ -802,6 +803,43 @@ export default function DriverPage() {
       )}
 
       <input ref={photoInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handlePhotoCapture} />
+      <input ref={galleryInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => { handlePhotoCapture(e); if (galleryInputRef.current) galleryInputRef.current.value = ''; }} />
+
+      {/* ── POD source picker modal ── */}
+      {podSourceModal && (
+        <div className="drv-overlay" onClick={() => setPodSourceModal(null)}>
+          <div className="drv-bottom-sheet" onClick={e => e.stopPropagation()}>
+            <div className="drv-sheet-handle" />
+            <div className="drv-sheet-title">Delivery Photo</div>
+            <div className="drv-sheet-sub">How would you like to add the proof of delivery photo?</div>
+            <button
+              className="drv-btn drv-btn--green"
+              style={{ marginBottom: 10 }}
+              onClick={() => {
+                setPhotoTarget({ loadId: podSourceModal, type: 'pod' });
+                setPodSourceModal(null);
+                setTimeout(() => photoInputRef.current?.click(), 100);
+              }}
+            >
+              <span className="drv-btn-ic">📸</span> Take Photo
+            </button>
+            <button
+              className="drv-btn drv-btn--outline"
+              style={{ marginBottom: 10 }}
+              onClick={() => {
+                setPhotoTarget({ loadId: podSourceModal, type: 'pod' });
+                setPodSourceModal(null);
+                setTimeout(() => galleryInputRef.current?.click(), 100);
+              }}
+            >
+              <span className="drv-btn-ic">🖼️</span> Choose from Gallery
+            </button>
+            <button className="drv-btn drv-btn--ghost" onClick={() => setPodSourceModal(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {toast && <div className={`drv-toast${toast.type === 'error' ? ' drv-toast--err' : ''}`}>{toast.msg}</div>}
     </>
@@ -839,6 +877,13 @@ const STYLES = `
   .drv-progress-bar { height: 100%; border-radius: 6px; background: var(--grn5); transition: width 0.5s ease; }
   .drv-progress-text { font-size: 14px; font-weight: 600; color: var(--g5); margin-top: 6px; }
   .drv-priority-count { color: var(--blu6); }
+
+  /* ── POD source modal ── */
+  .drv-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 200; display: flex; align-items: flex-end; }
+  .drv-bottom-sheet { width: 100%; background: #fff; border-radius: 20px 20px 0 0; padding: 16px 20px 36px; display: flex; flex-direction: column; }
+  .drv-sheet-handle { width: 36px; height: 4px; background: var(--g2); border-radius: 2px; margin: 0 auto 16px; }
+  .drv-sheet-title { font-family: var(--fh); font-size: 18px; font-weight: 700; color: var(--g9); margin-bottom: 4px; }
+  .drv-sheet-sub { font-size: 14px; color: var(--g5); margin-bottom: 20px; }
 
   /* ── Center states ── */
   .drv-center { text-align: center; padding: 60px 24px; }
