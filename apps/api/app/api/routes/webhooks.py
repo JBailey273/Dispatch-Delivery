@@ -445,3 +445,137 @@ def js_ingest_order(
     db.commit()
 
     return {"status": "ok", "drop_id": str(drop.id)}
+
+# ── WordPress Contractor Sync ─────────────────────────────────────────────────
+
+class WpContractorSyncIn(BaseModel):
+    wp_user_id: int
+    email: str
+    company_name: str
+    contact_person: str
+    phone: str
+    address_1: str
+    address_2: str = ""
+    city: str
+    state: str
+    postcode: str
+    tenant_slug: str
+
+
+@router.post("/wp-contractor-sync")
+def wp_contractor_sync(
+    payload: WpContractorSyncIn,
+    request: Request,
+    db: Session = Depends(db_dep),
+):
+    # Verify shared secret
+    secret = request.headers.get("X-WP-Sync-Secret", "")
+    if not secret or secret != settings.wp_sync_secret:
+        raise HTTPException(status_code=401, detail={"code": "unauthorized", "message": "Invalid sync secret"})
+
+    # Resolve tenant by slug
+    tenant = db.execute(
+        select(Tenant).where(Tenant.slug == payload.tenant_slug)
+    ).scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=404, detail={"code": "tenant_not_found", "message": "Tenant not found"})
+
+    # Normalize phone
+    try:
+        phone_e164 = normalize_us_phone(payload.phone)
+    except ValueError:
+        phone_e164 = payload.phone.strip()
+
+    # Split contact person into first/last
+    name_parts = payload.contact_person.strip().split(" ", 1)
+    first_name = name_parts[0]
+    last_name = name_parts[1] if len(name_parts) > 1 else ""
+
+    # Upsert local Customer — check phone, email, wc_customer_id in that order
+    customer = None
+    if phone_e164:
+        customer = db.execute(
+            select(Customer).where(
+                Customer.tenant_id == tenant.id,
+                Customer.phone_e164 == phone_e164,
+            )
+        ).scalars().first()
+    if not customer and payload.email:
+        customer = db.execute(
+            select(Customer).where(
+                Customer.tenant_id == tenant.id,
+                Customer.email == payload.email.strip().lower(),
+            )
+        ).scalars().first()
+    if not customer:
+        customer = db.execute(
+            select(Customer).where(
+                Customer.tenant_id == tenant.id,
+                Customer.wc_customer_id == payload.wp_user_id,
+            )
+        ).scalars().first()
+
+    if customer:
+        customer.first_name = first_name
+        customer.last_name = last_name
+        customer.name = payload.contact_person.strip()
+        customer.company_name = payload.company_name
+        customer.email = payload.email.strip().lower()
+        customer.phone_e164 = phone_e164
+        customer.wc_customer_id = payload.wp_user_id
+        customer.is_contractor = True
+        customer.customer_type = CustomerType.COMMERCIAL
+    else:
+        customer = Customer(
+            tenant_id=tenant.id,
+            first_name=first_name,
+            last_name=last_name,
+            name=payload.contact_person.strip(),
+            company_name=payload.company_name,
+            email=payload.email.strip().lower(),
+            phone_e164=phone_e164,
+            wc_customer_id=payload.wp_user_id,
+            is_contractor=True,
+            customer_type=CustomerType.COMMERCIAL,
+            sms_opt_in=False,
+            email_opt_in=False,
+        )
+        db.add(customer)
+
+    db.flush()
+
+    # Upsert address
+    if payload.address_1.strip():
+        address = db.execute(
+            select(CustomerAddress).where(
+                CustomerAddress.tenant_id == tenant.id,
+                CustomerAddress.customer_id == customer.id,
+                CustomerAddress.line1.ilike(payload.address_1.strip()),
+                CustomerAddress.postal_code == payload.postcode.strip(),
+            )
+        ).scalar_one_or_none()
+
+        if not address:
+            db.add(CustomerAddress(
+                tenant_id=tenant.id,
+                customer_id=customer.id,
+                line1=payload.address_1.strip(),
+                line2=payload.address_2.strip() or None,
+                city=payload.city.strip(),
+                state=payload.state.strip().upper(),
+                postal_code=payload.postcode.strip(),
+                country="US",
+                is_default=True,
+                last_used_at=now_utc(),
+            ))
+        else:
+            address.last_used_at = now_utc()
+
+    log_event(db, tenant.id, "wp_contractor_sync", "webhook", {
+        "wp_user_id": payload.wp_user_id,
+        "company_name": payload.company_name,
+        "email": payload.email,
+    })
+    db.commit()
+
+    return {"status": "ok", "customer_id": str(customer.id)}
