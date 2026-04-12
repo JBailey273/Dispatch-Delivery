@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     wc_store_url: str = ""
     wc_consumer_key: str = ""
     wc_consumer_secret: str = ""
+    wp_sync_secret: str = ""
 
     @field_validator("database_url", mode="before")
     @classmethod
