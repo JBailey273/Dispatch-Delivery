@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { ApiError, api } from '../lib/auth';
+import { useLocation, fmtWindowRange } from '../lib/location-context';
 
 /* ── Date helpers ── */
 const FULL_MONTHS = [
@@ -127,6 +128,7 @@ export default function DropRescheduleSlideOver({
   locationId,
 }: OrderPanelProps) {
   const today = useMemo(() => new Date(), []);
+  const { activeLocation } = useLocation();
 
   /* Self-fetch detail */
   const [internalDetail, setInternalDetail] = useState<SlideOverDropDetail | null>(null);
@@ -482,8 +484,8 @@ const sendSchedulingLink = async () => {
                   <div className="so-info-date">{fmtDateLong(dropDetail.scheduled_date)}</div>
                   <div className="so-info-window">
                     {dropDetail.is_priority ? 'Priority — flexible window'
-                      : dropDetail.scheduled_window === 'A' ? 'Morning Window (9am – 1pm)'
-                      : 'Afternoon Window (1pm – 5pm)'}
+                      : dropDetail.scheduled_window === 'A' ? `Morning Window (${fmtWindowRange('A', activeLocation)})`
+                      : `Afternoon Window (${fmtWindowRange('B', activeLocation)})`}
                   </div>
                   {!hasExceptions && (
                     <button
@@ -808,7 +810,7 @@ const sendSchedulingLink = async () => {
                         return (
                           <button key={w} className={`so-win-btn${rescWindow === w ? ' active' : ''}`} onClick={() => setRescWindow(w)}>
                             <span className="so-win-label">{w === 'A' ? 'Morning' : 'Afternoon'}</span>
-                            <span className="so-win-time">{w === 'A' ? '9am – 1pm' : '1pm – 5pm'}</span>
+                            <span className="so-win-time">{fmtWindowRange(w, activeLocation)}</span>
                             {cap != null && (
                               <span className={`so-win-cap ${(cap.remaining_capacity ?? 0) > 0 ? 'avail' : 'full'}`}>
                                 {cap.remaining_capacity ?? 0} slot{cap.remaining_capacity !== 1 ? 's' : ''} left
