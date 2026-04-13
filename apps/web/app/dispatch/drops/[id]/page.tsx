@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { ApiError, api, requireRole } from '../../../lib/auth';
-import { useLocation, fmtWindowRange } from '../../lib/location-context';
+import { useLocation, fmtWindowRange } from '../../../lib/location-context';
 import DropRescheduleSlideOver from '../../../components/DropRescheduleSlideOver';
 import type { SlideOverDropDetail } from '../../../components/DropRescheduleSlideOver';
 
