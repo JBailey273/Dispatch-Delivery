@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ApiError, api, requireRole } from '../lib/auth';
-import { useLocation } from '../lib/location-context';
+import { useLocation, fmtWindowRange } from '../lib/location-context';
 
 /* ── Types ── */
 type CatalogItem = { sku: string; name: string; active: boolean; delivery_mode: string; bulk_group: string; unit?: string };
@@ -154,7 +154,7 @@ function NewDropPage() {
   const getWindowAvail = (dateStr: string, win: string) => availability.find(w => w.date === dateStr && w.window === win);
   const selectedDateAvail = getWindowAvail(selDate, selectedWindow);
 
-  const windowLabel = (win: string) => win === 'A' ? 'Morning Delivery (9am \u2013 1pm)' : 'Afternoon Delivery (1pm \u2013 5pm)';
+  const windowLabel = (win: string) => win === 'A' ? `Morning Delivery (${fmtWindowRange('A', activeLocation)})` : `Afternoon Delivery (${fmtWindowRange('B', activeLocation)})`;
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr + 'T12:00:00');
@@ -731,12 +731,12 @@ function NewDropPage() {
                     <div className="nd-win-toggle">
                       <button className={`nd-win-btn${selectedWindow === 'A' ? ' active' : ''}`} onClick={() => setSelectedWindow('A')}>
                         <span className="nd-win-name">Morning Delivery</span>
-                        <span className="nd-win-time">9:00 AM {'\u2013'} 1:00 PM</span>
+                        <span className="nd-win-time">{fmtWindowRange('A', activeLocation)}</span>
                         {(() => { const a = getWindowAvail(selDate, 'A'); return a ? <span className={`nd-win-cap ${capColor(a.used, a.total)}`}>{a.remaining_capacity} slot{a.remaining_capacity !== 1 ? 's' : ''} open</span> : null; })()}
                       </button>
                       <button className={`nd-win-btn${selectedWindow === 'B' ? ' active' : ''}`} onClick={() => setSelectedWindow('B')}>
                         <span className="nd-win-name">Afternoon Delivery</span>
-                        <span className="nd-win-time">1:00 PM {'\u2013'} 5:00 PM</span>
+                        <span className="nd-win-time">{fmtWindowRange('B', activeLocation)}</span>
                         {(() => { const a = getWindowAvail(selDate, 'B'); return a ? <span className={`nd-win-cap ${capColor(a.used, a.total)}`}>{a.remaining_capacity} slot{a.remaining_capacity !== 1 ? 's' : ''} open</span> : null; })()}
                       </button>
                     </div>
