@@ -655,7 +655,11 @@ def schedule_embed_order(
         load.route_date = payload.scheduled_date
         load.route_window = payload.scheduled_window
  
-    window_label = "Morning (9am–1pm)" if payload.scheduled_window == WindowCode.A else "Afternoon (1pm–5pm)"
+    embed_location = db.execute(
+        select(Location).where(Location.id == drop.location_id)
+    ).scalar_one_or_none()
+    _time_range = _fmt_window_range(embed_location, payload.scheduled_window) if embed_location else ("9am–1pm" if payload.scheduled_window == WindowCode.A else "1pm–5pm")
+    window_label = f"{'Morning' if payload.scheduled_window == WindowCode.A else 'Afternoon'} ({_time_range})"
  
     log_event(db, channel.tenant_id, "embed.order_scheduled", "channel", {
         "external_order_id": order_id,
@@ -672,7 +676,7 @@ def schedule_embed_order(
         if customer:
             date_str = payload.scheduled_date.strftime("%A, %B %d")
             win_label = "Morning" if payload.scheduled_window == WindowCode.A else "Afternoon"
-            time_range = "9am–1pm" if payload.scheduled_window == WindowCode.A else "1pm–5pm"
+            time_range = _time_range
             def _unit_label(qty, unit):
                 if qty == 1:
                     return unit.rstrip('s') if unit.lower().endswith('s') else unit
