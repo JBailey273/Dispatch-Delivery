@@ -171,6 +171,18 @@ def _remaining_slots(db: Session, tenant_id, location_id, location_default: int,
     return total - used - holds, used, holds
 
 
+def _fmt_window_range(location, window_code) -> str:
+    """Format a window time range string from location settings. e.g. '9am–1pm'"""
+    from app.models.entities import WindowCode as WC
+    if window_code == WC.A:
+        start = location.windowA_start.strftime('%-I:%M%p').lower().replace(':00', '')
+        end = location.windowA_end.strftime('%-I:%M%p').lower().replace(':00', '')
+    else:
+        start = location.windowB_start.strftime('%-I:%M%p').lower().replace(':00', '')
+        end = location.windowB_end.strftime('%-I:%M%p').lower().replace(':00', '')
+    return f"{start}–{end}"
+
+
 def _is_blacked_out(db: Session, tenant_id, location_id, day: date, window: WindowCode) -> bool:
     blackout = db.execute(
         select(OperationalBlackout.id).where(
