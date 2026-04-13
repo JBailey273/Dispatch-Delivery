@@ -27,9 +27,21 @@ class NotifyResult:
         return {"sms_sent": self.sms_sent, "email_sent": self.email_sent}
 
 
-def _window_label(drop: Drop) -> str:
+def _window_label(drop: Drop, db: Session = None) -> str:
     if drop.is_priority and not drop.scheduled_window:
         return "Priority Delivery"
+    if db and drop.location_id:
+        from app.models.entities import Location, WindowCode
+        from sqlalchemy import select
+        location = db.execute(
+            select(Location).where(Location.id == drop.location_id)
+        ).scalar_one_or_none()
+        if location and drop.scheduled_window:
+            from app.api.routes.availability import _fmt_window_range
+            time_range = _fmt_window_range(location, drop.scheduled_window)
+            label = "Morning" if drop.scheduled_window.value == "A" else "Afternoon"
+            return f"{label} ({time_range})"
+    # fallback if no db or location
     if drop.scheduled_window and drop.scheduled_window.value == "A":
         return "Morning (9am–1pm)"
     return "Afternoon (1pm–5pm)"
@@ -49,6 +61,8 @@ def notify_customer(
     notification_type: str,
     context: dict | None = None,
 ) -> NotifyResult:
+    # Pre-resolve window label once for this notification
+    _wlabel = _window_label(drop, db)
     """
     Send a notification to a customer via their preferred channel(s).
 
@@ -88,7 +102,7 @@ def notify_customer(
         elif notification_type == "reschedule":
             sms_message = context.get("message") or (
                 f"Your East Meadow Garden Center delivery has been rescheduled to "
-                f"{_date_label(drop)}, {_window_label(drop)}. "
+                f"{_date_label(drop)}, {_wlabel}. "
                 f"Reply to this message with any questions."
             )
             dedupe_key = f"reschedule-{drop.id}-{int(now_utc().timestamp() // 300)}"
@@ -136,15 +150,14 @@ def notify_customer(
                     customer.email,
                     customer.name,
                     _date_label(drop),
-                    _window_label(drop),
+                    _wlabel,
                 )
-
             elif notification_type == "reschedule":
                 result.email_sent = send_reschedule_notification_email(
                     customer.email,
                     customer.name,
                     _date_label(drop),
-                    _window_label(drop),
+                    _wlabel,
                 )
 
             elif notification_type == "scheduling_link":
