@@ -539,12 +539,18 @@ def delete_drop(
         except Exception:
             logger.exception("Could not fetch WC channel credentials before drop deletion")
 
-    # Delete loads first, then drop
+    # Delete scheduling tokens, loads, then drop
+    from app.models.entities import SchedulingToken
+    tokens = db.execute(
+        select(SchedulingToken).where(SchedulingToken.drop_id == drop.id)
+    ).scalars().all()
+    for token in tokens:
+        db.delete(token)
     for load in loads:
         db.delete(load)
     db.delete(drop)
     db.commit()
-
+    
     # Sync cancellation to WooCommerce (non-fatal — order is already deleted locally)
     if external_order_id and wc_store_url and wc_consumer_key:
         try:
