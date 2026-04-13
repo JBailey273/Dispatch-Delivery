@@ -7,7 +7,25 @@ export type Location = {
   id: string;
   name: string;
   slug: string;
+  windowA_start: string | null;
+  windowA_end: string | null;
+  windowB_start: string | null;
+  windowB_end: string | null;
 };
+
+/** Format a window time range from location settings. e.g. '9am–1pm' */
+export function fmtWindowRange(win: 'A' | 'B', location: Location | null): string {
+  const start = win === 'A' ? location?.windowA_start : location?.windowB_start;
+  const end   = win === 'A' ? location?.windowA_end   : location?.windowB_end;
+  if (!start || !end) return win === 'A' ? '9am–1pm' : '1pm–5pm';
+  const fmt = (t: string) => {
+    const [h, m] = t.split(':').map(Number);
+    const ampm = h >= 12 ? 'pm' : 'am';
+    const h12 = h % 12 || 12;
+    return m === 0 ? `${h12}${ampm}` : `${h12}:${String(m).padStart(2, '0')}${ampm}`;
+  };
+  return `${fmt(start)}–${fmt(end)}`;
+}
 
 type LocationContextValue = {
   locations: Location[];
