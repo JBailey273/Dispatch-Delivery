@@ -13,6 +13,7 @@ type OrderContext = {
   already_scheduled: boolean;
   scheduled_date: string | null;
   scheduled_window: string | null;
+  scheduled_window_time_range: string | null;
   available_dates: DateOption[];
 };
 
@@ -360,7 +361,10 @@ await fetch(`${API_BASE}/embed/order/${orderId}/site-info`, {
   // ── Already scheduled ─────────────────────────────────────────────────────
   if (ctx?.already_scheduled && ctx.scheduled_date) {
     const d = parseLocalDate(ctx.scheduled_date);
-    const windowLabel = ctx.scheduled_window === 'A' ? 'Morning (9am–1pm)' : 'Afternoon (1pm–5pm)';
+    const winLabel = ctx.scheduled_window === 'A' ? 'Morning' : 'Afternoon';
+    const windowLabel = ctx.scheduled_window_time_range
+      ? `${winLabel} (${ctx.scheduled_window_time_range})`
+      : (ctx.scheduled_window === 'A' ? 'Morning (9am–1pm)' : 'Afternoon (1pm–5pm)');
     return (
       <>
         <style>{styles}</style>
