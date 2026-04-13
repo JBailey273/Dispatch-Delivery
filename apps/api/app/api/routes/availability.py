@@ -563,6 +563,10 @@ def get_embed_order(
         if windows:
             avail_dates.append({"date": str(check_date), "windows": windows})
  
+    scheduled_time_range = None
+    if drop.scheduled_window and location:
+        scheduled_time_range = _fmt_window_range(location, drop.scheduled_window)
+
     return {
         "drop_id": str(drop.id),
         "customer_name": customer.name if customer else "Customer",
@@ -570,6 +574,7 @@ def get_embed_order(
         "already_scheduled": drop.scheduled_date is not None,
         "scheduled_date": str(drop.scheduled_date) if drop.scheduled_date else None,
         "scheduled_window": drop.scheduled_window.value if drop.scheduled_window else None,
+        "scheduled_window_time_range": scheduled_time_range,
         "available_dates": avail_dates,
     }
  
