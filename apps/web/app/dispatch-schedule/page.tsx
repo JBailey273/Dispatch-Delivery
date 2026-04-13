@@ -5,7 +5,7 @@ import { Suspense } from 'react';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ApiError, api, requireRole } from '../lib/auth';
-import { useLocation } from '../lib/location-context';
+import { useLocation, fmtWindowRange } from '../lib/location-context';
 import DropRescheduleSlideOver from '../components/DropRescheduleSlideOver';
 import type { SlideOverDropDetail } from '../components/DropRescheduleSlideOver';
 
@@ -569,7 +569,7 @@ function DispatchSchedulePage() {
               {/* AM Window */}
               <div className="window-section am">
                 <div className="window-head">
-                  <div className="window-title">Morning Window (9am – 1pm)</div>
+                  <div className="window-title">Morning Window ({fmtWindowRange('A', activeLocation)})</div>
                   <span className={`pill pill-sm pill-${capColor(amCap.used ?? 0, amCap.total ?? 0) === 'red' ? 'red' : capColor(amCap.used ?? 0, amCap.total ?? 0) === 'amber' ? 'amber' : 'green'}`}>
                     <span className="pill-dot" />{amCap.used ?? 0}/{amCap.total ?? 0}
                   </span>
@@ -585,7 +585,7 @@ function DispatchSchedulePage() {
               {/* PM Window */}
               <div className="window-section pm">
                 <div className="window-head">
-                  <div className="window-title">Afternoon Window (1pm – 5pm)</div>
+                  <div className="window-title">Afternoon Window ({fmtWindowRange('B', activeLocation)})</div>
                   <span className={`pill pill-sm pill-${capColor(pmCap.used ?? 0, pmCap.total ?? 0) === 'red' ? 'red' : capColor(pmCap.used ?? 0, pmCap.total ?? 0) === 'amber' ? 'amber' : 'green'}`}>
                     <span className="pill-dot" />{pmCap.used ?? 0}/{pmCap.total ?? 0}
                   </span>
