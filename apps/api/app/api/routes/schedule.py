@@ -1,7 +1,7 @@
 import logging
 import secrets
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from uuid import uuid4
 
 import boto3
@@ -120,7 +120,12 @@ def get_schedule_availability(token: str, db: Session = Depends(db_dep)):
     load_count = db.execute(select(Load).where(Load.drop_id == drop.id)).scalars().all()
     required_loads = len(load_count) or 1
 
-    start = date.today() + timedelta(days=1)
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo(location.timezone or "America/New_York")
+    now_local = datetime.now(tz)
+    today_local = now_local.date()
+
+    start = today_local
     end = start + timedelta(days=60)
 
     days_out = []
@@ -128,6 +133,10 @@ def get_schedule_availability(token: str, db: Session = Depends(db_dep)):
     while current <= end:
         windows = []
         for window in [WindowCode.A, WindowCode.B]:
+            if current == today_local:
+                window_start = location.windowA_start if window == WindowCode.A else location.windowB_start
+                if now_local.time() >= window_start:
+                    continue
             if _is_blacked_out(db, drop.tenant_id, location.id, current, window):
                 continue
             remaining, _used, _holds = _remaining_slots(
