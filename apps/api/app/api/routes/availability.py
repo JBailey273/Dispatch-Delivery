@@ -533,14 +533,22 @@ def get_embed_order(
     ).scalar_one_or_none()
 
     # Get available dates using existing availability logic
-    today = date.today()
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo(location.timezone if location else "America/New_York")
+    now_local = datetime.now(tz)
+    today_local = now_local.date()
+
     look_ahead_days = 60
     avail_dates = []
- 
-    for i in range(1, look_ahead_days + 1):
-        check_date = today + timedelta(days=i)
+
+    for i in range(0, look_ahead_days + 1):
+        check_date = today_local + timedelta(days=i)
         windows = []
         for window_code in [WindowCode.A, WindowCode.B]:
+            if check_date == today_local:
+                window_start = location.windowA_start if window_code == WindowCode.A else location.windowB_start
+                if location and now_local.time() >= window_start:
+                    continue
             if _is_blacked_out(db, channel.tenant_id, drop.location_id, check_date, window_code):
                 continue
             cap = db.execute(
