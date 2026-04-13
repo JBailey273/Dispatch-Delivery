@@ -527,7 +527,11 @@ def get_embed_order(
     ).scalars().all()
  
     items = [f"{l.qty} {l.unit} {l.material_name_snapshot}" for l in loads]
- 
+
+    location = db.execute(
+        select(Location).where(Location.id == drop.location_id)
+    ).scalar_one_or_none()
+
     # Get available dates using existing availability logic
     today = date.today()
     look_ahead_days = 60
@@ -550,7 +554,7 @@ def get_embed_order(
             if cap and cap.capacity_used >= cap.capacity_total:
                 continue
             label = "Morning" if window_code == WindowCode.A else "Afternoon"
-            time_range = "9am – 1pm" if window_code == WindowCode.A else "1pm – 5pm"
+            time_range = _fmt_window_range(location, window_code) if location else ("9am–1pm" if window_code == WindowCode.A else "1pm–5pm")
             windows.append({
                 "window": window_code.value,
                 "label": label,
