@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { ApiError, api, requireRole } from '../../../lib/auth';
-import { useLocation } from '../../../lib/location-context';
+import { useLocation, fmtWindowRange } from '../../lib/location-context';
 import DropRescheduleSlideOver from '../../../components/DropRescheduleSlideOver';
 import type { SlideOverDropDetail } from '../../../components/DropRescheduleSlideOver';
 
@@ -291,7 +291,7 @@ function DispatchDropDetailPage() {
                   {drop.is_priority
                     ? <span className="dd-window-badge priority">⚡ Priority</span>
                     : drop.scheduled_window ? <span className={`dd-window-badge ${drop.scheduled_window === 'A' ? 'am' : 'pm'}`}>
-                        {drop.scheduled_window === 'A' ? 'Morning Window (9am – 1pm)' : 'Afternoon Window (1pm – 5pm)'}
+                        {drop.scheduled_window === 'A' ? `Morning Window (${fmtWindowRange('A', activeLocation)})` : `Afternoon Window (${fmtWindowRange('B', activeLocation)})`}
                       </span> : null}
                 </div>
                 <div className="dd-hero-loads">{drop.required_loads} load{drop.required_loads !== 1 ? 's' : ''}</div>
