@@ -1339,7 +1339,7 @@ def charge_contractor(
             metadata={
                 "wc_customer_id": str(payload.wc_customer_id),
                 "order_ids": ",".join(str(i) for i in payload.wc_order_ids),
-                "charged_by": str(user.id),
+                "charged_by": str(user.user_id),
             },
         )
     except stripe.error.CardError as e:
