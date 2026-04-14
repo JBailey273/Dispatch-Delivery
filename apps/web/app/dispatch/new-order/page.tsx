@@ -69,6 +69,7 @@ type LineItem = {
   name: string;
   quantity: number;
   unit_price: number;
+  price_overridden?: boolean;
 };
 
 type ShippingResult = {
@@ -453,14 +454,28 @@ export default function NewOrderPage() {
     setLineItems(prev => prev.map(l => l.product_id === productId ? { ...l, quantity: qty } : l));
   };
 
+  const updatePrice = (productId: number, raw: string) => {
+    const val = parseFloat(raw);
+    setLineItems(prev => prev.map(l =>
+      l.product_id === productId
+        ? { ...l, unit_price: isNaN(val) ? 0 : val, price_overridden: true }
+        : l
+    ));
+  };
+
   const removeItem = (productId: number) => setLineItems(prev => prev.filter(l => l.product_id !== productId));
+
+  const [deliveryFeeOverride, setDeliveryFeeOverride] = useState<string | null>(null);
+  const [editingDeliveryFee, setEditingDeliveryFee] = useState(false);
+  const [overrideNote, setOverrideNote] = useState('');
 
   const subtotal = lineItems.reduce((s, l) => s + l.unit_price * l.quantity, 0);
   const qualifyingDeliveryItems = deliveryMethod === 'delivery'
     ? lineItems.filter(l => l.quantity >= 3 || overrideDeliveryFee)
     : [];
-  const deliveryFee = qualifyingDeliveryItems.length > 0 && shipping?.found
+  const baseDeliveryFee = qualifyingDeliveryItems.length > 0 && shipping?.found
     ? parseFloat(shipping.fee || '0') * qualifyingDeliveryItems.length : 0;
+  const deliveryFee = deliveryFeeOverride !== null ? parseFloat(deliveryFeeOverride) || 0 : baseDeliveryFee;
   const taxAmount = taxExempt ? 0 : subtotal * taxRate;
   const total = subtotal + deliveryFee + taxAmount;
   const totalCents = Math.round(total * 100);
@@ -659,7 +674,7 @@ export default function NewOrderPage() {
           shipping_instance_id: shipping?.instance_id || '3',
           notes: deliveryNotes.trim() || null,
           payment_method: paymentMethod,
-          payment_note: paymentNote.trim(),
+          payment_note: [paymentNote.trim(), overrideNote.trim()].filter(Boolean).join(' | '),
           stripe_payment_intent_id: stripePaymentIntentId,
           stripe_customer_id: resolvedStripeCustomerId,
           payment_status: (paymentMethod === 'cash' || paymentMethod === 'card') ? 'paid' : 'unpaid',
@@ -1272,7 +1287,14 @@ export default function NewOrderPage() {
                       <div key={item.product_id} className={`no-cart-row${underMin ? ' under-min' : ''}`}>
                         <div className="no-cart-info">
                           <div className="no-cart-name">{item.name}</div>
-                          <div className="no-cart-uprice">{fmt(item.unit_price)}/yd</div>
+                          <div className="no-cart-uprice" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ color: item.price_overridden ? 'var(--amber-600,#d97706)' : undefined }}>
+                              {fmt(item.unit_price)}/yd
+                            </span>
+                            {item.price_overridden && (
+                              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--amber-600,#d97706)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>override</span>
+                            )}
+                          </div>
                           {underMin && <div className="no-cart-warn">⚠ Under 3 yds — Will Be Pickup</div>}
                         </div>
                         <div className="no-qty-wrap">
@@ -1287,7 +1309,18 @@ export default function NewOrderPage() {
                           <button className="no-qty-btn" onClick={() => updateQty(item.product_id, item.quantity + 1)}>+</button>
                           <button className="no-qty-btn no-qty-del" onClick={() => removeItem(item.product_id)}>✕</button>
                         </div>
-                        <div className="no-cart-total">{fmt(item.unit_price * item.quantity)}</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                          <div className="no-cart-total">{fmt(item.unit_price * item.quantity)}</div>
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            value={item.unit_price}
+                            onChange={e => updatePrice(item.product_id, e.target.value)}
+                            style={{ width: 72, padding: '2px 6px', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', fontSize: 12, fontFamily: 'inherit', textAlign: 'right', color: item.price_overridden ? 'var(--amber-600,#d97706)' : 'var(--gray-500)', background: item.price_overridden ? 'var(--amber-50,#fffbeb)' : 'var(--gray-50)' }}
+                            title="Override unit price"
+                          />
+                        </div>
                       </div>
                     );
                   })}
@@ -1299,13 +1332,58 @@ export default function NewOrderPage() {
                 {deliveryMethod === 'delivery' && (
                   <div className="no-total-row">
                     <span>Delivery fee</span>
-                    <span>{shipping?.found ? fmt(deliveryFee) : shippingLoading ? '…' : '—'}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {editingDeliveryFee ? (
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          value={deliveryFeeOverride ?? baseDeliveryFee.toFixed(2)}
+                          onChange={e => setDeliveryFeeOverride(e.target.value)}
+                          onBlur={() => setEditingDeliveryFee(false)}
+                          autoFocus
+                          style={{ width: 80, padding: '2px 6px', border: '1px solid var(--amber-300,#fcd34d)', borderRadius: 'var(--radius-md)', fontSize: 13, fontFamily: 'inherit', textAlign: 'right', background: 'var(--amber-50,#fffbeb)', color: 'var(--amber-700,#b45309)' }}
+                        />
+                      ) : (
+                        <>
+                          <span style={{ color: deliveryFeeOverride !== null ? 'var(--amber-600,#d97706)' : undefined }}>
+                            {shipping?.found ? fmt(deliveryFee) : shippingLoading ? '…' : '—'}
+                          </span>
+                          {deliveryFeeOverride !== null && (
+                            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--amber-600,#d97706)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>override</span>
+                          )}
+                          <button
+                            onClick={() => { setEditingDeliveryFee(true); if (deliveryFeeOverride === null) setDeliveryFeeOverride(baseDeliveryFee.toFixed(2)); }}
+                            style={{ fontSize: 11, padding: '1px 7px', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', background: 'var(--surface)', color: 'var(--gray-500)', cursor: 'pointer', fontFamily: 'inherit' }}
+                            title="Override delivery fee"
+                          >✏️</button>
+                          {deliveryFeeOverride !== null && (
+                            <button
+                              onClick={() => setDeliveryFeeOverride(null)}
+                              style={{ fontSize: 11, padding: '1px 7px', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', background: 'var(--surface)', color: 'var(--red-500,#ef4444)', cursor: 'pointer', fontFamily: 'inherit' }}
+                              title="Reset to calculated fee"
+                            >↩</button>
+                          )}
+                        </>
+                      )}
+                    </span>
                   </div>
                 )}
                 {taxRate > 0 && (
                   <div className="no-total-row">
                     <span>{taxLabel}</span>
                     <span>{taxLoading ? '…' : fmt(taxAmount)}</span>
+                  </div>
+                )}
+                {(lineItems.some(l => l.price_overridden) || deliveryFeeOverride !== null) && (
+                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border-light)' }}>
+                    <input
+                      type="text"
+                      value={overrideNote}
+                      onChange={e => setOverrideNote(e.target.value)}
+                      placeholder="Override reason (e.g. Owner approved discount)…"
+                      style={{ width: '100%', padding: '6px 10px', border: '1px solid var(--amber-300,#fcd34d)', borderRadius: 'var(--radius-md)', fontSize: 12, fontFamily: 'inherit', background: 'var(--amber-50,#fffbeb)', color: 'var(--gray-700)', boxSizing: 'border-box' as const }}
+                    />
                   </div>
                 )}
                 <div className="no-total-row no-total-grand"><span>Total</span><span>{fmt(total)}</span></div>
