@@ -1391,7 +1391,7 @@ def charge_contractor(
         "charged_order_ids": charged_order_ids,
         "failed_order_ids": failed_order_ids,
         "total_cents": batch_total_cents,
-        "charged_by": str(user.id),
+        "charged_by": str(user.user_id),
     })
 
     try:
