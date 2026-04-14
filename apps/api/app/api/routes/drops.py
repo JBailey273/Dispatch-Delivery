@@ -392,36 +392,28 @@ def add_load_to_drop(
 
     reference_load = next(l for l in existing_loads if l.bulk_group_snapshot == payload.bulk_group)
 
-    new_load = Load(
-        tenant_id=user.tenant_id,
-        drop_id=drop.id,
-        route_date=drop.scheduled_date,
-        route_window=drop.scheduled_window or WindowCode.A,
-        bulk_group_snapshot=reference_load.bulk_group_snapshot,
-        material_name_snapshot=reference_load.material_name_snapshot,
-        qty=payload.qty,
-        unit=reference_load.unit,
-        driver_user_id=reference_load.driver_user_id,
-        status=LoadStatus.ASSIGNED,
-    )
-    db.add(new_load)
+    previous_qty = reference_load.qty
+    reference_load.qty = previous_qty + payload.qty
 
     if payload.payment_note:
         existing_note = drop.payment_note or ""
         separator = "\n" if existing_note else ""
         drop.payment_note = f"{existing_note}{separator}Add-on: {payload.payment_note}"
 
-    log_event(db, user.tenant_id, "drop.load_added", "api", {
+    log_event(db, user.tenant_id, "drop.load_qty_increased", "api", {
         "drop_id": drop_id,
+        "load_id": str(reference_load.id),
         "bulk_group": payload.bulk_group,
-        "qty": payload.qty,
+        "previous_qty": previous_qty,
+        "added_qty": payload.qty,
+        "new_qty": reference_load.qty,
     })
     db.commit()
     return {
         "added": True,
-        "load_id": str(new_load.id),
+        "load_id": str(reference_load.id),
         "material": reference_load.material_name_snapshot,
-        "qty": payload.qty,
+        "qty": reference_load.qty,
         "unit": reference_load.unit,
     }
 
