@@ -10,6 +10,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     Time,
@@ -325,6 +326,7 @@ class Drop(Base, TenantScopedMixin, TimestampMixin):
     wc_customer_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     fulfilled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     pickup_ready_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    order_total: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
 
 class SchedulingToken(Base):
     __tablename__ = "scheduling_tokens"
