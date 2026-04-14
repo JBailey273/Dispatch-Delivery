@@ -895,6 +895,7 @@ def create_internal_order(
                     payment_status=payload.payment_status,
                     payment_note=payload.payment_note or None,
                     wc_customer_id=wc_customer_id,
+                    order_total=float(wc_order.get("total") or 0) or None,
                 )
                 db.add(new_drop)
                 db.flush()
@@ -1142,6 +1143,7 @@ def get_invoiced_orders(
                 "scheduled_date": str(d.scheduled_date) if d.scheduled_date else None,
                 "created_at": d.created_at.isoformat() if d.created_at else None,
                 "wc_order_id": d.external_order_id,
+                "order_total": float(d.order_total) if d.order_total else None,
             }
             for d, c in drops
         ]
@@ -1196,6 +1198,77 @@ def toggle_invoice_billing(
     })
 
     return {"success": True, "invoice_billing": customer.invoice_billing}
+
+
+class MarkPaidCashIn(BaseModel):
+    wc_order_ids: list[int]
+    customer_email: str | None = None
+    customer_name: str | None = None
+    company_name: str | None = None
+    orders_summary: list[dict] | None = None
+    batch_total: float | None = None
+
+
+@router.post("/mark-paid-cash")
+def mark_paid_cash(
+    payload: MarkPaidCashIn,
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
+    db: Session = Depends(db_dep),
+):
+    marked = []
+    failed = []
+
+    for wc_order_id in payload.wc_order_ids:
+        try:
+            _wc_request(f"orders/{wc_order_id}", method="PUT", payload={
+                "status": "completed",
+                "set_paid": True,
+                "meta_data": [
+                    {"key": "_emgc_invoice_paid_cash", "value": "1"},
+                    {"key": "_emgc_invoice_batch_date", "value": str(now_utc().date())},
+                ],
+            })
+            marked.append(wc_order_id)
+        except Exception as e:
+            logger.error(f"Failed to mark WC order {wc_order_id} paid (cash): {e}")
+            failed.append(wc_order_id)
+
+    for wc_order_id in marked:
+        try:
+            drop = db.execute(
+                select(Drop).where(
+                    Drop.tenant_id == user.tenant_id,
+                    Drop.external_order_id == str(wc_order_id),
+                )
+            ).scalars().first()
+            if drop:
+                drop.payment_status = "paid"
+        except Exception as e:
+            logger.error(f"Failed to update local drop for WC order {wc_order_id}: {e}")
+
+    db.commit()
+
+    if payload.customer_email and payload.orders_summary:
+        try:
+            from app.api.email_service import send_contractor_statement_email
+            send_contractor_statement_email(
+                to=payload.customer_email,
+                customer_name=payload.customer_name or "",
+                company_name=payload.company_name,
+                orders=payload.orders_summary,
+                batch_total=payload.batch_total or 0.0,
+                payment_method="Cash / Check",
+            )
+        except Exception as e:
+            logger.warning(f"Statement email failed for {payload.customer_email}: {e}")
+
+    log_event(db, user.tenant_id, "contractor.invoice_marked_paid_cash", "api", {
+        "wc_order_ids": payload.wc_order_ids,
+        "marked": marked,
+        "failed": failed,
+    })
+
+    return {"marked": marked, "failed": failed}
 
 
 class ContractorChargeIn(BaseModel):
@@ -1319,6 +1392,35 @@ def charge_contractor(
         "total_cents": batch_total_cents,
         "charged_by": str(user.id),
     })
+
+    try:
+        from app.api.email_service import send_contractor_statement_email
+        local_customer = db.execute(
+            select(Customer).where(
+                Customer.tenant_id == user.tenant_id,
+                Customer.stripe_customer_id == payload.stripe_customer_id,
+            )
+        ).scalars().first()
+        if local_customer and local_customer.email:
+            orders_summary = [
+                {
+                    "order_number": str(o["order_number"]),
+                    "date": str(now_utc().date()),
+                    "total": o["total"],
+                    "delivery_method": "order",
+                }
+                for o in orders_to_charge
+            ]
+            send_contractor_statement_email(
+                to=local_customer.email,
+                customer_name=f"{local_customer.first_name} {local_customer.last_name}".strip(),
+                company_name=local_customer.company_name,
+                orders=orders_summary,
+                batch_total=batch_total_cents / 100,
+                payment_method="Card on File",
+            )
+    except Exception as e:
+        logger.warning(f"Statement email failed after card charge: {e}")
 
     return {
         "success": True,
