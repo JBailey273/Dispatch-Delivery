@@ -306,3 +306,64 @@ def send_delivery_scheduled_email(
       <p style="margin:20px 0 0;font-family:Arial,sans-serif;font-size:14px;color:#999999;line-height:1.65;">Questions? Reply to this email or call us at <a href="tel:4135668733" style="color:#4a7052;text-decoration:none;">(413) 566-8733</a>.</p>
     """
     return send_email(to, subject, _layout('#4a7052', content, f"Your East Meadow delivery is confirmed for {scheduled_date} — {window_label}"))
+
+def send_contractor_statement_email(
+    to: str,
+    customer_name: str,
+    company_name: str | None,
+    orders: list[dict],
+    batch_total: float,
+    payment_method: str,
+) -> bool:
+    today = __import__('datetime').date.today().strftime("%B %d, %Y")
+    display_name = company_name or customer_name
+    subject = f"Invoice Statement — East Meadow Garden Center — {today}"
+
+    rows_html = ""
+    for o in orders:
+        total_str = f"${float(o.get('total', 0)):.2f}" if o.get('total') else "—"
+        rows_html += f"""
+        <tr>
+          <td style="padding:10px 0;border-bottom:1px solid #e8f0e8;font-family:Arial,sans-serif;font-size:14px;font-weight:700;color:#2c2c2c;">#{o.get('order_number','')}</td>
+          <td style="padding:10px 0;border-bottom:1px solid #e8f0e8;font-family:Arial,sans-serif;font-size:13px;color:#666666;">{o.get('date','')}</td>
+          <td style="padding:10px 0;border-bottom:1px solid #e8f0e8;font-family:Arial,sans-serif;font-size:13px;color:#666666;text-transform:capitalize">{o.get('delivery_method','')}</td>
+          <td style="padding:10px 0;border-bottom:1px solid #e8f0e8;font-family:Arial,sans-serif;font-size:14px;font-weight:700;color:#2c2c2c;text-align:right;">{total_str}</td>
+        </tr>"""
+
+    content = f"""
+      <h1 style="margin:0 0 6px;font-family:Outfit,Arial,sans-serif;font-size:26px;font-weight:800;color:#2c2c2c;letter-spacing:-0.02em;line-height:1.25;">Invoice Statement &#x1F9FE;</h1>
+      <p style="margin:0 0 24px;font-family:Arial,sans-serif;font-size:16px;color:#666666;line-height:1.65;">Hi {customer_name.split()[0] if customer_name else 'there'} &#8212; here is your statement from East Meadow Garden Center.</p>
+
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+        <tr><td style="background-color:#f4f8f4;border:1px solid #c8dfc8;border-radius:10px;padding:22px 26px;">
+          <p style="margin:0 0 4px;font-family:Outfit,Arial,sans-serif;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#3d5a45;">Billed To</p>
+          <p style="margin:0;font-family:Outfit,Arial,sans-serif;font-size:17px;font-weight:800;color:#2c2c2c;">{display_name}</p>
+          {f'<p style="margin:2px 0 0;font-family:Arial,sans-serif;font-size:13px;color:#666666;">{customer_name}</p>' if company_name else ''}
+          <p style="margin:12px 0 0;font-family:Arial,sans-serif;font-size:11px;font-weight:600;color:#999999;text-transform:uppercase;letter-spacing:0.06em;">Statement Date</p>
+          <p style="margin:2px 0 0;font-family:Arial,sans-serif;font-size:14px;font-weight:700;color:#2c2c2c;">{today}</p>
+        </td></tr>
+      </table>
+
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 8px;">
+        <thead>
+          <tr>
+            <th style="padding:0 0 8px;font-family:Arial,sans-serif;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#999999;text-align:left;border-bottom:2px solid #c8dfc8;">Order</th>
+            <th style="padding:0 0 8px;font-family:Arial,sans-serif;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#999999;text-align:left;border-bottom:2px solid #c8dfc8;">Date</th>
+            <th style="padding:0 0 8px;font-family:Arial,sans-serif;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#999999;text-align:left;border-bottom:2px solid #c8dfc8;">Type</th>
+            <th style="padding:0 0 8px;font-family:Arial,sans-serif;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#999999;text-align:right;border-bottom:2px solid #c8dfc8;">Amount</th>
+          </tr>
+        </thead>
+        <tbody>{rows_html}</tbody>
+      </table>
+
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+        <tr>
+          <td style="padding:14px 0 0;font-family:Outfit,Arial,sans-serif;font-size:16px;font-weight:800;color:#2c2c2c;border-top:2px solid #c8dfc8;">Total Paid</td>
+          <td style="padding:14px 0 0;font-family:Outfit,Arial,sans-serif;font-size:20px;font-weight:800;color:#2c2c2c;text-align:right;border-top:2px solid #c8dfc8;">${batch_total:.2f}</td>
+        </tr>
+      </table>
+
+      {_info_box(f'&#x2705; &nbsp;Payment received via <strong>{payment_method}</strong> on {today}. Thank you for your business!')}
+      <p style="margin:20px 0 0;font-family:Arial,sans-serif;font-size:14px;color:#999999;line-height:1.65;">Questions about this statement? Reply to this email or call us directly.</p>
+    """
+    return send_email(to, subject, _layout('#4a7052', content, f"Invoice statement — East Meadow Garden Center — {today}"))
