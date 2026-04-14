@@ -1295,7 +1295,7 @@ def charge_contractor(
         try:
             wc_order = _wc_request(f"orders/{wc_order_id}")
             status = wc_order.get("status", "")
-            if status in ("pending", "on-hold", "processing"):
+            if status in ("pending", "on-hold", "processing", "completed"):
                 orders_to_charge.append({
                     "wc_order_id": wc_order_id,
                     "total": wc_order.get("total", "0"),
