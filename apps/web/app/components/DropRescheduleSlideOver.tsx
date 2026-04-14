@@ -68,6 +68,7 @@ export type SlideOverDropDetail = {
   loads: {
     id: string;
     material: string;
+    bulk_group?: string | null;
     qty: number;
     unit: string;
     status: string;
@@ -585,7 +586,7 @@ const sendSchedulingLink = async () => {
                 {!hasExceptions && dropDetail.loads.every(l => l.status !== 'delivered' && l.status !== 'cancelled') && (
                   <button className="so-add-load-toggle" onClick={() => {
                     const groups = [...new Set(dropDetail.loads.map(l => l.material))];
-                    if (groups.length === 1) setAddLoadBulkGroup(dropDetail.loads[0].material);
+                    if (groups.length === 1) setAddLoadBulkGroup(dropDetail.loads[0].bulk_group ?? dropDetail.loads[0].material);
                     else setAddLoadBulkGroup('');
                     setAddLoadMsg('');
                     setAddLoadSuccess(false);
@@ -687,7 +688,8 @@ const sendSchedulingLink = async () => {
 
             {showAddLoad && (() => {
               const uniqueMaterials = dropDetail.loads.reduce<{bulk_group: string; material: string}[]>((acc, l) => {
-                if (!acc.find(x => x.bulk_group === l.material)) acc.push({ bulk_group: l.material, material: l.material });
+                const bg = l.bulk_group ?? l.material;
+                if (!acc.find(x => x.bulk_group === bg)) acc.push({ bulk_group: bg, material: l.material });
                 return acc;
               }, []);
               return (
@@ -1127,7 +1129,7 @@ const panelStyles = `
   .so-add-load-toggle:hover { background: var(--gray-50); border-color: var(--blue-300); color: var(--blue-700); }
 
   /* Notes */
-  .so-notes-text {
+  .so-notes-text { font-size: 13px; color: var(--gray-700); line-height: 1.5; font-style: italic; }
 
   /* Footer link */
   .so-full-link { display: block; text-align: center; font-family: var(--font-heading); font-size: 13px; font-weight: 600; color: var(--gray-400); padding: 8px; transition: color 0.15s; }
