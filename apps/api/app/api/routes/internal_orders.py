@@ -1122,6 +1122,7 @@ def get_invoiced_orders(
         .where(
             Drop.tenant_id == user.tenant_id,
             Drop.payment_method == "invoice",
+            Drop.payment_status != "paid",
         )
         .order_by(Drop.created_at.desc())
     ).all()
