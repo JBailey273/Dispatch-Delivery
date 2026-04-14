@@ -327,6 +327,105 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
     }
 
 
+class PatchNotesIn(BaseModel):
+    notes: str | None = None
+
+
+@router.patch("/{drop_id}/notes")
+def patch_drop_notes(
+    drop_id: str,
+    payload: PatchNotesIn,
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)),
+    db: Session = Depends(db_dep),
+):
+    drop = db.execute(
+        select(Drop).where(Drop.id == drop_id, Drop.tenant_id == user.tenant_id)
+    ).scalar_one_or_none()
+    if not drop:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
+    drop.notes = payload.notes.strip() if payload.notes and payload.notes.strip() else None
+    log_event(db, user.tenant_id, "drop.notes_updated", "api", {"drop_id": drop_id})
+    db.commit()
+    return {"updated": True, "notes": drop.notes}
+
+
+class AddLoadIn(BaseModel):
+    bulk_group: str
+    qty: int
+    payment_note: str | None = None
+
+
+@router.post("/{drop_id}/add-load")
+def add_load_to_drop(
+    drop_id: str,
+    payload: AddLoadIn,
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)),
+    db: Session = Depends(db_dep),
+):
+    drop = db.execute(
+        select(Drop).where(Drop.id == drop_id, Drop.tenant_id == user.tenant_id)
+    ).scalar_one_or_none()
+    if not drop:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
+
+    existing_loads = db.execute(
+        select(Load).where(Load.drop_id == drop.id, Load.tenant_id == user.tenant_id)
+    ).scalars().all()
+
+    terminal_statuses = {LoadStatus.DELIVERED, LoadStatus.CANCELLED}
+    if any(l.status in terminal_statuses for l in existing_loads):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "drop_terminal", "message": "Cannot add material to a delivered or cancelled drop."},
+        )
+
+    existing_bulk_groups = {l.bulk_group_snapshot for l in existing_loads}
+    if payload.bulk_group not in existing_bulk_groups:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "new_material_not_allowed",
+                "message": "Adding a different material requires a new order.",
+                "existing_materials": list(existing_bulk_groups),
+            },
+        )
+
+    reference_load = next(l for l in existing_loads if l.bulk_group_snapshot == payload.bulk_group)
+
+    new_load = Load(
+        tenant_id=user.tenant_id,
+        drop_id=drop.id,
+        route_date=drop.scheduled_date,
+        route_window=drop.scheduled_window or WindowCode.A,
+        bulk_group_snapshot=reference_load.bulk_group_snapshot,
+        material_name_snapshot=reference_load.material_name_snapshot,
+        qty=payload.qty,
+        unit=reference_load.unit,
+        driver_user_id=reference_load.driver_user_id,
+        status=LoadStatus.ASSIGNED,
+    )
+    db.add(new_load)
+
+    if payload.payment_note:
+        existing_note = drop.payment_note or ""
+        separator = "\n" if existing_note else ""
+        drop.payment_note = f"{existing_note}{separator}Add-on: {payload.payment_note}"
+
+    log_event(db, user.tenant_id, "drop.load_added", "api", {
+        "drop_id": drop_id,
+        "bulk_group": payload.bulk_group,
+        "qty": payload.qty,
+    })
+    db.commit()
+    return {
+        "added": True,
+        "load_id": str(new_load.id),
+        "material": reference_load.material_name_snapshot,
+        "qty": payload.qty,
+        "unit": reference_load.unit,
+    }
+
+
 class RescheduleIn(BaseModel):
     scheduled_date: date
     scheduled_window: WindowCode | None = None  # None allowed for priority drops
