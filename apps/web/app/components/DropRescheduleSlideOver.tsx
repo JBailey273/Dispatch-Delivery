@@ -133,7 +133,7 @@ export default function DropRescheduleSlideOver({
 
   /* Self-fetch detail */
   const [internalDetail, setInternalDetail] = useState<SlideOverDropDetail | null>(null);
-  const dropDetail = externalDetail ?? internalDetail;
+  const dropDetail = internalDetail ?? externalDetail;
 
   const refreshDetail = useCallback(async () => {
     try {
