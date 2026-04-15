@@ -623,6 +623,9 @@ const createCustomer = async () => {
                             </div>
                             <div>
                               <div style={{ fontWeight: 600, color: 'var(--gray-900)' }}>{r.name}</div>
+                              {r.company_name && (
+                                <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 1 }}>{r.company_name}</div>
+                              )}
                               {r.exact_phone_match && (
                                 <span className="pill pill-green" style={{ fontSize: 10, marginTop: 2 }}>
                                   <span className="pill-dot" />Exact match
