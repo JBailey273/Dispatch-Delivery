@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, api, requireRole, getSession } from '../../lib/auth';
 
-type CatalogItem = { id: string; sku: string; name: string; delivery_mode: string; unit: string; active: boolean; bulk_group: string; category?: string };
+type CatalogItem = { id: string; sku: string; name: string; delivery_mode: string; unit: string; active: boolean; bulk_group: string; category?: string; sort_order?: number };
 
 const MODE_LABEL: Record<string, string> = { bulk_load: 'Bulk Load', bag: 'Bag', pallet: 'Pallet' };
 const MODE_PILL: Record<string, string> = { bulk_load: 'pill-green', bag: 'pill-blue', pallet: 'pill-amber' };
@@ -22,7 +22,7 @@ export default function AdminCatalogPage() {
   // Modal
   const [modal, setModal] = useState<'create' | 'edit' | 'import' | null>(null);
   const [editItem, setEditItem] = useState<CatalogItem | null>(null);
-  const [form, setForm] = useState({ sku: '', name: '', delivery_mode: 'bulk_load', unit: 'yard', category: '', bulk_group: '' });
+  const [form, setForm] = useState({ sku: '', name: '', delivery_mode: 'bulk_load', unit: 'yard', category: '', bulk_group: '', sort_order: 0 });
   const [saving, setSaving] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
 
@@ -46,13 +46,13 @@ export default function AdminCatalogPage() {
   });
 
   const openCreate = () => {
-    setForm({ sku: '', name: '', delivery_mode: 'bulk_load', unit: 'yard', category: '', bulk_group: '' });
+    setForm({ sku: '', name: '', delivery_mode: 'bulk_load', unit: 'yard', category: '', bulk_group: '', sort_order: 0 });
     setEditItem(null);
     setModal('create');
   };
 
   const openEdit = (item: CatalogItem) => {
-    setForm({ sku: item.sku, name: item.name, delivery_mode: item.delivery_mode, unit: item.unit, category: item.category || '', bulk_group: item.bulk_group || '' });
+    setForm({ sku: item.sku, name: item.name, delivery_mode: item.delivery_mode, unit: item.unit, category: item.category || '', bulk_group: item.bulk_group || '', sort_order: item.sort_order ?? 0 });
     setEditItem(item);
     setModal('edit');
   };
@@ -61,7 +61,7 @@ export default function AdminCatalogPage() {
     setSaving(true);
     setError('');
     try {
-      const body = { ...form, active: true, bulk_group: form.bulk_group || form.sku };
+      const body = { ...form, active: true, bulk_group: form.bulk_group || form.sku, sort_order: form.sort_order ?? 0 };
       if (modal === 'edit' && editItem) {
         await api(`/product-catalog/${editItem.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         setSuccess('Product updated');
@@ -221,9 +221,16 @@ export default function AdminCatalogPage() {
                     <span className="form-hint">Products sharing a group combine into one load</span>
                   </div>
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Category</label>
-                  <input value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} placeholder="Stone, Mulch, Soil…" />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="form-group">
+                    <label className="form-label">Category</label>
+                    <input value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} placeholder="Stone, Mulch, Soil…" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Display Order</label>
+                    <input type="number" min={0} value={form.sort_order} onChange={e => setForm(f => ({ ...f, sort_order: parseInt(e.target.value) || 0 }))} placeholder="0" />
+                    <span className="form-hint">Lower numbers appear first</span>
+                  </div>
                 </div>
               </div>
               <div className="modal-footer">
