@@ -20,6 +20,7 @@ class ProductIn(BaseModel):
     category: str | None = None
     bulk_group: str | None = None
     location_id: str | None = None
+    sort_order: int = 0
 
 
 @router.post("/import")
@@ -143,5 +144,5 @@ def list_product_catalog(
     if q:
         like = f"%{q}%"
         stmt = stmt.where((ProductCatalogItem.sku.ilike(like)) | (ProductCatalogItem.name.ilike(like)))
-    items = db.execute(stmt.order_by(ProductCatalogItem.name)).scalars().all()
-    return {"items": [{"id": str(i.id), "sku": i.sku, "name": i.name, "delivery_mode": i.delivery_mode.value, "unit": i.unit, "active": i.active, "bulk_group": i.bulk_group} for i in items]}
+    items = db.execute(stmt.order_by(ProductCatalogItem.sort_order, ProductCatalogItem.name)).scalars().all()
+    return {"items": [{"id": str(i.id), "sku": i.sku, "name": i.name, "delivery_mode": i.delivery_mode.value, "unit": i.unit, "active": i.active, "bulk_group": i.bulk_group, "sort_order": i.sort_order or 0} for i in items]}
