@@ -110,20 +110,37 @@ def get_wc_products(
 ):
     """Fetch bulk-material products from WooCommerce with role-based pricing."""
     products = _wc_request("products?per_page=100&status=publish")
+
+    # Build SKU → sort_order map from local catalog
+    catalog_items = db.execute(
+        select(ProductCatalogItem).where(
+            ProductCatalogItem.tenant_id == user.tenant_id,
+            ProductCatalogItem.active == True,  # noqa: E712
+        )
+    ).scalars().all()
+    sort_order_map = {item.sku: item.sort_order or 0 for item in catalog_items}
+
     result = []
     for p in products:
         meta = {m["key"]: m["value"] for m in p.get("meta_data", [])}
+        sku = p.get("sku", "")
         result.append({
             "id": p["id"],
             "name": p["name"],
-            "sku": p.get("sku", ""),
+            "sku": sku,
             "price": _price_for_role(p, role),
             "regular_price": p.get("regular_price", "0"),
             "contractor_price": meta.get("_contractor_price"),
             "wholesale_price": meta.get("_wholesale_price"),
             "shipping_class": p.get("shipping_class", ""),
             "sold_by_yard": meta.get("_sold_by_the_yard") == "yes",
+            "_sort_order": sort_order_map.get(sku, 9999),
         })
+
+    result.sort(key=lambda p: (p["_sort_order"], p["name"]))
+    for p in result:
+        del p["_sort_order"]
+
     return {"products": result}
 
 
