@@ -218,7 +218,7 @@ export default function NewOrderPage() {
   const [phone, setPhone] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [smsOptIn, setSmsOptIn] = useState(false);
-  const [emailOptIn, setEmailOptIn] = useState(false);
+  const [emailOptIn, setEmailOptIn] = useState(true);
   const [wcRole, setWcRole] = useState<string | null>(null);
   const [isContractor, setIsContractor] = useState(false);
   const [invoiceBilling, setInvoiceBilling] = useState(false);
