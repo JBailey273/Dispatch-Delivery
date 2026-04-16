@@ -198,6 +198,7 @@ class ProductCatalogItem(Base, TenantScopedMixin, TimestampMixin):
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     category: Mapped[str | None] = mapped_column(String(120), nullable=True)
     bulk_group: Mapped[str] = mapped_column(String(120), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 # ---------------------------------------------------------------------------
