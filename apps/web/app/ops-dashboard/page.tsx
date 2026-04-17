@@ -8,7 +8,7 @@ import { useLocation } from '../lib/location-context';
 /* ── Helpers ── */
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-function toKey(d: Date) { return d.toISOString().slice(0, 10); }
+function toKey(d: Date) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 function fmtDate(d: Date) { return `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()} ${d.getFullYear()}`; }
 function fmtShortDate(dateStr: string): string {
   if (!dateStr) return '';
