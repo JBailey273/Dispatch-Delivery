@@ -18,7 +18,7 @@ const FULL_MONTHS = [
 const SHORT_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function daysInMonth(y: number, m: number) { return new Date(y, m + 1, 0).getDate(); }
 function firstDow(y: number, m: number) { return new Date(y, m, 1).getDay(); }
-function toKey(d: Date) { return d.toISOString().slice(0, 10); }
+function toKey(d: Date) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 function sameDay(a: Date, b: Date) { return toKey(a) === toKey(b); }
 function fmtPhone(p: string) {
   const d = p.replace(/\D/g, '');
