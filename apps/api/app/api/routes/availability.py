@@ -340,7 +340,8 @@ def check_availability(
         if not location:
             raise HTTPException(status_code=400, detail={"code": "no_location", "message": "No active location found"})
 
-    start = start_date or date.today()
+    from zoneinfo import ZoneInfo
+    start = start_date or datetime.now(ZoneInfo("America/New_York")).date()
     windows = []
     for i in range(days):
         d = start + timedelta(days=i)
