@@ -20,7 +20,7 @@ const MONTHS = ['January','February','March','April','May','June','July','August
 
 function daysInMonth(y: number, m: number) { return new Date(y, m + 1, 0).getDate(); }
 function firstDow(y: number, m: number) { return new Date(y, m, 1).getDay(); }
-function toKey(d: Date) { return d.toISOString().slice(0, 10); }
+function toKey(d: Date) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 function capColor(u: number, t: number) {
   if (t === 0) return 'green';
   const pct = u / t;
