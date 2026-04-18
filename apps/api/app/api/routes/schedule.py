@@ -134,8 +134,9 @@ def get_schedule_availability(token: str, db: Session = Depends(db_dep)):
         windows = []
         for window in [WindowCode.A, WindowCode.B]:
             if current == today_local:
-                window_start = location.windowA_start if window == WindowCode.A else location.windowB_start
-                if now_local.time() >= window_start:
+                window_end = location.windowA_end if window == WindowCode.A else location.windowB_end
+                cutoff = (datetime.combine(today_local, window_end, tzinfo=tz) - timedelta(hours=1)).time()
+                if now_local.time() >= cutoff:
                     continue
             if _is_blacked_out(db, drop.tenant_id, location.id, current, window):
                 continue
