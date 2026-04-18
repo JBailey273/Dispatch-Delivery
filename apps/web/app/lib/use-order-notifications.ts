@@ -9,7 +9,7 @@ export type OrderNotification = {
   customer_name: string;
   address_short: string;
   materials: string;
-  date_label: string;   // e.g. "Apr 19" or "Today"
+  date_label: string;
   arrived_at: number;   // Date.now()
   read: boolean;
 };
@@ -38,7 +38,6 @@ export function useOrderNotifications(enabled: boolean, locationId?: string | nu
   const poll = useCallback(async () => {
     if (!enabled) return;
     const locQ = locationId ? `?location_id=${locationId}` : '';
-    const locA = locationId ? `&location_id=${locationId}` : '';
 
     const [unschedRes, pickupRes] = await Promise.allSettled([
       api(`/dispatch/unscheduled${locQ}`),
@@ -58,7 +57,7 @@ export function useOrderNotifications(enabled: boolean, locationId?: string | nu
               type: 'delivery',
               customer_name: drop.customer_name,
               address_short: drop.address_short || '—',
-              materials: drop.items?.join(', ') || '—',
+              materials: drop.materials || '—',
               date_label: toDateLabel(drop.created_at),
               arrived_at: Date.now(),
               read: false,
@@ -79,7 +78,7 @@ export function useOrderNotifications(enabled: boolean, locationId?: string | nu
               type: 'pickup',
               customer_name: drop.customer_name,
               address_short: 'Store pickup',
-              materials: drop.items?.slice(0, 3).join(', ') || '—',
+              materials: Array.isArray(drop.items) ? drop.items.slice(0, 3).join(', ') : '—',
               date_label: toDateLabel(drop.created_at),
               arrived_at: Date.now(),
               read: false,
@@ -98,7 +97,6 @@ export function useOrderNotifications(enabled: boolean, locationId?: string | nu
     }
   }, [enabled, locationId]);
 
-  // Initial load + interval
   useEffect(() => {
     if (!enabled) return;
     poll();
