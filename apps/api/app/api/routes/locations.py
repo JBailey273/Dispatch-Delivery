@@ -26,6 +26,7 @@ class LocationCreateIn(BaseModel):
     windowB_start: str = "13:00:00"
     windowB_end: str = "17:00:00"
     capacity_per_window: int = 4
+    window_dow_rules: dict = {"A": {"disabled_days": []}, "B": {"disabled_days": []}}
 
 
 class LocationUpdateIn(BaseModel):
@@ -43,6 +44,7 @@ class LocationUpdateIn(BaseModel):
     windowB_start: str | None = None
     windowB_end: str | None = None
     capacity_per_window: int | None = None
+    window_dow_rules: dict | None = None
     is_active: bool | None = None
 
 
@@ -65,6 +67,7 @@ def _location_dict(loc: Location) -> dict:
         "windowB_start": str(loc.windowB_start),
         "windowB_end": str(loc.windowB_end),
         "capacity_per_window": loc.capacity_per_window,
+        "window_dow_rules": loc.window_dow_rules or {"A": {"disabled_days": []}, "B": {"disabled_days": []}},
     }
 
 
@@ -159,7 +162,7 @@ def update_location(
         return time(int(h), int(m), int(s))
 
     simple_fields = ["name", "timezone", "address_line1", "address_line2", "city", "state",
-                     "postal_code", "phone", "service_days", "capacity_per_window", "is_active"]
+                     "postal_code", "phone", "service_days", "capacity_per_window", "window_dow_rules", "is_active"]
     time_fields = ["windowA_start", "windowA_end", "windowB_start", "windowB_end"]
 
     for field in simple_fields:
