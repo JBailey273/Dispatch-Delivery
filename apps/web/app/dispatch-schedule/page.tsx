@@ -228,6 +228,16 @@ function DispatchSchedulePage() {
   useEffect(() => { fetchCapacity(); }, [fetchCapacity]);
   useEffect(() => { fetchMonthSummary(); }, [fetchMonthSummary]);
   useEffect(() => { fetchSchedule(); }, [fetchSchedule]);
+
+  // Auto-refresh every 60s
+  useEffect(() => {
+    const id = setInterval(() => {
+      fetchSchedule();
+      fetchCapacity();
+      fetchMonthSummary();
+    }, 60_000);
+    return () => clearInterval(id);
+  }, [fetchSchedule, fetchCapacity, fetchMonthSummary]);
   useEffect(() => {
     api('/dispatch/drivers').then(d => setDrivers(d.drivers || [])).catch(() => null);
   }, []);
