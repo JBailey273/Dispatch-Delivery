@@ -106,6 +106,7 @@ class Tenant(Base, TimestampMixin):
     windowB_start: Mapped[time] = mapped_column(Time, default=time(13, 0), nullable=False)
     windowB_end: Mapped[time] = mapped_column(Time, default=time(17, 0), nullable=False)
     capacity_per_window: Mapped[int] = mapped_column(Integer, default=4, nullable=False)
+    window_dow_rules: Mapped[dict] = mapped_column(JSON, default=lambda: {"A": {"disabled_days": []}, "B": {"disabled_days": []}}, nullable=False)
     optimization_reordering_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     optimization_reassignment_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     optimization_drop_split_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
