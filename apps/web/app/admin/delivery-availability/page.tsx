@@ -112,6 +112,12 @@ export default function DeliveryAvailabilityPage() {
   const [baseCapInput, setBaseCapInput] = useState('');
   const [baseSaving, setBaseSaving] = useState(false);
 
+  // Window DOW rules
+  // Python weekday: 0=Mon,1=Tue,2=Wed,3=Thu,4=Fri,5=Sat,6=Sun
+  type DowRules = { A: { disabled_days: number[] }; B: { disabled_days: number[] } };
+  const [dowRules, setDowRules] = useState<DowRules>({ A: { disabled_days: [] }, B: { disabled_days: [] } });
+  const [dowSaving, setDowSaving] = useState(false);
+
   // ── Data loading ────────────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
@@ -130,6 +136,14 @@ export default function DeliveryAvailabilityPage() {
       setOverrides(overridesData.overrides || []);
       setBaseCap(baseCapData);
       setBaseCapInput(String(baseCapData.capacity_per_window));
+      // Load window DOW rules from location
+      if (baseCapData.location_id) {
+        try {
+          const locData = await api(`/locations/${baseCapData.location_id}`);
+          const rules = locData.window_dow_rules || { A: { disabled_days: [] }, B: { disabled_days: [] } };
+          setDowRules(rules);
+        } catch { /* silent — rules default to no disabled days */ }
+      }
     } catch (err) {
       setError((err as ApiError).message || 'Failed to load availability data');
     } finally {
@@ -335,6 +349,37 @@ export default function DeliveryAvailabilityPage() {
     }
   }
 
+  // ── Window DOW rules ────────────────────────────────────────────────────────
+
+  // DOW_LABELS uses Python weekday order: 0=Mon … 5=Sat, 6=Sun
+  const DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  function toggleDow(window: 'A' | 'B', day: number) {
+    setDowRules(prev => {
+      const current = prev[window].disabled_days;
+      const next = current.includes(day) ? current.filter(d => d !== day) : [...current, day];
+      return { ...prev, [window]: { disabled_days: next } };
+    });
+  }
+
+  async function saveDowRules() {
+    if (!baseCap?.location_id) return;
+    setDowSaving(true);
+    try {
+      await api(`/locations/${baseCap.location_id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ window_dow_rules: dowRules }),
+      });
+      setSuccess('Window schedule saved');
+      setTimeout(() => setSuccess(''), 4000);
+    } catch (err) {
+      setError((err as ApiError).message || 'Failed to save window schedule');
+    } finally {
+      setDowSaving(false);
+    }
+  }
+
   // ── Sunday detection ────────────────────────────────────────────────────────
 
   const blockedSundayCount = blackouts.filter(b => {
@@ -438,6 +483,48 @@ export default function DeliveryAvailabilityPage() {
                     )}
                   </div>
                 )}
+              </div>
+
+              {/* Window Schedule Rules */}
+              <div className="card av-section">
+                <div className="av-section-head">
+                  <div>
+                    <div className="av-section-title">Window Schedule</div>
+                    <div className="av-section-sub">Disable a delivery window on specific days of the week</div>
+                  </div>
+                </div>
+                <div className="av-dow-grid">
+                  {(['A', 'B'] as const).map(win => (
+                    <div key={win} className="av-dow-row">
+                      <div className={`av-dow-window-label ${win === 'A' ? 'av-dow-am' : 'av-dow-pm'}`}>
+                        {win === 'A' ? '🌅 Morning' : '🌆 Afternoon'}
+                      </div>
+                      <div className="av-dow-toggles">
+                        {DOW_LABELS.map((label, idx) => {
+                          const disabled = dowRules[win].disabled_days.includes(idx);
+                          return (
+                            <button
+                              key={idx}
+                              className={`av-dow-btn${disabled ? ' av-dow-btn--off' : ' av-dow-btn--on'}`}
+                              onClick={() => toggleDow(win, idx)}
+                              title={disabled ? `${label}: disabled` : `${label}: enabled`}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 }}>
+                  <button className="btn btn-primary btn-sm" onClick={saveDowRules} disabled={dowSaving}>
+                    {dowSaving ? 'Saving…' : 'Save Schedule'}
+                  </button>
+                  <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>
+                    Green = open · Red = closed
+                  </span>
+                </div>
               </div>
 
               {/* Capacity Overrides */}
@@ -975,6 +1062,47 @@ const styles = `
   .av-blocked-note { font-size: 13px; color: var(--gray-500); font-style: italic; }
   .av-form-row { display: flex; gap: 12px; }
   .av-form-row .form-group { flex: 1; }
+
+  /* Window DOW rules */
+  .av-dow-grid { display: flex; flex-direction: column; gap: 12px; }
+  .av-dow-row { display: flex; flex-direction: column; gap: 6px; }
+  .av-dow-window-label {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 3px 0;
+  }
+  .av-dow-am { color: var(--green-700, #15803d); }
+  .av-dow-pm { color: #1e40af; }
+  .av-dow-toggles { display: flex; gap: 5px; flex-wrap: wrap; }
+  .av-dow-btn {
+    width: 40px;
+    height: 34px;
+    border-radius: var(--radius-md);
+    border: 1.5px solid;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .av-dow-btn--on {
+    background: rgba(26,158,58,0.1);
+    border-color: rgba(26,158,58,0.35);
+    color: var(--green-700, #15803d);
+  }
+  .av-dow-btn--on:hover {
+    background: rgba(26,158,58,0.18);
+  }
+  .av-dow-btn--off {
+    background: rgba(244,63,94,0.08);
+    border-color: rgba(244,63,94,0.3);
+    color: #be123c;
+  }
+  .av-dow-btn--off:hover {
+    background: rgba(244,63,94,0.14);
+  }
 
   /* Responsive */
   @media (max-width: 900px) {
