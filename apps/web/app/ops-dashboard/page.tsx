@@ -131,6 +131,12 @@ export default function DashboardPage() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  // Auto-refresh every 60s
+  useEffect(() => {
+    const id = setInterval(fetchAll, 60_000);
+    return () => clearInterval(id);
+  }, [fetchAll]);
+
   /* ── Derived ── */
   const allDeliveries = useMemo(() => {
     if (!schedule) return [];
