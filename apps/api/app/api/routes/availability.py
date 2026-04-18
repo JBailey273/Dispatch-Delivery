@@ -183,7 +183,24 @@ def _fmt_window_range(location, window_code) -> str:
     return f"{start}–{end}"
 
 
+def _is_dow_disabled(location, day: date, window: WindowCode) -> bool:
+    """Check if a window is disabled for this day-of-week via standing location rules.
+    Python weekday(): 0=Monday, 1=Tuesday, ..., 5=Saturday, 6=Sunday.
+    """
+    rules = getattr(location, 'window_dow_rules', None) or {}
+    window_rules = rules.get(window.value, {})
+    disabled_days = window_rules.get('disabled_days', [])
+    return day.weekday() in disabled_days
+
+
 def _is_blacked_out(db: Session, tenant_id, location_id, day: date, window: WindowCode) -> bool:
+    # Check standing day-of-week rules on the location
+    location = db.execute(
+        select(Location).where(Location.id == location_id)
+    ).scalar_one_or_none()
+    if location and _is_dow_disabled(location, day, window):
+        return True
+    # Check specific date blackouts
     blackout = db.execute(
         select(OperationalBlackout.id).where(
             OperationalBlackout.tenant_id == tenant_id,
