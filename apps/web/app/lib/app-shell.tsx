@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { clearSession, getSession, Session } from './auth';
 import { LocationProvider, useLocation } from './location-context';
+import { useOrderNotifications, OrderNotification } from './use-order-notifications';
 
 function SidebarLink({ href, children, icon }: { href: string; children: React.ReactNode; icon: React.ReactNode }) {
   const pathname = usePathname();
@@ -38,6 +39,7 @@ const Icons = {
   pin: <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 1.5C5.515 1.5 3.5 3.515 3.5 6c0 3.75 4.5 8.5 4.5 8.5s4.5-4.75 4.5-8.5c0-2.485-2.015-4.5-4.5-4.5zm0 6a1.5 1.5 0 110-3 1.5 1.5 0 010 3z" fill="currentColor"/></svg>,
   chevron: <svg width="10" height="10" viewBox="0 0 16 16" fill="none" style={{ opacity: 0.4, marginLeft: 'auto' }}><path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
   check: <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  bell: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>,
 };
 
 const LogoMark = () => (
@@ -122,15 +124,91 @@ function ThemeToggle() {
   );
 }
 
+/* ── Toast Card ── */
+function ToastCard({ notif, onDismiss }: { notif: OrderNotification; onDismiss: (id: string) => void }) {
+  const isPickup = notif.type === 'pickup';
+  return (
+    <div className={`notif-toast ${isPickup ? 'notif-toast--pickup' : 'notif-toast--delivery'}`}>
+      <div className={`notif-toast-bar ${isPickup ? 'notif-toast-bar--pickup' : 'notif-toast-bar--delivery'}`} />
+      <div className="notif-toast-body">
+        <div className="notif-toast-title">
+          <span className={`notif-dot ${isPickup ? 'notif-dot--pickup' : 'notif-dot--delivery'}`} />
+          {isPickup ? 'New pickup order' : 'New delivery order'}
+          <span className={`notif-badge ${isPickup ? 'notif-badge--pickup' : 'notif-badge--delivery'}`}>
+            {isPickup ? 'Pickup' : 'Delivery'}
+          </span>
+        </div>
+        <div className="notif-toast-row"><span className="notif-toast-label">Customer</span><span className="notif-toast-val">{notif.customer_name}</span></div>
+        <div className="notif-toast-row"><span className="notif-toast-label">Address</span><span className="notif-toast-val">{notif.address_short}</span></div>
+        <div className="notif-toast-row"><span className="notif-toast-label">Materials</span><span className="notif-toast-val">{notif.materials}</span></div>
+        <div className="notif-toast-row"><span className="notif-toast-label">Date</span><span className="notif-toast-val">{notif.date_label}</span></div>
+      </div>
+      <button className="notif-toast-dismiss" onClick={() => onDismiss(notif.id)}>✕</button>
+    </div>
+  );
+}
+
+/* ── Notification Log Panel ── */
+function NotifPanel({ log, unreadCount, onMarkAllRead, onClose }: {
+  log: OrderNotification[];
+  unreadCount: number;
+  onMarkAllRead: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      <div className="notif-panel-backdrop" onClick={onClose} />
+      <div className="notif-panel">
+        <div className="notif-panel-head">
+          <span className="notif-panel-title">New Orders</span>
+          {unreadCount > 0 && (
+            <button className="notif-panel-clear" onClick={onMarkAllRead}>Mark all read</button>
+          )}
+          <button className="notif-panel-close" onClick={onClose}>✕</button>
+        </div>
+        {log.length === 0 ? (
+          <div className="notif-panel-empty">No new orders this session</div>
+        ) : (
+          <div className="notif-panel-list">
+            {log.map(n => (
+              <div key={n.id} className={`notif-panel-item ${n.read ? 'notif-panel-item--read' : ''}`}>
+                <div className="notif-panel-item-head">
+                  {!n.read && <span className={`notif-dot ${n.type === 'pickup' ? 'notif-dot--pickup' : 'notif-dot--delivery'}`} style={{ flexShrink: 0 }} />}
+                  <span className="notif-panel-customer">{n.customer_name}</span>
+                  <span className={`notif-badge ${n.type === 'pickup' ? 'notif-badge--pickup' : 'notif-badge--delivery'}`} style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                    {n.type === 'pickup' ? 'Pickup' : 'Delivery'}
+                  </span>
+                </div>
+                <div className="notif-panel-meta">{n.address_short} · {n.materials}</div>
+                <div className="notif-panel-date">{n.date_label}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 function ShellInner({ children, session }: { children: React.ReactNode; session: Session }) {
   const isAdmin = session.role === 'admin';
   const isDriver = session.role === 'driver';
+  const isDispatcherOrAdmin = session.role === 'dispatcher' || isAdmin;
   const router = useRouter();
   const name = session.name || session.role;
   const initials = name.split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase();
 
+  const { activeLocation } = useLocation();
+  const { toasts, log, unreadCount, dismissToast, markAllRead } = useOrderNotifications(
+    isDispatcherOrAdmin,
+    activeLocation?.id ?? null,
+  );
+
+  const [panelOpen, setPanelOpen] = useState(false);
+
   return (
     <div className="app-shell">
+      <style>{notifStyles}</style>
       <aside className="app-sidebar">
         <Link href={isDriver ? '/driver/loads' : '/ops-dashboard'} className="app-sidebar-brand">
           <div className="app-sidebar-brand-icon">
@@ -175,6 +253,22 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
 
         <div className="app-sidebar-footer">
           {!isDriver && <LocationSwitcher />}
+
+          {/* ── Notification Bell ── */}
+          {isDispatcherOrAdmin && (
+            <button
+              className={`notif-bell-btn${unreadCount > 0 ? ' notif-bell-btn--active' : ''}`}
+              onClick={() => setPanelOpen(o => !o)}
+              title="New orders"
+            >
+              {Icons.bell}
+              <span className="notif-bell-label">New Orders</span>
+              {unreadCount > 0 && (
+                <span className="notif-bell-badge">{unreadCount}</span>
+              )}
+            </button>
+          )}
+
           <div className="app-sidebar-user">
             <div className="app-sidebar-user-avatar">{initials}</div>
             <div className="app-sidebar-user-name">{session.name || session.role}</div>
@@ -192,6 +286,25 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
       <main className="app-content">
         {children}
       </main>
+
+      {/* ── Toast Stack ── */}
+      {toasts.length > 0 && (
+        <div className="notif-toast-stack">
+          {toasts.map(t => (
+            <ToastCard key={t.id} notif={t} onDismiss={dismissToast} />
+          ))}
+        </div>
+      )}
+
+      {/* ── Notification Panel ── */}
+      {panelOpen && (
+        <NotifPanel
+          log={log}
+          unreadCount={unreadCount}
+          onMarkAllRead={markAllRead}
+          onClose={() => setPanelOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -226,3 +339,253 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     </LocationProvider>
   );
 }
+
+const notifStyles = `
+  /* ── Toast Stack ── */
+  .notif-toast-stack {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 360px;
+    width: calc(100vw - 48px);
+  }
+  .notif-toast {
+    display: flex;
+    background: var(--surface);
+    border: 1px solid var(--border-light);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+    overflow: hidden;
+    position: relative;
+    animation: notif-slide-in 0.2s ease-out;
+  }
+  @keyframes notif-slide-in {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .notif-toast-bar {
+    width: 4px;
+    flex-shrink: 0;
+  }
+  .notif-toast-bar--delivery { background: #1D9E75; }
+  .notif-toast-bar--pickup   { background: #378ADD; }
+  .notif-toast-body {
+    flex: 1;
+    padding: 12px 14px;
+    min-width: 0;
+  }
+  .notif-toast-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--gray-900);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 7px;
+    flex-wrap: wrap;
+  }
+  .notif-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .notif-dot--delivery { background: #1D9E75; }
+  .notif-dot--pickup   { background: #378ADD; }
+  .notif-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .notif-badge--delivery { background: #E1F5EE; color: #0F6E56; }
+  .notif-badge--pickup   { background: #E6F1FB; color: #185FA5; }
+  .notif-toast-row {
+    display: flex;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--gray-500);
+    margin-bottom: 2px;
+    min-width: 0;
+  }
+  .notif-toast-label { flex-shrink: 0; }
+  .notif-toast-val {
+    color: var(--gray-900);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .notif-toast-dismiss {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: none;
+    border: none;
+    color: var(--gray-400);
+    cursor: pointer;
+    font-size: 13px;
+    padding: 2px 5px;
+    line-height: 1;
+    border-radius: 4px;
+    font-family: inherit;
+  }
+  .notif-toast-dismiss:hover { background: var(--gray-100); color: var(--gray-700); }
+
+  /* ── Bell Button ── */
+  .notif-bell-btn {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    padding: 8px 12px;
+    background: none;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--gray-500);
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    transition: background 0.15s, color 0.15s;
+    position: relative;
+    margin-bottom: 4px;
+  }
+  .notif-bell-btn:hover { background: var(--gray-100); color: var(--gray-800); }
+  .notif-bell-btn--active { color: var(--gray-800); }
+  .notif-bell-label { flex: 1; text-align: left; }
+  .notif-bell-badge {
+    background: #e11d48;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    border-radius: 999px;
+    padding: 1px 6px;
+    min-width: 18px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  /* ── Log Panel ── */
+  .notif-panel-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+  }
+  .notif-panel {
+    position: fixed;
+    bottom: 80px;
+    left: 216px;
+    width: 340px;
+    max-height: 480px;
+    background: var(--surface);
+    border: 1px solid var(--border-light);
+    border-radius: 14px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.14);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: notif-slide-in 0.15s ease-out;
+  }
+  .notif-panel-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid var(--border-light);
+    flex-shrink: 0;
+  }
+  .notif-panel-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--gray-900);
+    flex: 1;
+  }
+  .notif-panel-clear {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--green-700);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    padding: 2px 4px;
+  }
+  .notif-panel-clear:hover { text-decoration: underline; }
+  .notif-panel-close {
+    background: none;
+    border: none;
+    color: var(--gray-400);
+    cursor: pointer;
+    font-size: 13px;
+    padding: 2px 5px;
+    font-family: inherit;
+    border-radius: 4px;
+  }
+  .notif-panel-close:hover { background: var(--gray-100); color: var(--gray-700); }
+  .notif-panel-empty {
+    padding: 32px 16px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--gray-400);
+  }
+  .notif-panel-list {
+    overflow-y: auto;
+    flex: 1;
+  }
+  .notif-panel-item {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-light);
+    transition: background 0.1s;
+  }
+  .notif-panel-item:last-child { border-bottom: none; }
+  .notif-panel-item--read { opacity: 0.55; }
+  .notif-panel-item-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 4px;
+  }
+  .notif-panel-customer {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--gray-900);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .notif-panel-meta {
+    font-size: 12px;
+    color: var(--gray-500);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .notif-panel-date {
+    font-size: 11px;
+    color: var(--gray-400);
+    margin-top: 2px;
+  }
+
+  @media (max-width: 768px) {
+    .notif-toast-stack {
+      bottom: 16px;
+      right: 16px;
+      left: 16px;
+      width: auto;
+      max-width: none;
+    }
+    .notif-panel {
+      left: 16px;
+      right: 16px;
+      width: auto;
+      bottom: 70px;
+    }
+  }
+`;
