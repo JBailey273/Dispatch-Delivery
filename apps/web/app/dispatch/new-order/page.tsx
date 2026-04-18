@@ -253,7 +253,7 @@ export default function NewOrderPage() {
   const [taxExempt, setTaxExempt] = useState(false);
 
   // Payment
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'payment_link' | 'invoice'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'payment_link' | 'invoice'>('card');
   const [saveCard, setSaveCard] = useState(false);
   const [paymentNote, setPaymentNote] = useState('');
   const chargeRef = useRef<(() => Promise<{ paymentIntentId: string; stripeCustomerId: string } | null>) | null>(null);
@@ -790,7 +790,7 @@ export default function NewOrderPage() {
                   clearCustomer();
                   setLineItems([]);
                   setDeliveryMethod('delivery');
-                  setPaymentMethod('cash');
+                  setPaymentMethod('card');
                   setPaymentNote('');
                   setDropId(null);
                   setScheduled(null);
