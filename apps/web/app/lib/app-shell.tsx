@@ -447,7 +447,7 @@ const notifStyles = `
     border: none;
     border-radius: 8px;
     cursor: pointer;
-    color: var(--gray-500);
+    color: rgba(255,255,255,0.55);
     font-size: 13px;
     font-weight: 600;
     font-family: inherit;
@@ -455,8 +455,8 @@ const notifStyles = `
     position: relative;
     margin-bottom: 4px;
   }
-  .notif-bell-btn:hover { background: var(--gray-100); color: var(--gray-800); }
-  .notif-bell-btn--active { color: var(--gray-800); }
+  .notif-bell-btn:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.9); }
+  .notif-bell-btn--active { color: rgba(255,255,255,0.9); }
   .notif-bell-label { flex: 1; text-align: left; }
   .notif-bell-badge {
     background: #e11d48;
