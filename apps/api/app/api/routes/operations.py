@@ -762,9 +762,46 @@ def update_base_capacity(
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Location not found"})
 
     location.capacity_per_window = payload.capacity_per_window
+
+    from datetime import timedelta
+    from zoneinfo import ZoneInfo
+    from app.models.entities import CapacityOverride
+    today = datetime.now(ZoneInfo("America/New_York")).date()
+
+    overrides = db.execute(
+        select(CapacityOverride).where(
+            CapacityOverride.tenant_id == user.tenant_id,
+            CapacityOverride.location_id == location.id,
+            CapacityOverride.end_date >= today,
+        )
+    ).scalars().all()
+
+    overridden_dates: set[tuple] = set()
+    for ov in overrides:
+        cur = max(ov.start_date, today)
+        while cur <= ov.end_date:
+            overridden_dates.add((cur, "A"))
+            overridden_dates.add((cur, "B"))
+            cur = cur + timedelta(days=1)
+
+    future_caps = db.execute(
+        select(WindowCapacity).where(
+            WindowCapacity.tenant_id == user.tenant_id,
+            WindowCapacity.location_id == location.id,
+            WindowCapacity.service_date >= today,
+        )
+    ).scalars().all()
+
+    updated = 0
+    for cap in future_caps:
+        if (cap.service_date, cap.window_code.value) not in overridden_dates:
+            cap.capacity_total = max(cap.capacity_used, payload.capacity_per_window)
+            updated += 1
+
     log_event(db, user.tenant_id, "BASE_CAPACITY_UPDATED", "api", {
         "location_id": str(location.id),
         "capacity_per_window": payload.capacity_per_window,
+        "window_capacity_rows_updated": updated,
     })
     db.commit()
     return {"status": "ok", "capacity_per_window": payload.capacity_per_window}
