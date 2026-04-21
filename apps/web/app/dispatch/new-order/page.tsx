@@ -152,9 +152,27 @@ function CardForm({
       }
       const cardEl = elements?.getElement(CardElement);
       if (!cardEl) { onPaymentError('Card element not found'); return null; }
+
+      // If saving card, create the PaymentMethod explicitly first so Stripe
+      // can attach it to the customer via setup_future_usage
+      let paymentMethodId: string | undefined;
+      if (saveCard) {
+        const { error: pmError, paymentMethod: pm } = await stripe.createPaymentMethod({
+          type: 'card',
+          card: cardEl,
+          billing_details: { name: customerName, email: customerEmail },
+        });
+        if (pmError) { onPaymentError(pmError.message || 'Card error'); return null; }
+        paymentMethodId = pm?.id;
+      }
+
+      const confirmParams = paymentMethodId
+        ? { payment_method: paymentMethodId }
+        : { payment_method: { card: cardEl, billing_details: { name: customerName, email: customerEmail } } };
+
       const { error, paymentIntent } = await stripe.confirmCardPayment(
         intentRes.client_secret,
-        { payment_method: { card: cardEl, billing_details: { name: customerName, email: customerEmail } } }
+        confirmParams
       );
       if (error) { onPaymentError(error.message || 'Card declined'); return null; }
       if (paymentIntent?.status === 'succeeded') {
