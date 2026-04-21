@@ -305,10 +305,12 @@ def lookup_wc_customer(
     # Fetch saved Stripe card if we have a local record
     stripe_customer_id = local.stripe_customer_id if local else None
     saved_card = None
+    logger.info(f"lookup_wc_customer: local={local.id if local else None} stripe_customer_id={stripe_customer_id}")
     if stripe_customer_id and settings.stripe_api_key:
         try:
             _stripe()
             methods = stripe.PaymentMethod.list(customer=stripe_customer_id, type="card")
+            logger.info(f"lookup_wc_customer: stripe methods count={len(methods.data)}")
             if methods.data:
                 pm = methods.data[0]
                 saved_card = {
