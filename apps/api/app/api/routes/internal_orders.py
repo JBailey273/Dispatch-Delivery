@@ -913,6 +913,7 @@ def create_internal_order(
                     payment_method=payload.payment_method,
                     payment_status=payload.payment_status,
                     payment_note=payload.payment_note or None,
+                    stripe_payment_intent_id=payload.stripe_payment_intent_id or None,
                     wc_customer_id=wc_customer_id,
                     order_total=float(wc_order.get("total") or 0) or None,
                 )
