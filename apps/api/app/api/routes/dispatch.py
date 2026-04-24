@@ -397,6 +397,13 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
         "required_loads": len(loads_out),
         "loads": loads_out,
         "drop_photos": drop.drop_photos if drop.drop_photos else [],
+        "payment_method": drop.payment_method,
+        "payment_status": drop.payment_status,
+        "payment_note": drop.payment_note,
+        "order_total": float(drop.order_total) if drop.order_total else None,
+        "stripe_payment_intent_id": drop.stripe_payment_intent_id,
+        "delivery_method": drop.delivery_method,
+        "wc_customer_id": drop.wc_customer_id,
     }
 @router.get("/unscheduled")
 def get_unscheduled_drops(
