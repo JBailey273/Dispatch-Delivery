@@ -184,7 +184,7 @@ function CardForm({
     }
   };
 
-  useEffect(() => { onPaymentReady(charge); }, [stripe, elements, totalCents, savedCard]);
+  useEffect(() => { onPaymentReady(charge); }, [stripe, elements, totalCents, savedCard, saveCard]);
 
   return (
     <div>
