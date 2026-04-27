@@ -190,7 +190,11 @@ def search_customers(
         .outerjoin(last_ordered_subquery, last_ordered_subquery.c.customer_id == Customer.id)
         .where(
             Customer.tenant_id == user.tenant_id,
-            or_(Customer.name.ilike(like), Customer.phone_e164.ilike(like)),
+            or_(
+                Customer.name.ilike(like),
+                Customer.phone_e164.ilike(like),
+                Customer.company_name.ilike(like),
+            ),
         )
         .order_by(
             case((Customer.phone_e164 == normalized_phone, 0), else_=1),
