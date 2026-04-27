@@ -560,7 +560,7 @@ const createCustomer = async () => {
           <input
             ref={inputRef}
             className="cs-search-input"
-            placeholder="Filter by name, phone, or address…"
+            placeholder="Filter by name, company, phone, or address…"
             value={q}
             onChange={e => handleQueryChange(e.target.value)}
             autoFocus
