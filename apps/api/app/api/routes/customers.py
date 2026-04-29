@@ -145,7 +145,7 @@ def _get_address_or_404(db: Session, customer_id: str, address_id: str, tenant_i
 
 @router.get("")
 def list_customers(
-    limit: int = Query(default=100, ge=1, le=500),
+    limit: int = Query(default=500, ge=1, le=2000),
     user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.DRIVER)),
     db: Session = Depends(db_dep),
 ):
