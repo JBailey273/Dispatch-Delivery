@@ -384,6 +384,9 @@ const sendSchedulingLink = async () => {
 
   /* ── Add load ── */
   const [showAddLoad, setShowAddLoad] = useState(false);
+  const [splitLoadId, setSplitLoadId] = useState<string | null>(null);
+  const [splitSaving, setSplitSaving] = useState(false);
+  const [splitResult, setSplitResult] = useState<{qd: string; material: string} | null>(null);
   const [addLoadBulkGroup, setAddLoadBulkGroup] = useState('');
   const [addLoadQty, setAddLoadQty] = useState(1);
   const [addLoadPaymentNote, setAddLoadPaymentNote] = useState('');
@@ -620,7 +623,17 @@ const sendSchedulingLink = async () => {
                         <span className={`pill pill-sm ${load.status === 'assigned' && !load.driver_user_id ? 'pill-amber' : statusPill(load.status)}`}>
                           <span className="pill-dot" />{load.status === 'assigned' && !load.driver_user_id ? 'Pending' : statusLabel(load.status)}
                         </span>
-                        {!isTerminal && (
+                        {!isTerminal && dropDetail.loads.length > 1 && (
+                          <button
+                            className="so-edit-btn"
+                            style={{ marginRight: 4 }}
+                            onClick={() => setSplitLoadId(splitLoadId === load.id ? null : load.id)}
+                            title="Split into separate delivery"
+                          >
+                            ✂
+                          </button>
+                        )}
+                      {!isTerminal && (
                           <button
                             className="so-edit-btn"
                             onClick={() => setEditingLoadId(isEditing ? null : load.id)}
@@ -682,6 +695,51 @@ const sendSchedulingLink = async () => {
                       </div>
                     )}
                   </div>
+                {splitLoadId === load.id && (
+                    <div style={{ margin: '8px 0 4px', padding: '12px 14px', background: 'var(--blue-50,#eff6ff)', border: '1px solid var(--blue-200,#bfdbfe)', borderRadius: 'var(--radius-md)' }}>
+                      {splitResult ? (
+                        <div style={{ fontSize: 13, color: 'var(--green-700)' }}>
+                          ✓ Split off as <strong>{splitResult.qd}</strong>. Find it in the unscheduled queue to schedule.
+                          <button className="so-edit-btn" style={{ marginLeft: 10 }} onClick={() => { setSplitLoadId(null); setSplitResult(null); }}>Done</button>
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--blue-800,#1e40af)', marginBottom: 6 }}>
+                            Split off "{load.material}"?
+                          </div>
+                          <div style={{ fontSize: 12, color: 'var(--blue-700,#1d4ed8)', marginBottom: 10, lineHeight: 1.5 }}>
+                            This creates a separate unscheduled delivery for this material. It can be scheduled independently.
+                          </div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button
+                              className="btn btn-primary btn-sm"
+                              disabled={splitSaving}
+                              onClick={async () => {
+                                setSplitSaving(true);
+                                try {
+                                  const res = await api(`/drops/${dropDetail.id}/split-load`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ load_id: load.id }),
+                                  });
+                                  setSplitResult({ qd: res.new_drop_qd, material: res.material });
+                                  await refreshDetail();
+                                } catch (e: any) {
+                                  alert(e.message || 'Split failed. Please try again.');
+                                  setSplitLoadId(null);
+                                } finally {
+                                  setSplitSaving(false);
+                                }
+                              }}
+                            >
+                              {splitSaving ? 'Splitting…' : 'Confirm Split'}
+                            </button>
+                            <button className="btn btn-ghost btn-sm" disabled={splitSaving} onClick={() => setSplitLoadId(null)}>Cancel</button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                 );
               })}
             </div>
