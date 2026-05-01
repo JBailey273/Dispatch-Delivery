@@ -338,6 +338,24 @@ def update_load_status(
                     select(Drop).where(Drop.id == load.drop_id, Drop.tenant_id == user.tenant_id)
                 ).scalar_one_or_none()
                 if drop_row and drop_row.external_order_id:
+                    # Only mark WC completed if ALL drops sharing this external_order_id are fully delivered
+                    sibling_drops = db.execute(
+                        select(Drop).where(
+                            Drop.tenant_id == user.tenant_id,
+                            Drop.external_order_id == drop_row.external_order_id,
+                            Drop.id != drop_row.id,
+                        )
+                    ).scalars().all()
+                    sibling_load_counts = []
+                    for sib in sibling_drops:
+                        sib_loads = db.execute(
+                            select(Load).where(Load.drop_id == sib.id, Load.tenant_id == user.tenant_id)
+                        ).scalars().all()
+                        sibling_load_counts.append(all(l.status == LoadStatus.DELIVERED for l in sib_loads))
+                    all_siblings_done = all(sibling_load_counts) if sibling_load_counts else True
+                    if not all_siblings_done:
+                        drop_row = None  # suppress WC sync until all splits are delivered
+                if drop_row and drop_row.external_order_id:
                     wc_channel = db.execute(
                         select(Channel).where(
                             Channel.tenant_id == user.tenant_id,
