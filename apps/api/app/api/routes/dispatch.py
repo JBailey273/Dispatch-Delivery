@@ -428,6 +428,16 @@ def get_unscheduled_drops(
 
     rows = db.execute(stmt).all()
 
+    drop_ids = [drop.id for drop, _, _ in rows]
+    materials_map: dict[str, list[str]] = defaultdict(list)
+    if drop_ids:
+        loads = db.execute(
+            select(Load.drop_id, Load.material_name_snapshot)
+            .where(Load.drop_id.in_(drop_ids))
+        ).all()
+        for load_drop_id, mat in loads:
+            materials_map[str(load_drop_id)].append(mat)
+
     return {
         "drops": [
             {
@@ -436,7 +446,7 @@ def get_unscheduled_drops(
                 "customer_name": customer.name,
                 "customer_phone": customer.phone_e164,
                 "address_short": f"{addr.line1}, {addr.city}",
-                "materials": drop.notes,
+                "materials": ", ".join(materials_map.get(str(drop.id), [])) or "—",
                 "created_at": drop.created_at.isoformat(),
                 "is_priority": drop.is_priority,
                 "source": drop.source,
