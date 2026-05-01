@@ -435,6 +435,90 @@ def add_load_to_drop(
     }
 
 
+class SplitLoadIn(BaseModel):
+    load_id: str
+
+
+@router.post("/{drop_id}/split-load")
+def split_load(drop_id: str, payload: SplitLoadIn, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+    schedule_decision = scheduling_gate(db, user.tenant_id)
+    if not schedule_decision.allowed:
+        raise HTTPException(status_code=402, detail={"code": schedule_decision.code, "message": schedule_decision.message})
+
+    drop = db.execute(select(Drop).where(Drop.id == drop_id, Drop.tenant_id == user.tenant_id).with_for_update()).scalar_one_or_none()
+    if not drop:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
+
+    all_loads = db.execute(select(Load).where(Load.drop_id == drop.id, Load.tenant_id == user.tenant_id).with_for_update()).scalars().all()
+    if len(all_loads) < 2:
+        raise HTTPException(status_code=409, detail={"code": "single_load", "message": "Cannot split a drop with only one load."})
+
+    load_to_split = next((l for l in all_loads if str(l.id) == payload.load_id), None)
+    if not load_to_split:
+        raise HTTPException(status_code=404, detail={"code": "load_not_found", "message": "Load not found on this drop."})
+
+    if load_to_split.status in (LoadStatus.DELIVERED, LoadStatus.CANCELLED):
+        raise HTTPException(status_code=409, detail={"code": "invalid_load_state", "message": f"Cannot split a load with status '{load_to_split.status.value}'."})
+
+    # Release 1 unit of capacity from the parent drop's window (it now has one fewer load)
+    if not drop.is_priority and drop.scheduled_date and drop.scheduled_window:
+        mutate_capacity_or_409(
+            db,
+            user.tenant_id,
+            drop.scheduled_date,
+            drop.scheduled_window,
+            -1,
+            CapacityMutationContext(source="api", reason="drop_split_release", reference_id=drop_id),
+        )
+
+    # Create the new child drop — clone parent, unscheduled
+    new_drop = Drop(
+        tenant_id=drop.tenant_id,
+        location_id=drop.location_id,
+        customer_id=drop.customer_id,
+        address_id=drop.address_id,
+        order_number=drop.order_number,
+        qd_number=next_qd_number(db, user.tenant_id),
+        external_order_id=drop.external_order_id,
+        source=drop.source,
+        delivery_method=drop.delivery_method if hasattr(drop, 'delivery_method') else "delivery",
+        is_priority=drop.is_priority,
+        scheduled_date=None,
+        scheduled_window=None,
+        notes=drop.notes,
+        drop_photos=[],
+        payment_method=drop.payment_method if hasattr(drop, 'payment_method') else None,
+        payment_status=drop.payment_status if hasattr(drop, 'payment_status') else None,
+        payment_note=drop.payment_note if hasattr(drop, 'payment_note') else None,
+        wc_customer_id=drop.wc_customer_id if hasattr(drop, 'wc_customer_id') else None,
+        order_total=None,  # payment already handled on parent
+    )
+    db.add(new_drop)
+    db.flush()
+
+    # Move the load to the new drop
+    load_to_split.drop_id = new_drop.id
+    load_to_split.route_date = None
+    load_to_split.route_window = None
+
+    log_event(db, user.tenant_id, "drop.split", "api", {
+        "parent_drop_id": drop_id,
+        "new_drop_id": str(new_drop.id),
+        "load_id": payload.load_id,
+        "material": load_to_split.material_name_snapshot,
+    })
+
+    db.commit()
+
+    return {
+        "new_drop_id": str(new_drop.id),
+        "new_drop_qd": f"QD-{new_drop.qd_number}",
+        "material": load_to_split.material_name_snapshot,
+        "qty": load_to_split.qty,
+        "unit": load_to_split.unit,
+    }
+
+
 class RescheduleIn(BaseModel):
     scheduled_date: date
     scheduled_window: WindowCode | None = None  # None allowed for priority drops
