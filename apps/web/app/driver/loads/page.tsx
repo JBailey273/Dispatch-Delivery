@@ -297,17 +297,11 @@ export default function DriverPage() {
         headers: { 'Content-Type': 'image/jpeg' },
       });
 
-      await api('/uploads/confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entity_type: entityType, entity_id: photoTarget.loadId, object_key: presign.object_key }),
-      });
-
       if (photoTarget.type === 'pod') {
-        await api(`/driver/loads/${photoTarget.loadId}/status`, {
+        await api(`/driver/loads/${photoTarget.loadId}/complete`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'delivered' }),
+          body: JSON.stringify({ object_key: presign.object_key }),
         });
         showToast('Photo saved & delivery confirmed!');
         setExpandedDrop(null);
