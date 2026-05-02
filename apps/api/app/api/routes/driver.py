@@ -8,7 +8,10 @@ from app.api.deps import AuthUser, db_dep, require_roles
 from app.api.services import enqueue_sms_job, log_event, now_utc
 from app.models.entities import Customer, CustomerAddress, Drop, ExceptionReasonCode, Load, LoadStatus, UserRole
 from app.api.email_service import send_on_the_way_email, send_delivery_confirmation_email
+import logging
 from app.api.notification_service import notify_customer
+
+logger = logging.getLogger("dispatch.driver")
 
 router = APIRouter(prefix="/driver", tags=["driver"])
 
@@ -318,8 +321,7 @@ def update_load_status(
                     elif requested == LoadStatus.DELIVERED:
                         notify_customer(db, user.tenant_id, drop, customer, "delivered", {"pod_photo_url": load.pod_photo_url})
         except Exception as e:
-            import logging
-            logging.getLogger("dispatch.email").error(f"Auto-notification failed for load {load_id}: {e}")
+            logger.warning(f"EXIF normalization failed for {payload.object_key}: {e}")
 
     # ── WooCommerce sync — mark order completed when all loads delivered ──
     if requested == LoadStatus.DELIVERED:
@@ -401,7 +403,6 @@ class PhotoLinkIn(BaseModel):
 
 
 class CompleteDeliveryIn(BaseModel):
-    photo_url: str
     object_key: str
 
 
@@ -430,7 +431,26 @@ def complete_delivery(
 
     _ensure_transition(load, LoadStatus.DELIVERED)
 
-    load.pod_photo_url = payload.photo_url
+    from app.api.routes.uploads import _photo_url, _normalize_image_orientation, _storage_client
+    from app.core.config import settings as _settings
+    photo_url = _photo_url(payload.object_key)
+    try:
+        s3 = _storage_client()
+        obj = s3.get_object(Bucket=_settings.r2_bucket, Key=payload.object_key)
+        original_bytes = obj["Body"].read()
+        normalized_bytes = _normalize_image_orientation(original_bytes)
+        if normalized_bytes != original_bytes:
+            s3.put_object(
+                Bucket=_settings.r2_bucket,
+                Key=payload.object_key,
+                Body=normalized_bytes,
+                ContentType="image/jpeg",
+            )
+    except Exception as e:
+        import logging
+        logging.getLogger("dispatch.driver").warning(f"EXIF normalization failed for {payload.object_key}: {e}")
+
+    load.pod_photo_url = photo_url
     load.status = LoadStatus.DELIVERED
 
     log_event(
@@ -471,6 +491,23 @@ def complete_delivery(
             drop_row = db.execute(
                 select(Drop).where(Drop.id == load.drop_id, Drop.tenant_id == user.tenant_id)
             ).scalar_one_or_none()
+            if drop_row and drop_row.external_order_id:
+                sibling_drops = db.execute(
+                    select(Drop).where(
+                        Drop.tenant_id == user.tenant_id,
+                        Drop.external_order_id == drop_row.external_order_id,
+                        Drop.id != drop_row.id,
+                    )
+                ).scalars().all()
+                sibling_load_counts = []
+                for sib in sibling_drops:
+                    sib_loads = db.execute(
+                        select(Load).where(Load.drop_id == sib.id, Load.tenant_id == user.tenant_id)
+                    ).scalars().all()
+                    sibling_load_counts.append(all(l.status == LoadStatus.DELIVERED for l in sib_loads))
+                all_siblings_done = all(sibling_load_counts) if sibling_load_counts else True
+                if not all_siblings_done:
+                    drop_row = None
             if drop_row and drop_row.external_order_id:
                 wc_channel = db.execute(
                     select(Channel).where(
