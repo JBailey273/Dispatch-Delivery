@@ -400,6 +400,105 @@ class PhotoLinkIn(BaseModel):
     photo_type: str  # "pod" or "exception"
 
 
+class CompleteDeliveryIn(BaseModel):
+    photo_url: str
+    object_key: str
+
+
+@router.post("/loads/{load_id}/complete")
+def complete_delivery(
+    load_id: str,
+    payload: CompleteDeliveryIn,
+    user: AuthUser = Depends(require_roles(UserRole.DRIVER)),
+    db: Session = Depends(db_dep),
+):
+    """Atomically attach POD photo and mark load delivered in a single transaction."""
+    load = db.execute(
+        select(Load).where(Load.id == load_id, Load.tenant_id == user.tenant_id).with_for_update()
+    ).scalar_one_or_none()
+    if not load:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Load not found"})
+    if load.driver_user_id != user.user_id:
+        raise HTTPException(status_code=403, detail={"code": "load_reassigned", "message": "Load not assigned to driver"})
+    if load.status == LoadStatus.DELIVERED:
+        return {
+            "status": "delivered",
+            "idempotent": True,
+            "server_timestamp": now_utc().isoformat(),
+            "server_version": str(int(load.updated_at.timestamp() * 1000)),
+        }
+
+    _ensure_transition(load, LoadStatus.DELIVERED)
+
+    load.pod_photo_url = payload.photo_url
+    load.status = LoadStatus.DELIVERED
+
+    log_event(
+        db,
+        user.tenant_id,
+        "LOAD_STATUS_CHANGED",
+        "driver",
+        {"load_id": load_id, "status": "delivered", "notes": "atomic complete"},
+    )
+
+    # Auto-notify customer
+    try:
+        drop = db.execute(
+            select(Drop).where(Drop.id == load.drop_id, Drop.tenant_id == user.tenant_id)
+        ).scalar_one_or_none()
+        if drop:
+            from app.models.entities import Customer as CustomerModel
+            customer = db.execute(
+                select(CustomerModel).where(CustomerModel.id == drop.customer_id, CustomerModel.tenant_id == user.tenant_id)
+            ).scalar_one_or_none()
+            if customer:
+                notify_customer(db, user.tenant_id, drop, customer, "delivered", {"pod_photo_url": load.pod_photo_url})
+    except Exception as e:
+        logger.error(f"Auto-notification failed for load {load_id}: {e}")
+
+    # WooCommerce sync
+    try:
+        from app.api.woocommerce_service import sync_order_status
+        from app.models.entities import Channel, ChannelType
+        all_drop_loads = db.execute(
+            select(Load).where(Load.drop_id == load.drop_id, Load.tenant_id == user.tenant_id)
+        ).scalars().all()
+        all_delivered = all(
+            l.status == LoadStatus.DELIVERED or str(l.id) == str(load.id)
+            for l in all_drop_loads
+        )
+        if all_delivered:
+            drop_row = db.execute(
+                select(Drop).where(Drop.id == load.drop_id, Drop.tenant_id == user.tenant_id)
+            ).scalar_one_or_none()
+            if drop_row and drop_row.external_order_id:
+                wc_channel = db.execute(
+                    select(Channel).where(
+                        Channel.tenant_id == user.tenant_id,
+                        Channel.channel_type == ChannelType.WOOCOMMERCE,
+                        Channel.is_active == True,
+                    )
+                ).scalar_one_or_none()
+                if wc_channel and wc_channel.wc_store_url and wc_channel.wc_consumer_key:
+                    sync_order_status(
+                        wc_channel.wc_store_url,
+                        wc_channel.wc_consumer_key,
+                        wc_channel.wc_consumer_secret,
+                        drop_row.external_order_id,
+                        "completed",
+                    )
+    except Exception:
+        logger.exception("woocommerce_sync_failed on delivery — continuing")
+
+    db.commit()
+    return {
+        "status": "delivered",
+        "idempotent": False,
+        "server_timestamp": now_utc().isoformat(),
+        "server_version": str(int(load.updated_at.timestamp() * 1000)),
+    }
+
+
 @router.post("/loads/{load_id}/photo")
 def attach_load_photo(
     load_id: str,
