@@ -472,9 +472,8 @@ export default function NewOrderPage() {
 
   const updateQty = (productId: number, qty: number) => {
     if (qty < 1) { removeItem(productId); return; }
-    setLineItems(prev => prev.map(l => l.product_id === productId ? { ...l, quantity: qty } : l));
+    setLineItems(prev => prev.map(l => l.product_id === productId ? { ...l, quantity: qty, _qtyDraft: undefined } : l));
   };
-
   const updateQtyRaw = (productId: number, raw: string) => {
     // Allow empty string while typing; commit on blur
     setLineItems(prev => prev.map(l =>
