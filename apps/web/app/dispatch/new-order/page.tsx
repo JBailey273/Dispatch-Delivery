@@ -1337,7 +1337,7 @@ export default function NewOrderPage() {
                           {underMin && <div className="no-cart-warn">⚠ Under 3 yds — Will Be Pickup</div>}
                         </div>
                         <div className="no-qty-wrap">
-                          <button className="no-qty-btn" onClick={() => updateQty(item.product_id, item.quantity - 1)}>−</button>
+                          <button className="no-qty-btn" onClick={() => updateQty(item.product_id, (item._qtyDraft !== undefined ? parseInt(item._qtyDraft) || item.quantity : item.quantity) - 1)}>−</button>
                           <input
                             className="no-qty-input"
                             type="number"
@@ -1346,7 +1346,7 @@ export default function NewOrderPage() {
                             onChange={e => updateQtyRaw(item.product_id, e.target.value)}
                             onBlur={e => commitQty(item.product_id, e.target.value)}
                           />
-                          <button className="no-qty-btn" onClick={() => updateQty(item.product_id, item.quantity + 1)}>+</button>
+                          <button className="no-qty-btn" onClick={() => updateQty(item.product_id, (item._qtyDraft !== undefined ? parseInt(item._qtyDraft) || item.quantity : item.quantity) + 1)}>+</button>
                           <button className="no-qty-btn no-qty-del" onClick={() => removeItem(item.product_id)}>✕</button>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
