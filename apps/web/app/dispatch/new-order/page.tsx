@@ -247,6 +247,7 @@ export default function NewOrderPage() {
   type SavedAddress = { id: string; line1: string; line2?: string; city: string; state: string; postal_code: string; is_default: boolean };
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+  const [defaultAddressId, setDefaultAddressId] = useState<string | null>(null);
   const [showNewAddrForm, setShowNewAddrForm] = useState(false);
 
   // Products
@@ -335,6 +336,7 @@ export default function NewOrderPage() {
             if (addrs.length > 0) {
               const def = addrs.find(a => a.is_default) || addrs[0];
               setSelectedAddressId(def.id);
+              setDefaultAddressId(def.id);
               setAddrLine1(def.line1 || '');
               setAddrLine2(def.line2 || '');
               setAddrCity(def.city || '');
@@ -385,7 +387,7 @@ export default function NewOrderPage() {
     setWcCustomer(null); setLookupQuery(''); setLookupDone(false);
     setFirstName(''); setLastName(''); setEmail(''); setPhone(''); setCompanyName('');
     setWcRole(null); setIsContractor(false); setInvoiceBilling(false); setStripeCustomerId(null); setSavedCard(null);
-    setSavedAddresses([]); setSelectedAddressId(null); setShowNewAddrForm(false);
+    setSavedAddresses([]); setSelectedAddressId(null); setDefaultAddressId(null); setShowNewAddrForm(false);
     setSmsOptIn(false); setEmailOptIn(false);
     setAddrLine1(''); setAddrLine2(''); setAddrCity(''); setAddrState('MA'); setAddrZip('');
     setShipping(null); loadProducts(null);
@@ -1033,7 +1035,6 @@ export default function NewOrderPage() {
                             setAddrState(a.state || 'MA');
                             setAddrZip(a.postal_code || '');
                             setShowNewAddrForm(false);
-                            setShipping(null);
                           }}
                         >
                           <span className="no-addr-radio">{selectedAddressId === a.id ? '●' : '○'}</span>
@@ -1041,7 +1042,7 @@ export default function NewOrderPage() {
                             <div style={{ fontWeight: 600, fontSize: 13 }}>{a.line1}{a.line2 ? `, ${a.line2}` : ''}</div>
                             <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>{a.city}, {a.state} {a.postal_code}</div>
                           </div>
-                          {a.is_default && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--brand)', background: 'var(--blue-50)', padding: '2px 6px', borderRadius: 100 }}>Default</span>}
+                          {a.id === defaultAddressId && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--brand)', background: 'var(--blue-50)', padding: '2px 6px', borderRadius: 100 }}>Default</span>}
                         </div>
                       ))}
                       <button
