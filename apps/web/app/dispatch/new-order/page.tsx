@@ -70,6 +70,7 @@ type LineItem = {
   quantity: number;
   unit_price: number;
   price_overridden?: boolean;
+  _qtyDraft?: string;
 };
 
 type ShippingResult = {
@@ -472,6 +473,25 @@ export default function NewOrderPage() {
   const updateQty = (productId: number, qty: number) => {
     if (qty < 1) { removeItem(productId); return; }
     setLineItems(prev => prev.map(l => l.product_id === productId ? { ...l, quantity: qty } : l));
+  };
+
+  const updateQtyRaw = (productId: number, raw: string) => {
+    // Allow empty string while typing; commit on blur
+    setLineItems(prev => prev.map(l =>
+      l.product_id === productId ? { ...l, _qtyDraft: raw } : l
+    ));
+  };
+
+  const commitQty = (productId: number, raw: string) => {
+    const parsed = parseInt(raw);
+    if (!isNaN(parsed) && parsed >= 1) {
+      updateQty(productId, parsed);
+    } else {
+      // Reset to current committed quantity (strip draft)
+      setLineItems(prev => prev.map(l =>
+        l.product_id === productId ? { ...l, _qtyDraft: undefined } : l
+      ));
+    }
   };
 
   const updatePrice = (productId: number, raw: string) => {
@@ -1322,8 +1342,9 @@ export default function NewOrderPage() {
                             className="no-qty-input"
                             type="number"
                             min={1}
-                            value={item.quantity}
-                            onChange={e => updateQty(item.product_id, parseInt(e.target.value) || 1)}
+                            value={item._qtyDraft !== undefined ? item._qtyDraft : item.quantity}
+                            onChange={e => updateQtyRaw(item.product_id, e.target.value)}
+                            onBlur={e => commitQty(item.product_id, e.target.value)}
                           />
                           <button className="no-qty-btn" onClick={() => updateQty(item.product_id, item.quantity + 1)}>+</button>
                           <button className="no-qty-btn no-qty-del" onClick={() => removeItem(item.product_id)}>✕</button>
