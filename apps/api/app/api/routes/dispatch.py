@@ -321,6 +321,7 @@ def list_orders(
             "window": load.route_window.value if load.route_window else None,
             "delivery_method": drop.delivery_method,
             "customer_name": customer.name,
+            "customer_company": customer.company_name,
             "customer_phone": customer.phone_e164,
             "address_short": f"{address.line1}, {address.city}" if address else "Pickup",
             "material": load.material_name_snapshot,
