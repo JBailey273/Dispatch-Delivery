@@ -86,7 +86,7 @@ export default function ReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, activeLocation?.id]);
+  }, [startDate, endDate, mode, activeLocation?.id]);
 
   useEffect(() => { fetchSummary(); }, [fetchSummary]);
 
