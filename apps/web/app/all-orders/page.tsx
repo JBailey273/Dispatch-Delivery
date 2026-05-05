@@ -14,6 +14,7 @@ type OrderRow = {
   window: string | null;
   is_priority: boolean;
   customer_name: string;
+  customer_company: string | null;
   customer_phone: string | null;
   address_short: string;
   material: string;
@@ -74,10 +75,10 @@ export default function AllOrdersPage() {
 
   // Filters
   const defaultStart = useMemo(() => {
-    const d = new Date(); d.setDate(d.getDate() - 14); return toKey(d);
+    const d = new Date(); d.setDate(d.getDate() - 90); return toKey(d);
   }, []);
   const defaultEnd = useMemo(() => {
-    const d = new Date(); d.setDate(d.getDate() + 3); return toKey(d);
+    const d = new Date(); d.setDate(d.getDate() + 60); return toKey(d);
   }, []);
   const [startDate, setStartDate] = useState(defaultStart);
   const [endDate, setEndDate] = useState(defaultEnd);
@@ -355,6 +356,9 @@ export default function AllOrdersPage() {
                         </td>
                         <td className="ao-td">
                           <div className="ao-customer-name">{o.customer_name}</div>
+                          {o.customer_company && (
+                            <div style={{ fontSize: 11, color: 'var(--gray-400)', fontWeight: 600 }}>{o.customer_company}</div>
+                          )}
                           <div className="ao-customer-phone">{o.customer_phone}</div>
                         </td>
                         <td className="ao-td ao-hide-mobile ao-td-addr">
