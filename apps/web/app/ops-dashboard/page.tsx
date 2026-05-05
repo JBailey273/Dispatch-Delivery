@@ -71,6 +71,7 @@ export default function DashboardPage() {
   const [exceptions, setExceptions] = useState<ExceptionItem[]>([]);
   const [capA, setCapA] = useState<{ used: number; total: number } | null>(null);
   const [capB, setCapB] = useState<{ used: number; total: number } | null>(null);
+  const [reportSummary, setReportSummary] = useState<{ total_yards: number; total_revenue: number; cash_total: number; order_count: number } | null>(null);
   const [loading, setLoading] = useState(true);
 
   const { activeLocation } = useLocation();
@@ -109,6 +110,7 @@ export default function DashboardPage() {
       api(`/pickup/queue${locQ}`),
       api(`/ops/reports/exceptions?start_date=${toKey(rangeStart)}&end_date=${toKey(rangeEnd)}${loc}`),
       api(`/availability?start_date=${todayStr}&days=1${loc}`),
+      api(`/ops/reports/summary?start_date=${todayStr}&end_date=${todayStr}${loc}`),
     ]);
 
     if (token !== fetchAbortRef.current) return;
@@ -119,6 +121,7 @@ export default function DashboardPage() {
     if (results[3].status === 'fulfilled') setUnscheduled(results[3].value.drops || []);
     if (results[4].status === 'fulfilled') setPickups(results[4].value.drops || []);
     if (results[5].status === 'fulfilled') setExceptions(results[5].value.recent_exceptions || []);
+    if (results[7].status === 'fulfilled') setReportSummary(results[7].value);
     if (results[6].status === 'fulfilled') {
       const wins = results[6].value.windows || [];
       const a = wins.find((w: any) => w.date === todayStr && w.window === 'A');
@@ -448,6 +451,37 @@ export default function DashboardPage() {
                   ))}
                 </div>
               </div>
+            )}
+
+            {/* ════════════════════════════════
+                SECTION 2.5 — TODAY TOTALS
+                ════════════════════════════════ */}
+            {reportSummary && (
+              <Link href="/dispatch/reports" style={{ textDecoration: 'none', display: 'block', marginBottom: 16 }}>
+                <div className="card dash-totals-banner">
+                  <div className="dash-totals-main">
+                    <span className="dash-totals-yards">{reportSummary.total_yards.toLocaleString('en-US', { maximumFractionDigits: 1 })} yd</span>
+                    <span className="dash-totals-label">today</span>
+                  </div>
+                  <div className="dash-totals-right">
+                    <div className="dash-totals-stat">
+                      <span className="dash-totals-stat-val">${reportSummary.total_revenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span className="dash-totals-stat-label">Revenue</span>
+                    </div>
+                    <div className="dash-totals-divider" />
+                    <div className="dash-totals-stat">
+                      <span className="dash-totals-stat-val" style={{ color: 'var(--green-700)' }}>${reportSummary.cash_total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span className="dash-totals-stat-label">Cash</span>
+                    </div>
+                    <div className="dash-totals-divider" />
+                    <div className="dash-totals-stat">
+                      <span className="dash-totals-stat-val">{reportSummary.order_count}</span>
+                      <span className="dash-totals-stat-label">Orders</span>
+                    </div>
+                    <span className="dash-totals-arrow">›</span>
+                  </div>
+                </div>
+              </Link>
             )}
 
             {/* ════════════════════════════════
@@ -832,5 +866,19 @@ const dashStyles = `
     .dash-stat-val { font-size: 28px; }
     .dash-delivery-driver { display: none; }
     .dash-delivery-row { grid-template-columns: 1fr auto 20px; }
+  
+  /* Today totals banner */
+  .dash-totals-banner { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; margin-bottom: 0; cursor: pointer; transition: background 0.12s; gap: 16px; }
+  .dash-totals-banner:hover { background: var(--gray-50); }
+  .dash-totals-main { display: flex; align-items: baseline; gap: 8px; flex-shrink: 0; }
+  .dash-totals-yards { font-size: 28px; font-weight: 800; letter-spacing: -0.03em; color: var(--gray-900); font-family: var(--font-heading); line-height: 1; }
+  .dash-totals-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gray-400); }
+  .dash-totals-right { display: flex; align-items: center; gap: 16px; }
+  .dash-totals-stat { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+  .dash-totals-stat-val { font-size: 15px; font-weight: 700; color: var(--gray-900); white-space: nowrap; }
+  .dash-totals-stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gray-400); }
+  .dash-totals-divider { width: 1px; height: 28px; background: var(--border-light); flex-shrink: 0; }
+  .dash-totals-arrow { color: var(--gray-300); font-size: 20px; margin-left: 4px; }
+  @media (max-width: 480px) { .dash-totals-right { gap: 10px; } .dash-totals-stat-val { font-size: 13px; } .dash-totals-yards { font-size: 22px; } }
   }
 `;
