@@ -226,8 +226,7 @@ function DispatchDropDetailPage() {
   const [requiresCapture, setRequiresCapture] = useState(false);
   const [deltaCents, setDeltaCents] = useState(0);
   const [pendingStripeCustomerId, setPendingStripeCustomerId] = useState<string | null>(null);
-  const [pendingPayload, setPendingPayload] = useState<{ line_items: ModifyLineItem[]; reason: string } | null>(null);
-
+  const [pendingPayload, setPendingPayload] = useState<null>(null);
   const handleDelete = async () => {
     setDeleting(true);
     try {
@@ -282,7 +281,6 @@ function DispatchDropDetailPage() {
     setModifyError('');
     setModifySuccess('');
     setRequiresCapture(false);
-    setPendingPayload(null);
   };
 
   const addModifyItem = () => {
@@ -340,7 +338,6 @@ function DispatchDropDetailPage() {
       if (res.requires_card_capture) {
         setDeltaCents(res.delta_cents);
         setPendingStripeCustomerId(res.stripe_customer_id || null);
-        setPendingPayload(body);
         setRequiresCapture(true);
         setModifySubmitting(false);
         return;
@@ -672,7 +669,7 @@ function DispatchDropDetailPage() {
                               setRequiresCapture(false);
                               await submitModify(piId);
                             }}
-                            onCancel={() => { setRequiresCapture(false); setPendingPayload(null); }}
+                            onCancel={() => { setRequiresCapture(false); }}
                             onError={(msg) => setModifyError(msg)}
                           />
                         </Elements>
