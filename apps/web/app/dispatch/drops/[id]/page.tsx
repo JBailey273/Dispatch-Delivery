@@ -2,11 +2,15 @@
 
 import Link from 'next/link';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { ApiError, api, requireRole } from '../../../lib/auth';
 import { useLocation, fmtWindowRange } from '../../../lib/location-context';
 import DropRescheduleSlideOver from '../../../components/DropRescheduleSlideOver';
 import type { SlideOverDropDetail } from '../../../components/DropRescheduleSlideOver';
+
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '');
 
 /* ── Types ── */
 type Address = { line1: string; line2?: string | null; city: string; state: string; postal_code: string };
@@ -29,7 +33,23 @@ type DropDetail = {
   notify_sent_at: string | null; last_reschedule_sms_at: string | null;
   drop_photos: string[];
   customer_email?: string | null; customer_sms_opt_in?: boolean; customer_email_opt_in?: boolean;
+  payment_method?: string | null;
+  payment_status?: string | null;
+  payment_note?: string | null;
+  order_total?: number | null;
+  stripe_payment_intent_id?: string | null;
+  wc_customer_id?: number | null;
+  delivery_method?: string | null;
+  external_order_id?: string | null;
 };
+
+type WcProduct = {
+  id: number; name: string; sku: string; price: string;
+  regular_price: string; contractor_price: string | null; wholesale_price: string | null;
+  sold_by_yard: boolean;
+};
+
+type ModifyLineItem = { product_id: number; name: string; quantity: number; unit_price: number };
 
 /* ── Helpers ── */
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -50,6 +70,9 @@ function fmtAddr(a: Address) {
   if (a.line2) s += ', ' + a.line2;
   return `${s}, ${a.city}, ${a.state} ${a.postal_code}`;
 }
+function fmt(n: number) {
+  return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+}
 
 const STATUS_PILL: Record<string, string> = {
   assigned: 'pill-gray', loaded_leaving: 'pill-blue', delivered: 'pill-green',
@@ -59,18 +82,21 @@ const STATUS_LABEL: Record<string, string> = {
   assigned: 'Scheduled', loaded_leaving: 'En Route', delivered: 'Delivered',
   exception: 'Exception', cancelled: 'Cancelled', new: 'Pending',
 };
-
 const EXCEPTION_LABELS: Record<string, string> = {
-  WRONG_ADDRESS: 'Wrong Address',
-  CUSTOMER_REFUSED: 'Customer Refused',
-  ACCESS_BLOCKED: 'Access Blocked',
-  DAMAGED_GOODS: 'Damaged Material',
-  CUSTOMER_UNAVAILABLE: 'Not Home',
-  SAFETY_RISK: 'Safety Risk',
-  OUT_OF_STOCK: 'Out of Stock',
-  OTHER: 'Other',
+  WRONG_ADDRESS: 'Wrong Address', CUSTOMER_REFUSED: 'Customer Refused',
+  ACCESS_BLOCKED: 'Access Blocked', DAMAGED_GOODS: 'Damaged Material',
+  CUSTOMER_UNAVAILABLE: 'Not Home', SAFETY_RISK: 'Safety Risk',
+  OUT_OF_STOCK: 'Out of Stock', OTHER: 'Other',
 };
-
+const PAYMENT_METHOD_LABEL: Record<string, string> = {
+  cash: 'Cash', card: 'Card', invoice: 'Invoice', payment_link: 'Payment Link',
+};
+const PAYMENT_STATUS_PILL: Record<string, string> = {
+  paid: 'pill-green', unpaid: 'pill-amber', pending_link: 'pill-blue', refunded: 'pill-gray',
+};
+const PAYMENT_STATUS_LABEL: Record<string, string> = {
+  paid: 'Paid', unpaid: 'Unpaid', pending_link: 'Awaiting Payment', refunded: 'Refunded',
+};
 
 function toSlideOverDetail(drop: DropDetail): SlideOverDropDetail {
   return {
@@ -96,6 +122,73 @@ function toSlideOverDetail(drop: DropDetail): SlideOverDropDetail {
   };
 }
 
+/* ── Stripe card form for delta capture ── */
+function DeltaCardForm({
+  deltaCents,
+  stripeCustomerId,
+  dropId,
+  onSuccess,
+  onCancel,
+  onError,
+}: {
+  deltaCents: number;
+  stripeCustomerId: string | null;
+  dropId: string;
+  onSuccess: (piId: string) => void;
+  onCancel: () => void;
+  onError: (msg: string) => void;
+}) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [processing, setProcessing] = useState(false);
+
+  const handleCharge = async () => {
+    if (!stripe || !elements) return;
+    setProcessing(true);
+    try {
+      const intentRes = await api('/internal-orders/create-payment-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount_cents: deltaCents,
+          stripe_customer_id: stripeCustomerId,
+          customer_name: '',
+          save_card: false,
+          description: `Order modification additional charge`,
+        }),
+      });
+      const cardEl = elements.getElement(CardElement);
+      if (!cardEl) { onError('Card element not found'); setProcessing(false); return; }
+      const { error, paymentIntent } = await stripe.confirmCardPayment(intentRes.client_secret, {
+        payment_method: { card: cardEl },
+      });
+      if (error) { onError(error.message || 'Card declined'); setProcessing(false); return; }
+      if (paymentIntent?.status === 'succeeded') {
+        onSuccess(paymentIntent.id);
+      } else {
+        onError('Payment did not complete'); setProcessing(false);
+      }
+    } catch (err) {
+      onError((err as ApiError).message || 'Payment failed'); setProcessing(false);
+    }
+  };
+
+  return (
+    <div className="dd-delta-card">
+      <div className="dd-delta-card-label">Charge additional {fmt(deltaCents / 100)}</div>
+      <div className="dd-card-element-wrap">
+        <CardElement options={{ style: { base: { fontSize: '15px', color: '#1a2e1a' } } }} />
+      </div>
+      <div className="dd-delta-card-actions">
+        <button className="btn btn-primary" onClick={handleCharge} disabled={processing}>
+          {processing ? 'Charging…' : `Charge ${fmt(deltaCents / 100)}`}
+        </button>
+        <button className="btn btn-ghost" onClick={onCancel} disabled={processing}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 export default function DispatchDropDetailPageWrapper() {
   return (
     <Suspense fallback={<div className="page" style={{ padding: 40 }}>Loading…</div>}>
@@ -118,18 +211,35 @@ function DispatchDropDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  /* ── Modify order state ── */
+  const [modifyMode, setModifyMode] = useState(false);
+  const [products, setProducts] = useState<WcProduct[]>([]);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [modifyItems, setModifyItems] = useState<ModifyLineItem[]>([]);
+  const [addSku, setAddSku] = useState<number | ''>('');
+  const [addQty, setAddQty] = useState(1);
+  const [modifyReason, setModifyReason] = useState('');
+  const [modifySubmitting, setModifySubmitting] = useState(false);
+  const [modifyError, setModifyError] = useState('');
+  const [modifySuccess, setModifySuccess] = useState('');
+  // Delta card capture state
+  const [requiresCapture, setRequiresCapture] = useState(false);
+  const [deltaCents, setDeltaCents] = useState(0);
+  const [pendingStripeCustomerId, setPendingStripeCustomerId] = useState<string | null>(null);
+  const [pendingPayload, setPendingPayload] = useState<{ line_items: ModifyLineItem[]; reason: string } | null>(null);
+
   const handleDelete = async () => {
-  setDeleting(true);
-  try {
-    await api(`/drops/${id}`, { method: 'DELETE' });
-    router.back();
-  } catch (err) {
-    setError((err as ApiError).message || 'Failed to delete order.');
-    setDeleting(false);
-    setConfirmDelete(false);
-  }
-};   
-  
+    setDeleting(true);
+    try {
+      await api(`/drops/${id}`, { method: 'DELETE' });
+      router.back();
+    } catch (err) {
+      setError((err as ApiError).message || 'Failed to delete order.');
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  };
+
   const fetchDrop = useCallback(async () => {
     setLoading(true);
     try {
@@ -142,74 +252,142 @@ function DispatchDropDetailPage() {
 
   useEffect(() => { setMounted(true); }, []);
   useEffect(() => { fetchDrop(); }, [fetchDrop]);
-
   useEffect(() => {
     if (searchParams.get('action') === 'reschedule' && drop) setShowPanel(true);
   }, [searchParams, drop]);
 
+  /* ── Enter modify mode ── */
+  const enterModifyMode = async () => {
+    setModifyMode(true);
+    setModifyError('');
+    setModifySuccess('');
+    setRequiresCapture(false);
+    // Seed current loads as starting items (qty only, no price — dispatcher must confirm)
+    setModifyItems([]);
+    if (products.length === 0) {
+      setProductsLoading(true);
+      try {
+        const res = await api('/internal-orders/wc-products');
+        setProducts(res.products || []);
+      } catch {
+        setModifyError('Could not load products.');
+      } finally { setProductsLoading(false); }
+    }
+  };
+
+  const exitModifyMode = () => {
+    setModifyMode(false);
+    setModifyItems([]);
+    setModifyReason('');
+    setModifyError('');
+    setModifySuccess('');
+    setRequiresCapture(false);
+    setPendingPayload(null);
+  };
+
+  const addModifyItem = () => {
+    if (!addSku) return;
+    const product = products.find(p => p.id === addSku);
+    if (!product) return;
+    const existing = modifyItems.findIndex(i => i.product_id === addSku);
+    if (existing >= 0) {
+      const updated = [...modifyItems];
+      updated[existing].quantity += addQty;
+      setModifyItems(updated);
+    } else {
+      setModifyItems(prev => [...prev, {
+        product_id: product.id,
+        name: product.name,
+        quantity: addQty,
+        unit_price: parseFloat(product.price || '0'),
+      }]);
+    }
+    setAddSku('');
+    setAddQty(1);
+  };
+
+  const removeModifyItem = (idx: number) => setModifyItems(prev => prev.filter((_, i) => i !== idx));
+
+  const updateQty = (idx: number, qty: number) => {
+    if (qty < 1) return;
+    const updated = [...modifyItems];
+    updated[idx].quantity = qty;
+    setModifyItems(updated);
+  };
+
+  const modifySubtotal = modifyItems.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+
+  const submitModify = async (overrideStripePaymentIntentId?: string) => {
+    if (modifyItems.length === 0) { setModifyError('Add at least one item.'); return; }
+    setModifySubmitting(true);
+    setModifyError('');
+    try {
+      const body = {
+        line_items: modifyItems.map(i => ({
+          product_id: i.product_id,
+          quantity: i.quantity,
+          price: i.unit_price.toFixed(2),
+          name: i.name,
+        })),
+        reason: modifyReason || undefined,
+        stripe_payment_intent_id: overrideStripePaymentIntentId || undefined,
+      };
+      const res = await api(`/internal-orders/drops/${id}/modify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.requires_card_capture) {
+        setDeltaCents(res.delta_cents);
+        setPendingStripeCustomerId(res.stripe_customer_id || null);
+        setPendingPayload(body);
+        setRequiresCapture(true);
+        setModifySubmitting(false);
+        return;
+      }
+      const actionMsg: Record<string, string> = {
+        refunded: `Refund of ${fmt(Math.abs(res.delta))} issued.`,
+        charged_delta: `Additional ${fmt(res.delta)} charged.`,
+        no_charge: 'Order updated.',
+        local_only: 'Order updated (no Stripe action).',
+        none: 'Order updated.',
+      };
+      setModifySuccess(`Order updated to ${fmt(res.new_total)}. ${actionMsg[res.action] || ''}`);
+      setModifyMode(false);
+      setRequiresCapture(false);
+      setPendingPayload(null);
+      await fetchDrop();
+    } catch (err) {
+      setModifyError((err as ApiError).message || 'Modification failed.');
+    } finally { setModifySubmitting(false); }
+  };
+
   if (!requireRole(['dispatcher'])) return <div className="page"><p>Unauthorized</p></div>;
   if (!mounted) return <div style={{ minHeight: '100vh' }} />;
 
-  /* ── Collect all photos across the drop ── */
+  /* ── Photo sections ── */
   const buildPhotoSections = (drop: DropDetail) => {
     const sections: { label: string; icon: string; color: string; photos: { url: string; caption: string }[] }[] = [];
-
     if (drop.drop_photos?.length > 0) {
-      sections.push({
-        label: 'Drop Site',
-        icon: '📍',
-        color: '#1d4ed8',
-        photos: drop.drop_photos.map((url, i) => ({ url, caption: `Site photo ${i + 1}` })),
-      });
+      sections.push({ label: 'Drop Site', icon: '📍', color: '#1d4ed8',
+        photos: drop.drop_photos.map((url, i) => ({ url, caption: `Site photo ${i + 1}` })) });
     }
-
-    const conditionPhotos = drop.loads
-      .filter(l => l.condition_photo_url || l.condition_notes)
-      .map(l => ({
-        url: l.condition_photo_url || '',
-        caption: l.condition_notes ? `${l.material}: ${l.condition_notes}` : `${l.material} — condition documented`,
-        notesOnly: !l.condition_photo_url,
-        notes: l.condition_notes,
-      }));
+    const conditionPhotos = drop.loads.filter(l => l.condition_photo_url || l.condition_notes)
+      .map(l => ({ url: l.condition_photo_url || '', caption: l.condition_notes ? `${l.material}: ${l.condition_notes}` : `${l.material} — condition documented`, notesOnly: !l.condition_photo_url, notes: l.condition_notes }));
     if (conditionPhotos.length > 0) {
-      sections.push({
-        label: 'Site Conditions',
-        icon: '📋',
-        color: '#92400e',
+      sections.push({ label: 'Site Conditions', icon: '📋', color: '#92400e',
         photos: conditionPhotos.filter(p => !p.notesOnly).map(p => ({ url: p.url, caption: p.caption })),
-        ...(conditionPhotos.some(p => p.notesOnly) ? { notesOnly: conditionPhotos.filter(p => p.notesOnly) } : {}),
-      } as any);
+        ...(conditionPhotos.some(p => p.notesOnly) ? { notesOnly: conditionPhotos.filter(p => p.notesOnly) } : {}) } as any);
     }
-
-    const podPhotos = drop.loads
-      .filter(l => l.pod_photo_url)
-      .map(l => ({ url: l.pod_photo_url!, caption: `POD — ${l.material}` }));
-    if (podPhotos.length > 0) {
-      sections.push({ label: 'Proof of Delivery', icon: '✅', color: '#15803d', photos: podPhotos });
-    }
-
-    const exceptionPhotos = drop.loads
-      .filter(l => l.exception_photo_url || l.exception_reason_code)
-      .map(l => ({
-        url: l.exception_photo_url || '',
-        caption: [
-          EXCEPTION_LABELS[l.exception_reason_code || ''] || l.exception_reason_code || 'Exception',
-          l.exception_notes,
-        ].filter(Boolean).join(' — '),
-        notesOnly: !l.exception_photo_url,
-        notes: l.exception_notes,
-        reason: l.exception_reason_code,
-      }));
+    const podPhotos = drop.loads.filter(l => l.pod_photo_url).map(l => ({ url: l.pod_photo_url!, caption: `POD — ${l.material}` }));
+    if (podPhotos.length > 0) sections.push({ label: 'Proof of Delivery', icon: '✅', color: '#15803d', photos: podPhotos });
+    const exceptionPhotos = drop.loads.filter(l => l.exception_photo_url || l.exception_reason_code)
+      .map(l => ({ url: l.exception_photo_url || '', caption: [EXCEPTION_LABELS[l.exception_reason_code || ''] || l.exception_reason_code || 'Exception', l.exception_notes].filter(Boolean).join(' — '), notesOnly: !l.exception_photo_url, notes: l.exception_notes, reason: l.exception_reason_code }));
     if (exceptionPhotos.length > 0) {
-      sections.push({
-        label: 'Exception',
-        icon: '⚠️',
-        color: '#b91c1c',
+      sections.push({ label: 'Exception', icon: '⚠️', color: '#b91c1c',
         photos: exceptionPhotos.filter(p => !p.notesOnly).map(p => ({ url: p.url, caption: p.caption })),
-        ...(exceptionPhotos.some(p => p.notesOnly) ? { notesOnly: exceptionPhotos.filter(p => p.notesOnly) } : {}),
-      } as any);
+        ...(exceptionPhotos.some(p => p.notesOnly) ? { notesOnly: exceptionPhotos.filter(p => p.notesOnly) } : {}) } as any);
     }
-
     return sections;
   };
 
@@ -235,27 +413,23 @@ function DispatchDropDetailPage() {
               )}
             </h1>
             {drop && (
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              {confirmDelete ? (
-                <>
-                  <span style={{ fontSize: 13, color: 'var(--red-600)', fontWeight: 600 }}>Delete this order?</span>
-                  <button className="btn btn-sm" style={{ background: 'var(--red-600)', color: '#fff', borderColor: 'var(--red-600)' }} onClick={handleDelete} disabled={deleting}>
-                    {deleting ? 'Deleting…' : 'Yes, delete'}
-                  </button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDelete(false)}>Cancel</button>
-                </>
-              ) : (
-                <>
-                  <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red-500)' }} onClick={() => setConfirmDelete(true)}>
-                    Delete
-                  </button>
-                  <button className="btn btn-primary dd-manage-btn" onClick={() => setShowPanel(true)}>
-                    Manage Order
-                  </button>
-                </>
-              )}
-            </div>
-          )}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {confirmDelete ? (
+                  <>
+                    <span style={{ fontSize: 13, color: 'var(--red-600)', fontWeight: 600 }}>Delete this order?</span>
+                    <button className="btn btn-sm" style={{ background: 'var(--red-600)', color: '#fff', borderColor: 'var(--red-600)' }} onClick={handleDelete} disabled={deleting}>
+                      {deleting ? 'Deleting…' : 'Yes, delete'}
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDelete(false)}>Cancel</button>
+                  </>
+                ) : (
+                  <>
+                    <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red-500)' }} onClick={() => setConfirmDelete(true)}>Delete</button>
+                    <button className="btn btn-primary dd-manage-btn" onClick={() => setShowPanel(true)}>Manage Order</button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -263,6 +437,13 @@ function DispatchDropDetailPage() {
           <div className="alert alert-error dd-alert">
             <span>⚠</span> {error}
             <button className="dd-alert-close" onClick={() => setError('')}>✕</button>
+          </div>
+        )}
+
+        {modifySuccess && (
+          <div className="alert alert-success dd-alert">
+            <span>✓</span> {modifySuccess}
+            <button className="dd-alert-close" onClick={() => setModifySuccess('')}>✕</button>
           </div>
         )}
 
@@ -296,18 +477,49 @@ function DispatchDropDetailPage() {
                 </div>
                 <div className="dd-hero-loads">{drop.required_loads} load{drop.required_loads !== 1 ? 's' : ''}</div>
                 {!drop.scheduled_date && (
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    style={{ marginTop: 12 }}
-                    onClick={() => setShowPanel(true)}
-                  >
+                  <button className="btn btn-secondary btn-sm" style={{ marginTop: 12 }} onClick={() => setShowPanel(true)}>
                     🔗 Send Scheduling Link
                   </button>
                 )}
               </div>
             </div>
 
-            {/* Notification status */}
+            {/* Payment */}
+            {(drop.payment_method || drop.order_total) && (
+              <div className="card dd-section">
+                <div className="dd-section-head">Payment</div>
+                <div className="dd-payment-grid">
+                  {drop.payment_method && (
+                    <div className="dd-payment-item">
+                      <div className="dd-payment-label">Method</div>
+                      <div className="dd-payment-value">{PAYMENT_METHOD_LABEL[drop.payment_method] || drop.payment_method}</div>
+                    </div>
+                  )}
+                  {drop.payment_status && (
+                    <div className="dd-payment-item">
+                      <div className="dd-payment-label">Status</div>
+                      <span className={`pill pill-sm ${PAYMENT_STATUS_PILL[drop.payment_status] || 'pill-gray'}`}>
+                        <span className="pill-dot" />{PAYMENT_STATUS_LABEL[drop.payment_status] || drop.payment_status}
+                      </span>
+                    </div>
+                  )}
+                  {drop.order_total != null && (
+                    <div className="dd-payment-item">
+                      <div className="dd-payment-label">Total</div>
+                      <div className="dd-payment-value dd-payment-total">{fmt(drop.order_total)}</div>
+                    </div>
+                  )}
+                  {drop.payment_note && (
+                    <div className="dd-payment-item dd-payment-note-item">
+                      <div className="dd-payment-label">Note</div>
+                      <div className="dd-payment-note-text">{drop.payment_note}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Notifications */}
             <div className="card dd-section">
               <div className="dd-section-head">Notifications</div>
               <div className="dd-notif-grid">
@@ -326,40 +538,165 @@ function DispatchDropDetailPage() {
               </div>
             </div>
 
-            {/* Loads */}
+            {/* Loads + Modify */}
             <div className="card dd-section">
-              <div className="dd-section-head">Loads ({drop.loads.length})</div>
-              {drop.loads.length === 0 ? (
-                <div className="dd-section-body" style={{ color: 'var(--gray-400)', fontStyle: 'italic', fontSize: 14 }}>
-                  No loads attached to this drop.
-                </div>
+              <div className="dd-section-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>Loads ({drop.loads.length})</span>
+                {!modifyMode && drop.external_order_id && (
+                  <button className="btn btn-ghost btn-sm" onClick={enterModifyMode}>✏️ Modify Order</button>
+                )}
+                {modifyMode && (
+                  <button className="btn btn-ghost btn-sm" onClick={exitModifyMode}>✕ Cancel</button>
+                )}
+              </div>
+
+              {!modifyMode ? (
+                drop.loads.length === 0 ? (
+                  <div className="dd-section-body" style={{ color: 'var(--gray-400)', fontStyle: 'italic', fontSize: 14 }}>
+                    No loads attached to this drop.
+                  </div>
+                ) : (
+                  <table className="dd-loads-table">
+                    <thead>
+                      <tr><th>Material</th><th>Driver</th><th>Status</th></tr>
+                    </thead>
+                    <tbody>
+                      {drop.loads.map(l => (
+                        <tr key={l.id}>
+                          <td className="dd-load-mat">{l.material} × {l.qty} {l.unit}</td>
+                          <td className="dd-load-driver">
+                            {l.driver_name ? <span>🚚 {l.driver_name}</span> : <span className="dd-unassigned">⚠ Unassigned</span>}
+                          </td>
+                          <td>
+                            <span className={`pill pill-sm ${l.status === 'assigned' && !l.driver_user_id ? 'pill-amber' : STATUS_PILL[l.status] || 'pill-gray'}`}>
+                              <span className="pill-dot" />{l.status === 'assigned' && !l.driver_user_id ? 'Pending' : STATUS_LABEL[l.status] || l.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )
               ) : (
-                <table className="dd-loads-table">
-                  <thead>
-                    <tr>
-                      <th>Material</th>
-                      <th>Driver</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {drop.loads.map(l => (
-                      <tr key={l.id}>
-                        <td className="dd-load-mat">{l.material} × {l.qty} {l.unit}</td>
-                        <td className="dd-load-driver">
-                          {l.driver_name
-                            ? <span>🚚 {l.driver_name}</span>
-                            : <span className="dd-unassigned">⚠ Unassigned</span>}
-                        </td>
-                        <td>
-                          <span className={`pill pill-sm ${l.status === 'assigned' && !l.driver_user_id ? 'pill-amber' : STATUS_PILL[l.status] || 'pill-gray'}`}>
-                            <span className="pill-dot" />{l.status === 'assigned' && !l.driver_user_id ? 'Pending' : STATUS_LABEL[l.status] || l.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                /* ── Modify mode ── */
+                <div className="dd-modify-body">
+                  {productsLoading ? (
+                    <div style={{ padding: '20px 24px', color: 'var(--gray-400)', fontSize: 14 }}>Loading products…</div>
+                  ) : (
+                    <>
+                      {/* Current modified items */}
+                      {modifyItems.length > 0 && (
+                        <table className="dd-loads-table dd-modify-table">
+                          <thead>
+                            <tr><th>Material</th><th>Unit Price</th><th>Qty</th><th>Line Total</th><th></th></tr>
+                          </thead>
+                          <tbody>
+                            {modifyItems.map((item, idx) => (
+                              <tr key={item.product_id}>
+                                <td className="dd-load-mat">{item.name}</td>
+                                <td style={{ fontSize: 13, color: 'var(--gray-500)' }}>{fmt(item.unit_price)}</td>
+                                <td>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <button className="dd-qty-btn" onClick={() => updateQty(idx, item.quantity - 1)}>−</button>
+                                    <span style={{ minWidth: 20, textAlign: 'center', fontWeight: 600 }}>{item.quantity}</span>
+                                    <button className="dd-qty-btn" onClick={() => updateQty(idx, item.quantity + 1)}>+</button>
+                                  </div>
+                                </td>
+                                <td style={{ fontWeight: 600 }}>{fmt(item.unit_price * item.quantity)}</td>
+                                <td>
+                                  <button className="dd-remove-btn" onClick={() => removeModifyItem(idx)}>✕</button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+
+                      {/* Add item row */}
+                      <div className="dd-add-item-row">
+                        <select
+                          className="dd-modify-select"
+                          value={addSku}
+                          onChange={e => setAddSku(e.target.value ? Number(e.target.value) : '')}
+                        >
+                          <option value="">Select material…</option>
+                          {products.map(p => (
+                            <option key={p.id} value={p.id}>{p.name} — {fmt(parseFloat(p.price))}</option>
+                          ))}
+                        </select>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <button className="dd-qty-btn" onClick={() => setAddQty(q => Math.max(1, q - 1))}>−</button>
+                          <span style={{ minWidth: 20, textAlign: 'center', fontWeight: 600 }}>{addQty}</span>
+                          <button className="dd-qty-btn" onClick={() => setAddQty(q => q + 1)}>+</button>
+                        </div>
+                        <button className="btn btn-secondary btn-sm" onClick={addModifyItem} disabled={!addSku}>Add</button>
+                      </div>
+
+                      {/* Totals preview */}
+                      {modifyItems.length > 0 && (
+                        <div className="dd-modify-totals">
+                          <div className="dd-modify-total-row">
+                            <span>Items subtotal</span>
+                            <span>{fmt(modifySubtotal)}</span>
+                          </div>
+                          <div className="dd-modify-total-row dd-modify-total-note">
+                            <span>+ Shipping & tax calculated at submit</span>
+                          </div>
+                          {drop.order_total != null && (
+                            <div className="dd-modify-total-row dd-modify-total-old">
+                              <span>Current order total</span>
+                              <span>{fmt(drop.order_total)}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Reason */}
+                      <div className="dd-modify-reason-row">
+                        <input
+                          className="dd-modify-reason-input"
+                          placeholder="Reason for modification (optional)"
+                          value={modifyReason}
+                          onChange={e => setModifyReason(e.target.value)}
+                        />
+                      </div>
+
+                      {/* Delta card capture */}
+                      {requiresCapture && (
+                        <Elements stripe={stripePromise}>
+                          <DeltaCardForm
+                            deltaCents={deltaCents}
+                            stripeCustomerId={pendingStripeCustomerId}
+                            dropId={id}
+                            onSuccess={async (piId) => {
+                              setRequiresCapture(false);
+                              await submitModify(piId);
+                            }}
+                            onCancel={() => { setRequiresCapture(false); setPendingPayload(null); }}
+                            onError={(msg) => setModifyError(msg)}
+                          />
+                        </Elements>
+                      )}
+
+                      {modifyError && (
+                        <div className="dd-modify-error">{modifyError}</div>
+                      )}
+
+                      {!requiresCapture && (
+                        <div className="dd-modify-actions">
+                          <button
+                            className="btn btn-primary"
+                            onClick={() => submitModify()}
+                            disabled={modifySubmitting || modifyItems.length === 0}
+                          >
+                            {modifySubmitting ? 'Saving…' : 'Confirm Modification'}
+                          </button>
+                          <button className="btn btn-ghost" onClick={exitModifyMode} disabled={modifySubmitting}>Cancel</button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
               )}
             </div>
 
@@ -380,11 +717,7 @@ function DispatchDropDetailPage() {
                 <div className="dd-photos-body">
                   {photoSections.map((section, si) => (
                     <div key={si} className={`dd-photo-section ${si < photoSections.length - 1 ? 'dd-photo-section--border' : ''}`}>
-                      <div className="dd-photo-section-label" style={{ color: section.color }}>
-                        {section.icon} {section.label}
-                      </div>
-
-                      {/* Photo grid */}
+                      <div className="dd-photo-section-label" style={{ color: section.color }}>{section.icon} {section.label}</div>
                       {section.photos.length > 0 && (
                         <div className="dd-photo-grid">
                           {section.photos.map((photo, pi) => (
@@ -395,8 +728,6 @@ function DispatchDropDetailPage() {
                           ))}
                         </div>
                       )}
-
-                      {/* Notes-only entries (no photo, just text) */}
                       {(section as any).notesOnly?.map((item: any, ni: number) => (
                         <div key={ni} className="dd-photo-note">
                           <span className="dd-photo-note-icon">📝</span>
@@ -428,7 +759,6 @@ function DispatchDropDetailPage() {
         </div>
       )}
 
-      {/* Order management panel */}
       {showPanel && drop && (
         <DropRescheduleSlideOver
           dropId={drop.id}
@@ -447,7 +777,7 @@ const styles = `
   .dd-page { max-width: 820px; }
 
   .dd-header { margin-bottom: 24px; }
-  .dd-back { color: var(--gray-400); text-decoration: none; font-size: 13px; font-weight: 500; transition: color 0.15s; display: inline-block; margin-bottom: 6px; }
+  .dd-back { color: var(--gray-400); text-decoration: none; font-size: 13px; font-weight: 500; transition: color 0.15s; display: inline-block; margin-bottom: 6px; background: none; border: none; cursor: pointer; padding: 0; }
   .dd-back:hover { color: var(--green-600); }
   .dd-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
   .dd-title { font-family: var(--font-heading); font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
@@ -475,6 +805,18 @@ const styles = `
 
   .dd-section { margin-bottom: 16px; overflow: hidden; }
   .dd-section-head { padding: 14px 24px; border-bottom: 1px solid var(--border-light); font-family: var(--font-heading); font-weight: 700; font-size: 15px; color: var(--gray-800); }
+
+  /* Payment card */
+  .dd-payment-grid { display: flex; flex-wrap: wrap; gap: 0; }
+  .dd-payment-item { padding: 14px 24px; border-right: 1px solid var(--border-light); min-width: 120px; }
+  .dd-payment-item:last-child { border-right: none; }
+  .dd-payment-note-item { border-right: none; flex: 1 1 100%; border-top: 1px solid var(--border-light); }
+  @media (max-width: 540px) { .dd-payment-item { border-right: none; border-bottom: 1px solid var(--border-light); flex: 1 1 50%; } .dd-payment-item:last-child { border-bottom: none; } }
+  .dd-payment-label { font-family: var(--font-heading); font-size: 11px; font-weight: 700; color: var(--gray-400); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+  .dd-payment-value { font-size: 14px; font-weight: 600; color: var(--gray-800); }
+  .dd-payment-total { font-size: 18px; font-family: var(--font-heading); color: var(--gray-900); }
+  .dd-payment-note-text { font-size: 13px; color: var(--gray-500); }
+
   .dd-section-body { padding: 16px 24px; }
 
   .dd-notif-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
@@ -491,6 +833,31 @@ const styles = `
   .dd-load-mat { font-weight: 600; color: var(--gray-800); }
   .dd-load-driver { font-size: 13px; color: var(--gray-600); }
   .dd-unassigned { color: var(--amber-600,#d97706); font-weight: 600; font-size: 13px; }
+
+  /* Modify mode */
+  .dd-modify-body { padding-bottom: 8px; }
+  .dd-modify-table td { padding: 10px 24px; }
+  .dd-qty-btn { width: 28px; height: 28px; border-radius: 6px; border: 1.5px solid var(--border-light); background: var(--gray-50); font-size: 16px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--gray-700); flex-shrink: 0; }
+  .dd-qty-btn:hover { background: var(--gray-100); }
+  .dd-remove-btn { background: none; border: none; cursor: pointer; color: var(--gray-300); font-size: 14px; padding: 4px; border-radius: 4px; }
+  .dd-remove-btn:hover { color: var(--red-500); background: var(--red-50, #fef2f2); }
+  .dd-add-item-row { display: flex; align-items: center; gap: 10px; padding: 12px 24px; border-top: 1px solid var(--border-light); flex-wrap: wrap; }
+  .dd-modify-select { flex: 1 1 200px; min-width: 0; padding: 8px 12px; border-radius: var(--radius-md); border: 1.5px solid var(--border-light); font-size: 14px; background: var(--surface); color: var(--gray-800); }
+  .dd-modify-totals { padding: 12px 24px; background: var(--gray-50); border-top: 1px solid var(--border-light); }
+  .dd-modify-total-row { display: flex; justify-content: space-between; font-size: 14px; color: var(--gray-700); padding: 3px 0; }
+  .dd-modify-total-row span:last-child { font-weight: 600; }
+  .dd-modify-total-note { color: var(--gray-400); font-size: 12px; font-style: italic; }
+  .dd-modify-total-old { color: var(--gray-400); }
+  .dd-modify-reason-row { padding: 12px 24px; border-top: 1px solid var(--border-light); }
+  .dd-modify-reason-input { width: 100%; padding: 9px 12px; border-radius: var(--radius-md); border: 1.5px solid var(--border-light); font-size: 14px; background: var(--surface); color: var(--gray-800); box-sizing: border-box; }
+  .dd-modify-error { margin: 8px 24px; padding: 10px 14px; background: var(--red-50,#fef2f2); border: 1.5px solid var(--red-200,#fecaca); border-radius: 8px; font-size: 13px; color: var(--red-700,#b91c1c); }
+  .dd-modify-actions { display: flex; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--border-light); flex-wrap: wrap; }
+
+  /* Delta card capture */
+  .dd-delta-card { margin: 12px 24px; padding: 16px; background: var(--gray-50); border: 1.5px solid var(--border-light); border-radius: 10px; }
+  .dd-delta-card-label { font-family: var(--font-heading); font-size: 14px; font-weight: 700; color: var(--gray-800); margin-bottom: 12px; }
+  .dd-card-element-wrap { padding: 11px 14px; border-radius: 8px; border: 1.5px solid var(--border-light); background: #fff; margin-bottom: 12px; }
+  .dd-delta-card-actions { display: flex; gap: 10px; }
 
   /* Photos */
   .dd-photos-body { padding: 8px 0; }
