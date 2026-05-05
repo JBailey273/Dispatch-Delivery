@@ -305,6 +305,7 @@ def list_orders(
             ref = str(drop.external_order_id or drop.order_number or '').lower()
             if not any([
                 q in (customer.name or '').lower(),
+                q in (customer.company_name or '').lower(),
                 q in (customer.phone_e164 or ''),
                 q in (f"{address.line1} {address.city}".lower() if address else ''),
                 q in ref,
