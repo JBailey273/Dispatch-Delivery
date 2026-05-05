@@ -142,10 +142,14 @@ def summary_report(
 ):
     _date_range(start_date, end_date)
 
+    # Convert date range to UTC datetimes using Eastern midnight boundaries
+    start_dt = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=EASTERN).astimezone(__import__('datetime').timezone.utc)
+    end_dt = datetime.combine(end_date, datetime.max.time()).replace(tzinfo=EASTERN).astimezone(__import__('datetime').timezone.utc)
+
     drop_filters = [
         Drop.tenant_id == user.tenant_id,
-        Drop.scheduled_date >= start_date,
-        Drop.scheduled_date <= end_date,
+        Drop.created_at >= start_dt,
+        Drop.created_at <= end_dt,
         Drop.status != "cancelled",
     ]
     if location_id:
