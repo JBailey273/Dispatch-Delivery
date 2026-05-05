@@ -162,10 +162,7 @@ export default function AllOrdersPage() {
     arr.sort((a, b) => {
       switch (sortCol) {
         case 'date':
-          if (activeTab === 'pickups') {
-            return dir * (a.created_at ?? '').localeCompare(b.created_at ?? '');
-          }
-          return dir * ((a.scheduled_date ?? '') + (a.window ?? '')).localeCompare((b.scheduled_date ?? '') + (b.window ?? ''));
+          return dir * (a.created_at ?? '').localeCompare(b.created_at ?? '');
         case 'customer': return dir * (a.customer_name || '').localeCompare(b.customer_name || '');
         case 'status': return dir * (a.status || '').localeCompare(b.status || '');
         case 'driver': return dir * (a.driver_name || 'zzz').localeCompare(b.driver_name || 'zzz');
@@ -320,7 +317,7 @@ export default function AllOrdersPage() {
                   <thead>
                     <tr>
                       <th className="ao-th ao-th-sort" onClick={() => toggleSort('date')}>
-                        {activeTab === 'pickups' ? 'Order Received' : 'Date'}{sortIcon('date')}
+                        Order Date{sortIcon('date')}
                       </th>
                       {activeTab === 'deliveries' && <th className="ao-th">Window</th>}
                       <th className="ao-th">Order #</th>
