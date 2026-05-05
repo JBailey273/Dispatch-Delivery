@@ -1551,6 +1551,16 @@ def modify_drop_order(
         raise HTTPException(status_code=502, detail={"code": "wc_fetch_failed", "message": "Could not fetch WooCommerce order."})
 
     shipping_total = float(wc_order.get("shipping_total") or 0)
+    # If local drop is missing the PI id (e.g. pure online WC order), pull it from WC order meta
+    if not drop.stripe_payment_intent_id:
+        wc_meta = {m["key"]: m["value"] for m in wc_order.get("meta_data", [])}
+        pi_from_wc = (
+            wc_meta.get("_stripe_intent_id")
+            or wc_meta.get("_stripe_payment_intent_id")
+            or wc_meta.get("_payment_intent_id")
+        )
+        if pi_from_wc:
+            drop.stripe_payment_intent_id = pi_from_wc
 
     # ── Recalculate tax using drop's delivery address postal code ─────────────
     postal_code = ""
@@ -1723,6 +1733,32 @@ def modify_drop_order(
                     "stripe_customer_id": None,
                     "message": "Additional payment required — please collect card.",
                 }
+
+    # ── Update local loads ────────────────────────────────────────────────────
+    wc_sku_map = {
+        li["product_id"]: (li.get("sku") or "").strip()
+        for li in wc_order.get("line_items", [])
+    }
+    all_catalog = db.execute(
+        select(ProductCatalogItem).where(
+            ProductCatalogItem.tenant_id == user.tenant_id,
+            ProductCatalogItem.active == True,  # noqa: E712
+        )
+    ).scalars().all()
+    sku_to_catalog = {c.sku: c for c in all_catalog}
+    existing_loads = db.execute(
+        select(Load).where(Load.drop_id == drop.id, Load.tenant_id == user.tenant_id)
+    ).scalars().all()
+    for item in payload.line_items:
+        sku = wc_sku_map.get(item.product_id, "")
+        cat = sku_to_catalog.get(sku)
+        if not cat:
+            continue
+        bulk_group = cat.bulk_group or cat.sku
+        matching_load = next((l for l in existing_loads if l.bulk_group_snapshot == bulk_group), None)
+        if matching_load:
+            matching_load.qty = item.quantity
+            matching_load.material_name_snapshot = cat.name
 
     # ── Update local drop ─────────────────────────────────────────────────────
     drop.order_total = new_total
