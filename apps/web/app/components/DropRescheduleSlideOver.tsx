@@ -584,20 +584,8 @@ const sendSchedulingLink = async () => {
 
             {/* Loads */}
             <div className="so-card so-card-flush">
-              <div className="so-card-label so-card-label-pad" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div className="so-card-label so-card-label-pad">
                 <span>Loads ({dropDetail.loads.length})</span>
-                {!hasExceptions && dropDetail.loads.every(l => l.status !== 'delivered' && l.status !== 'cancelled') && (
-                  <button className="so-add-load-toggle" onClick={() => {
-                    const groups = [...new Set(dropDetail.loads.map(l => l.material))];
-                    if (groups.length === 1) setAddLoadBulkGroup(dropDetail.loads[0].bulk_group ?? dropDetail.loads[0].material);
-                    else setAddLoadBulkGroup('');
-                    setAddLoadMsg('');
-                    setAddLoadSuccess(false);
-                    setShowAddLoad(v => !v);
-                  }}>
-                    {showAddLoad ? '✕ Cancel' : '+ Add Material'}
-                  </button>
-                )}
               </div>
               {dropDetail.loads.map(load => {
                 const isEditing = editingLoadId === load.id;
@@ -745,84 +733,6 @@ const sendSchedulingLink = async () => {
                 );
               })}
             </div>
-
-            {showAddLoad && (() => {
-              const uniqueMaterials = dropDetail.loads.reduce<{bulk_group: string; material: string}[]>((acc, l) => {
-                const bg = l.bulk_group ?? l.material;
-                if (!acc.find(x => x.bulk_group === bg)) acc.push({ bulk_group: bg, material: l.material });
-                return acc;
-              }, []);
-              return (
-                <div className="so-card" style={{ borderColor: 'var(--blue-200)', background: 'var(--blue-50,#eff6ff)' }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--blue-700)', textTransform: 'uppercase' as const, letterSpacing: '0.06em', marginBottom: 8 }}>
-                    Add Material to This Drop
-                  </div>
-                  {uniqueMaterials.length > 1 && (
-                    <div style={{ marginBottom: 8 }}>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', display: 'block', marginBottom: 4 }}>Material</label>
-                      <select
-                        className="so-sms-textarea"
-                        style={{ padding: '8px 10px' }}
-                        value={addLoadBulkGroup}
-                        onChange={e => setAddLoadBulkGroup(e.target.value)}
-                      >
-                        <option value="">Select material…</option>
-                        {uniqueMaterials.map(m => (
-                          <option key={m.bulk_group} value={m.bulk_group}>{m.material}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                  {uniqueMaterials.length === 1 && (
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 8 }}>
-                      📦 {uniqueMaterials[0].material}
-                    </div>
-                  )}
-                  <div style={{ marginBottom: 8 }}>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', display: 'block', marginBottom: 4 }}>Quantity (yards)</label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={addLoadQty}
-                      onChange={e => setAddLoadQty(Math.max(1, parseInt(e.target.value) || 1))}
-                      style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' as const }}
-                    />
-                  </div>
-                  <div style={{ marginBottom: 10 }}>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', display: 'block', marginBottom: 4 }}>
-                      Payment note <span style={{ fontWeight: 400, color: 'var(--gray-400)' }}>(optional)</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={addLoadPaymentNote}
-                      onChange={e => setAddLoadPaymentNote(e.target.value)}
-                      placeholder="e.g. Cash on delivery, Invoice, etc."
-                      style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' as const }}
-                    />
-                  </div>
-                  <div style={{ padding: '8px 10px', background: 'var(--amber-50,#fffbeb)', border: '1px solid var(--amber-200,#fde68a)', borderRadius: 'var(--radius-md)', fontSize: 12, color: 'var(--amber-800,#92400e)', marginBottom: 10 }}>
-                    ⚠️ Only existing materials on this drop can be added here. For a different material, create a new order and waive the delivery fee.
-                  </div>
-                  {addLoadMsg && (
-                    <div style={{ fontSize: 12, color: 'var(--red-600)', marginBottom: 8 }}>{addLoadMsg}</div>
-                  )}
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={submitAddLoad}
-                    disabled={addLoadSaving || !addLoadBulkGroup || addLoadQty < 1}
-                    style={{ width: '100%' }}
-                  >
-                    {addLoadSaving ? 'Adding…' : `Confirm Add ${addLoadQty} yd${addLoadQty !== 1 ? 's' : ''}`}
-                  </button>
-                </div>
-              );
-            })()}
-
-            {addLoadSuccess && (
-              <div style={{ padding: '10px 14px', background: 'var(--green-50)', border: '1px solid var(--green-200)', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 600, color: 'var(--green-700)' }}>
-                ✓ Material added to this drop
-              </div>
-            )}
 
             {/* Notifications */}
             <div className="so-card">
