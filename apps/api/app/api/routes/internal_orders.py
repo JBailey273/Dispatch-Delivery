@@ -510,7 +510,12 @@ def create_payment_intent(
         intent_params["payment_method"] = payload.payment_method_id
         intent_params["confirm"] = True
         intent_params["off_session"] = True
-        intent = s.PaymentIntent.create(**intent_params)
+        try:
+            intent = s.PaymentIntent.create(**intent_params)
+        except s.CardError as e:
+            raise HTTPException(status_code=402, detail={"code": "card_declined", "message": e.user_message})
+        except s.StripeError as e:
+            raise HTTPException(status_code=402, detail={"code": "stripe_error", "message": str(e)})
         return {
             "payment_intent_id": intent.id,
             "status": intent.status,
@@ -519,7 +524,12 @@ def create_payment_intent(
         }
     else:
         # New card — return client_secret for frontend Elements to confirm
-        intent = s.PaymentIntent.create(**intent_params)
+        try:
+            intent = s.PaymentIntent.create(**intent_params)
+        except s.CardError as e:
+            raise HTTPException(status_code=402, detail={"code": "card_declined", "message": e.user_message})
+        except s.StripeError as e:
+            raise HTTPException(status_code=402, detail={"code": "stripe_error", "message": str(e)})
         return {
             "client_secret": intent.client_secret,
             "payment_intent_id": intent.id,
