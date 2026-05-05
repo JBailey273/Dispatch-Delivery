@@ -9,7 +9,7 @@ from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
@@ -144,11 +144,15 @@ def summary_report(
     _date_range(start_date, end_date)
 
     if mode == "fulfilled":
+        start_dt = datetime.combine(start_date, time.min, tzinfo=EASTERN)
+        end_dt = datetime.combine(end_date, time.max, tzinfo=EASTERN)
         drop_filters = [
             Drop.tenant_id == user.tenant_id,
-            Drop.scheduled_date >= start_date,
-            Drop.scheduled_date <= end_date,
             Drop.status != "cancelled",
+            or_(
+                and_(Drop.delivery_method == "delivery", Drop.scheduled_date >= start_date, Drop.scheduled_date <= end_date),
+                and_(Drop.delivery_method == "pickup", Drop.fulfilled_at >= start_dt, Drop.fulfilled_at <= end_dt),
+            ),
         ]
     else:
         start_dt = datetime.combine(start_date, time.min, tzinfo=EASTERN)
