@@ -259,10 +259,9 @@ def list_orders(
     """Full order/load list for the All Orders page with optional filters."""
     from datetime import timedelta
     if not end_date:
-        end_date = date.today()
+        end_date = date.today() + timedelta(days=60)
     if not start_date:
-        start_date = end_date - timedelta(days=30)
-
+        start_date = end_date - timedelta(days=150)
     stmt = (
         select(Load, Drop, Customer, CustomerAddress, User)
         .join(Drop, Drop.id == Load.drop_id)
@@ -287,7 +286,7 @@ def list_orders(
         except ValueError:
             pass
 
-    stmt = stmt.order_by(Load.route_date.desc(), Load.route_window, Customer.name)
+    stmt = stmt.order_by(Drop.created_at.desc(), Customer.name)
     rows = db.execute(stmt).all()
 
     orders = []
