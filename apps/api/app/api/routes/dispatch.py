@@ -372,6 +372,7 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
             "exception_reason_code": ld.exception_reason_code.value if ld.exception_reason_code else None,
             "exception_notes": ld.exception_notes,
             "condition_photo_url": ld.condition_photo_url,
+            "condition_notes": ld.condition_notes,
         })
 
     return {
