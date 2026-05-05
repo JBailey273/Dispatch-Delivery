@@ -1742,3 +1742,49 @@ def modify_drop_order(
         "action": action,
         "stripe_payment_intent_id": result_pi_id,
     }
+
+# ── Backfill WC order totals ──────────────────────────────────────────────────
+
+@router.post("/backfill-wc-totals")
+def backfill_wc_totals(
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
+    db: Session = Depends(db_dep),
+):
+    """
+    One-time backfill: find all WooCommerce-sourced drops missing order_total,
+    fetch each from WC by external_order_id, and write total + payment fields back.
+    """
+    drops = db.execute(
+        select(Drop).where(
+            Drop.tenant_id == user.tenant_id,
+            Drop.source == "woocommerce",
+            Drop.order_total.is_(None),
+            Drop.external_order_id.is_not(None),
+        )
+    ).scalars().all()
+
+    updated = []
+    failed = []
+
+    for drop in drops:
+        try:
+            wc_order = _wc_request(f"orders/{drop.external_order_id}")
+            total = wc_order.get("total")
+            if total:
+                drop.order_total = float(total)
+                drop.payment_method = drop.payment_method or "card"
+                drop.payment_status = drop.payment_status or "paid"
+                updated.append(drop.external_order_id)
+            else:
+                failed.append({"id": drop.external_order_id, "reason": "no total in WC response"})
+        except Exception as e:
+            failed.append({"id": drop.external_order_id, "reason": str(e)})
+
+    db.commit()
+
+    return {
+        "updated": len(updated),
+        "updated_ids": updated,
+        "failed": len(failed),
+        "failed_details": failed,
+    }
