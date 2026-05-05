@@ -144,6 +144,7 @@ export default function AllOrdersPage() {
       const q = customerSearch.toLowerCase();
       result = result.filter(o =>
         o.customer_name?.toLowerCase().includes(q) ||
+        o.customer_company?.toLowerCase().includes(q) ||
         o.customer_phone?.includes(q) ||
         o.address_short?.toLowerCase().includes(q)
       );
