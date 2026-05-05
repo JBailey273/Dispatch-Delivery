@@ -204,6 +204,7 @@ async def woocommerce_webhook(
 
     logger.info(f"woocommerce_webhook: number={payload.get('number')!r} id={payload.get('id')!r}")
     wc_order_number = int(payload.get("number") or payload.get("id") or 0) or None
+    wc_total = payload.get("total")
     drop = Drop(
         tenant_id=tenant_id,
         location_id=location.id,
@@ -219,6 +220,9 @@ async def woocommerce_webhook(
         scheduled_window=None,
         notes=notes,
         drop_photos=[],
+        order_total=float(wc_total) if wc_total else None,
+        payment_method="card",
+        payment_status="paid",
     )
     db.add(drop)
     db.flush()
@@ -278,6 +282,7 @@ class JsIngestExternalOrder(BaseModel):
     number: int | None = None
     placed_at: str | None = None
     url: str | None = None
+    total: str | None = None
 
 
 class JsIngestIn(BaseModel):
@@ -422,6 +427,9 @@ def js_ingest_order(
         scheduled_window=None,
         notes=payload.drop.notes or None,
         drop_photos=[],
+        order_total=float(payload.external_order.total) if payload.external_order.total else None,
+        payment_method="card",
+        payment_status="paid",
     )
     db.add(drop)
     db.flush()
