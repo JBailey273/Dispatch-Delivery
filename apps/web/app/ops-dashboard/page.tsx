@@ -76,6 +76,10 @@ export default function DashboardPage() {
 
   const { activeLocation } = useLocation();
   const fetchAbortRef = useRef<number>(0);
+  const isAdmin = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    try { return JSON.parse(localStorage.getItem('session') || '{}').role === 'admin'; } catch { return false; }
+  }, []);
 
   // Clear stale data on location switch
   useEffect(() => {
@@ -457,31 +461,46 @@ export default function DashboardPage() {
                 SECTION 2.5 — TODAY TOTALS
                 ════════════════════════════════ */}
             {reportSummary && (
-              <Link href="/dispatch/reports" style={{ textDecoration: 'none', display: 'block', marginBottom: 16 }}>
-                <div className="card dash-totals-banner">
+              isAdmin ? (
+                <Link href="/dispatch/reports" style={{ textDecoration: 'none', display: 'block', marginBottom: 16 }}>
+                  <div className="card dash-totals-banner">
+                    <div className="dash-totals-main">
+                      <span className="dash-totals-yards">{reportSummary.total_yards.toLocaleString('en-US', { maximumFractionDigits: 1 })} yd</span>
+                      <span className="dash-totals-label">today</span>
+                    </div>
+                    <div className="dash-totals-right">
+                      <div className="dash-totals-stat">
+                        <span className="dash-totals-stat-val">${reportSummary.total_revenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span className="dash-totals-stat-label">Revenue</span>
+                      </div>
+                      <div className="dash-totals-divider" />
+                      <div className="dash-totals-stat">
+                        <span className="dash-totals-stat-val" style={{ color: 'var(--green-700)' }}>${reportSummary.cash_total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span className="dash-totals-stat-label">Cash</span>
+                      </div>
+                      <div className="dash-totals-divider" />
+                      <div className="dash-totals-stat">
+                        <span className="dash-totals-stat-val">{reportSummary.order_count}</span>
+                        <span className="dash-totals-stat-label">Orders</span>
+                      </div>
+                      <span className="dash-totals-arrow">›</span>
+                    </div>
+                  </div>
+                </Link>
+              ) : (
+                <div className="card dash-totals-banner" style={{ marginBottom: 16 }}>
                   <div className="dash-totals-main">
                     <span className="dash-totals-yards">{reportSummary.total_yards.toLocaleString('en-US', { maximumFractionDigits: 1 })} yd</span>
                     <span className="dash-totals-label">today</span>
                   </div>
                   <div className="dash-totals-right">
                     <div className="dash-totals-stat">
-                      <span className="dash-totals-stat-val">${reportSummary.total_revenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                      <span className="dash-totals-stat-label">Revenue</span>
-                    </div>
-                    <div className="dash-totals-divider" />
-                    <div className="dash-totals-stat">
-                      <span className="dash-totals-stat-val" style={{ color: 'var(--green-700)' }}>${reportSummary.cash_total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                      <span className="dash-totals-stat-label">Cash</span>
-                    </div>
-                    <div className="dash-totals-divider" />
-                    <div className="dash-totals-stat">
                       <span className="dash-totals-stat-val">{reportSummary.order_count}</span>
                       <span className="dash-totals-stat-label">Orders</span>
                     </div>
-                    <span className="dash-totals-arrow">›</span>
                   </div>
                 </div>
-              </Link>
+              )
             )}
 
             {/* ════════════════════════════════
