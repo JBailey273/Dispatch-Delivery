@@ -1480,3 +1480,266 @@ def get_tax_rate(
         "rate": match.get("rate", "0"),  # e.g. "6.2500"
         "label": match.get("name", "Sales Tax"),
     }
+
+
+# ── 9. Modify Order ───────────────────────────────────────────────────────────
+
+class ModifyLineItem(BaseModel):
+    product_id: int
+    quantity: int
+    price: str   # unit price (role-based, dispatcher-entered)
+    name: str = ""
+
+
+class ModifyOrderIn(BaseModel):
+    line_items: list[ModifyLineItem]
+    reason: str | None = None
+    # Card capture for higher-total + no saved card case
+    stripe_payment_intent_id: str | None = None  # pre-confirmed by frontend
+    stripe_customer_id: str | None = None
+
+
+@router.post("/drops/{drop_id}/modify")
+def modify_drop_order(
+    drop_id: str,
+    payload: ModifyOrderIn,
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
+    db: Session = Depends(db_dep),
+):
+    """
+    Modify the line items on an existing drop/WC order.
+    - Recalculates total using existing shipping + tax from WC order
+    - If new total < old: issues Stripe refund on original PI
+    - If new total > old + card on file: charges delta
+    - If new total > old + no card: expects stripe_payment_intent_id pre-confirmed by frontend
+    - Cash/invoice: local + WC update only
+    Returns: {success, new_total, delta, action, stripe_payment_intent_id}
+    """
+    import uuid as _uuid
+
+    # ── Fetch and lock drop ────────────────────────────────────────────────────
+    drop = db.execute(
+        select(Drop).where(
+            Drop.id == _uuid.UUID(drop_id),
+            Drop.tenant_id == user.tenant_id,
+        ).with_for_update()
+    ).scalar_one_or_none()
+
+    if not drop:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
+
+    if not drop.external_order_id:
+        raise HTTPException(status_code=409, detail={"code": "no_wc_order", "message": "This drop has no linked WooCommerce order and cannot be modified here."})
+
+    old_total = float(drop.order_total or 0)
+
+    # ── Fetch WC order for shipping_total ─────────────────────────────────────
+    wc_order_id = drop.external_order_id
+    try:
+        wc_order = _wc_request(f"orders/{wc_order_id}")
+    except Exception:
+        raise HTTPException(status_code=502, detail={"code": "wc_fetch_failed", "message": "Could not fetch WooCommerce order."})
+
+    shipping_total = float(wc_order.get("shipping_total") or 0)
+
+    # ── Recalculate tax using drop's delivery address postal code ─────────────
+    postal_code = ""
+    if drop.address_id:
+        from app.models.entities import CustomerAddress
+        addr = db.execute(
+            select(CustomerAddress).where(CustomerAddress.id == drop.address_id)
+        ).scalar_one_or_none()
+        if addr:
+            postal_code = addr.postal_code or ""
+
+    tax_rate = 0.0
+    if postal_code:
+        try:
+            taxes = _wc_request("taxes?per_page=100")
+            zip_match = next((t for t in taxes if t.get("postcode", "") == postal_code), None)
+            state_match = next((t for t in taxes if t.get("state", "") == "MA" and not t.get("postcode")), None)
+            match = zip_match or state_match
+            if match:
+                tax_rate = float(match.get("rate", "0")) / 100
+        except Exception:
+            pass
+
+    # ── Compute new total ─────────────────────────────────────────────────────
+    items_subtotal = sum(float(item.price) * item.quantity for item in payload.line_items)
+    tax_amount = round(items_subtotal * tax_rate, 2)
+    new_total = round(items_subtotal + shipping_total + tax_amount, 2)
+    delta = round(new_total - old_total, 2)
+    delta_cents = int(round(delta * 100))
+
+    # ── Update WC order line items ────────────────────────────────────────────
+    # Only send product_id/quantity/subtotal/total — never tax_class or taxes[]
+    wc_line_items = []
+    for item in payload.line_items:
+        line_total = str(round(float(item.price) * item.quantity, 2))
+        wc_line_items.append({
+            "product_id": item.product_id,
+            "quantity": item.quantity,
+            "subtotal": line_total,
+            "total": line_total,
+        })
+
+    # Zero out old line items not in the new list so WC removes them
+    old_wc_items = wc_order.get("line_items", [])
+    new_product_ids = {item.product_id for item in payload.line_items}
+    for old_item in old_wc_items:
+        if old_item.get("product_id") not in new_product_ids:
+            wc_line_items.append({
+                "id": old_item["id"],
+                "quantity": 0,
+            })
+
+    try:
+        _wc_request(f"orders/{wc_order_id}", method="PUT", payload={
+            "line_items": wc_line_items,
+            "meta_data": [
+                {"key": "_emgc_order_modified", "value": "1"},
+                {"key": "_emgc_order_modified_reason", "value": payload.reason or "dispatcher modification"},
+            ],
+        })
+    except Exception as e:
+        logger.error(f"modify_drop_order: WC update failed for order {wc_order_id}: {e}")
+        raise HTTPException(status_code=502, detail={"code": "wc_update_failed", "message": "Could not update WooCommerce order."})
+
+    # ── Handle payment delta ──────────────────────────────────────────────────
+    action = "none"
+    result_pi_id = drop.stripe_payment_intent_id
+
+    payment_method = drop.payment_method or "cash"
+
+    if payment_method in ("cash", "invoice"):
+        # No Stripe action needed — local record only
+        action = "local_only"
+
+    elif abs(delta_cents) < 50:
+        # Delta too small to action (< $0.50) — just update total
+        action = "no_charge"
+
+    elif delta_cents < 0:
+        # Refund
+        if drop.stripe_payment_intent_id:
+            try:
+                s = _stripe()
+                refund = s.Refund.create(
+                    payment_intent=drop.stripe_payment_intent_id,
+                    amount=abs(delta_cents),
+                    reason="requested_by_customer",
+                    metadata={
+                        "drop_id": drop_id,
+                        "wc_order_id": wc_order_id,
+                        "modified_by": str(user.user_id),
+                        "reason": payload.reason or "dispatcher modification",
+                    },
+                )
+                action = "refunded"
+                logger.info(f"modify_drop_order: refund {refund.id} issued for drop {drop_id}, amount=${abs(delta_cents)/100:.2f}")
+            except Exception as e:
+                logger.error(f"modify_drop_order: Stripe refund failed: {e}")
+                raise HTTPException(status_code=502, detail={"code": "refund_failed", "message": f"WC order updated but Stripe refund failed: {e}"})
+        else:
+            action = "local_only"
+
+    else:
+        # delta_cents > 0 — need to charge more
+        if payload.stripe_payment_intent_id:
+            # Frontend already confirmed a new PaymentIntent for the delta
+            result_pi_id = payload.stripe_payment_intent_id
+            action = "charged_delta"
+            logger.info(f"modify_drop_order: delta charge PI {payload.stripe_payment_intent_id} pre-confirmed by frontend")
+        else:
+            # Check for saved card on the customer
+            local_customer = db.execute(
+                select(Customer).where(
+                    Customer.id == drop.customer_id,
+                    Customer.tenant_id == user.tenant_id,
+                )
+            ).scalar_one_or_none()
+
+            stripe_customer_id = (
+                payload.stripe_customer_id
+                or (local_customer.stripe_customer_id if local_customer else None)
+            )
+
+            if stripe_customer_id:
+                try:
+                    s = _stripe()
+                    methods = stripe.PaymentMethod.list(customer=stripe_customer_id, type="card")
+                    if methods.data:
+                        pm = methods.data[0]
+                        intent = s.PaymentIntent.create(
+                            amount=delta_cents,
+                            currency="usd",
+                            customer=stripe_customer_id,
+                            payment_method=pm.id,
+                            confirm=True,
+                            off_session=True,
+                            description=f"Order modification — order #{drop.order_number}",
+                            metadata={
+                                "drop_id": drop_id,
+                                "wc_order_id": wc_order_id,
+                                "modification_reason": payload.reason or "dispatcher modification",
+                                "modified_by": str(user.user_id),
+                            },
+                        )
+                        if intent.status != "succeeded":
+                            raise HTTPException(status_code=402, detail={"code": "charge_failed", "message": f"Card charge did not succeed: {intent.status}"})
+                        result_pi_id = intent.id
+                        action = "charged_delta"
+                        logger.info(f"modify_drop_order: delta charge {intent.id} succeeded for drop {drop_id}")
+                    else:
+                        # No card on file — frontend needs to capture
+                        return {
+                            "success": False,
+                            "requires_card_capture": True,
+                            "delta_cents": delta_cents,
+                            "new_total": new_total,
+                            "stripe_customer_id": stripe_customer_id,
+                            "message": "Additional payment required — no card on file.",
+                        }
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    raise HTTPException(status_code=402, detail={"code": "charge_failed", "message": str(e)})
+            else:
+                # No Stripe customer at all
+                return {
+                    "success": False,
+                    "requires_card_capture": True,
+                    "delta_cents": delta_cents,
+                    "new_total": new_total,
+                    "stripe_customer_id": None,
+                    "message": "Additional payment required — please collect card.",
+                }
+
+    # ── Update local drop ─────────────────────────────────────────────────────
+    drop.order_total = new_total
+    if action in ("charged_delta", "refunded", "no_charge", "local_only"):
+        if payment_method in ("card",) and action in ("charged_delta", "refunded", "no_charge"):
+            drop.payment_status = "paid"
+        if result_pi_id and action == "charged_delta":
+            drop.stripe_payment_intent_id = result_pi_id
+
+    log_event(db, user.tenant_id, "drop.order_modified", "api", {
+        "drop_id": drop_id,
+        "wc_order_id": wc_order_id,
+        "old_total": old_total,
+        "new_total": new_total,
+        "delta": delta,
+        "action": action,
+        "reason": payload.reason,
+        "modified_by": str(user.user_id),
+    })
+    db.commit()
+
+    return {
+        "success": True,
+        "new_total": new_total,
+        "old_total": old_total,
+        "delta": delta,
+        "action": action,
+        "stripe_payment_intent_id": result_pi_id,
+    }
