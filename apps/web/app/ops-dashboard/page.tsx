@@ -862,11 +862,6 @@ const dashStyles = `
 
   .pill-red { background: var(--red-50); color: var(--red-700); }
 
-  @media (max-width: 600px) {
-    .dash-stat-val { font-size: 28px; }
-    .dash-delivery-driver { display: none; }
-    .dash-delivery-row { grid-template-columns: 1fr auto 20px; }
-  
   /* Today totals banner */
   .dash-totals-banner { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; margin-bottom: 0; cursor: pointer; transition: background 0.12s; gap: 16px; }
   .dash-totals-banner:hover { background: var(--gray-50); }
@@ -879,6 +874,11 @@ const dashStyles = `
   .dash-totals-stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gray-400); }
   .dash-totals-divider { width: 1px; height: 28px; background: var(--border-light); flex-shrink: 0; }
   .dash-totals-arrow { color: var(--gray-300); font-size: 20px; margin-left: 4px; }
-  @media (max-width: 480px) { .dash-totals-right { gap: 10px; } .dash-totals-stat-val { font-size: 13px; } .dash-totals-yards { font-size: 22px; } }
+
+  @media (max-width: 600px) {
+    .dash-stat-val { font-size: 28px; }
+    .dash-delivery-driver { display: none; }
+    .dash-delivery-row { grid-template-columns: 1fr auto 20px; }
   }
+  @media (max-width: 480px) { .dash-totals-right { gap: 10px; } .dash-totals-stat-val { font-size: 13px; } .dash-totals-yards { font-size: 22px; } }
 `;
