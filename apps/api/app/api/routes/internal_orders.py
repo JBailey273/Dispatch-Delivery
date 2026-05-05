@@ -1545,7 +1545,6 @@ def modify_drop_order(
     # ── Recalculate tax using drop's delivery address postal code ─────────────
     postal_code = ""
     if drop.address_id:
-        from app.models.entities import CustomerAddress
         addr = db.execute(
             select(CustomerAddress).where(CustomerAddress.id == drop.address_id)
         ).scalar_one_or_none()
