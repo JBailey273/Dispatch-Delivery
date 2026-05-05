@@ -2,6 +2,9 @@ import csv
 import io
 import re
 from collections import defaultdict
+from zoneinfo import ZoneInfo
+
+EASTERN = ZoneInfo("America/New_York")
 from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -129,6 +132,81 @@ def capacity_utilization_report(start_date: date, end_date: date, user: AuthUser
         "per_window": per_window,
     }
 
+@router.get("/reports/summary")
+def summary_report(
+    start_date: date,
+    end_date: date,
+    location_id: str | None = Query(default=None),
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)),
+    db: Session = Depends(db_dep),
+):
+    _date_range(start_date, end_date)
+
+    drop_filters = [
+        Drop.tenant_id == user.tenant_id,
+        Drop.scheduled_date >= start_date,
+        Drop.scheduled_date <= end_date,
+        Drop.status != "cancelled",
+    ]
+    if location_id:
+        drop_filters.append(Drop.location_id == location_id)
+
+    drops = db.execute(
+        select(Drop).where(*drop_filters)
+    ).scalars().all()
+
+    drop_ids = [d.id for d in drops]
+
+    # Revenue totals
+    total_revenue = sum(float(d.order_total) for d in drops if d.order_total is not None)
+    cash_total = sum(float(d.order_total) for d in drops if d.order_total is not None and d.payment_method == "cash")
+
+    # Delivery vs pickup
+    delivery_count = sum(1 for d in drops if d.delivery_method == "delivery")
+    pickup_count = sum(1 for d in drops if d.delivery_method == "pickup")
+
+    # Order count by payment method
+    payment_breakdown: dict[str, dict] = {}
+    for d in drops:
+        pm = d.payment_method or "unknown"
+        if pm not in payment_breakdown:
+            payment_breakdown[pm] = {"count": 0, "total": 0.0}
+        payment_breakdown[pm]["count"] += 1
+        if d.order_total is not None:
+            payment_breakdown[pm]["total"] += float(d.order_total)
+
+    # Yards by product (from loads)
+    yards_by_product: dict[str, float] = {}
+    if drop_ids:
+        load_rows = db.execute(
+            select(Load.material_name_snapshot, func.sum(Load.qty))
+            .where(
+                Load.tenant_id == user.tenant_id,
+                Load.drop_id.in_(drop_ids),
+                Load.status != LoadStatus.CANCELLED,
+            )
+            .group_by(Load.material_name_snapshot)
+        ).all()
+        yards_by_product = {name: float(qty) for name, qty in load_rows if name}
+
+    total_yards = sum(yards_by_product.values())
+
+    return {
+        "start_date": str(start_date),
+        "end_date": str(end_date),
+        "order_count": len(drops),
+        "total_revenue": round(total_revenue, 2),
+        "cash_total": round(cash_total, 2),
+        "total_yards": round(total_yards, 1),
+        "delivery_count": delivery_count,
+        "pickup_count": pickup_count,
+        "yards_by_product": yards_by_product,
+        "payment_breakdown": [
+            {"method": k, "count": v["count"], "total": round(v["total"], 2)}
+            for k, v in sorted(payment_breakdown.items(), key=lambda x: x[1]["total"], reverse=True)
+        ],
+    }
+    
 
 @router.get("/reports/throughput")
 def throughput_report(start_date: date, end_date: date, window: WindowCode | None = Query(default=None), driver_user_id: str | None = Query(default=None), material: str | None = Query(default=None), location_id: str | None = Query(default=None), user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)), db: Session = Depends(db_dep)):
