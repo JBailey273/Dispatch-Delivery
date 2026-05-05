@@ -56,6 +56,7 @@ export default function ReportsPage() {
   const [preset, setPreset] = useState<'today' | 'week' | 'custom'>('today');
   const [startDate, setStartDate] = useState(toKey(today));
   const [endDate, setEndDate] = useState(toKey(today));
+  const [mode, setMode] = useState<'booked' | 'fulfilled'>('booked');
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -78,7 +79,7 @@ export default function ReportsPage() {
     setError('');
     try {
       const loc = activeLocation?.id ? `&location_id=${activeLocation.id}` : '';
-      const data = await api(`/ops/reports/summary?start_date=${startDate}&end_date=${endDate}${loc}`);
+      const data = await api(`/ops/reports/summary?start_date=${startDate}&end_date=${endDate}&mode=${mode}${loc}`);
       setSummary(data);
     } catch {
       setError('Failed to load report.');
@@ -89,7 +90,7 @@ export default function ReportsPage() {
 
   useEffect(() => { fetchSummary(); }, [fetchSummary]);
 
-  if (!requireRole(['dispatcher'])) return <div className="page"><p>Unauthorized</p></div>;
+  if (!requireRole(['admin'])) return <div className="page"><p>Unauthorized</p></div>;
 
   const maxYards = summary ? Math.max(...Object.values(summary.yards_by_product), 1) : 1;
 
@@ -108,16 +109,32 @@ export default function ReportsPage() {
 
         {/* ── Date Controls ── */}
         <div className="card rp-controls">
-          <div className="rp-presets">
-            {(['today', 'week', 'custom'] as const).map(p => (
+          <div className="rp-controls-top">
+            <div className="rp-presets">
+              {(['today', 'week', 'custom'] as const).map(p => (
+                <button
+                  key={p}
+                  className={`rp-preset-btn${preset === p ? ' active' : ''}`}
+                  onClick={() => applyPreset(p)}
+                >
+                  {p === 'today' ? 'Today' : p === 'week' ? 'This Week' : 'Custom'}
+                </button>
+              ))}
+            </div>
+            <div className="rp-mode-toggle">
               <button
-                key={p}
-                className={`rp-preset-btn${preset === p ? ' active' : ''}`}
-                onClick={() => applyPreset(p)}
+                className={`rp-preset-btn${mode === 'booked' ? ' active' : ''}`}
+                onClick={() => setMode('booked')}
               >
-                {p === 'today' ? 'Today' : p === 'week' ? 'This Week' : 'Custom'}
+                Booked
               </button>
-            ))}
+              <button
+                className={`rp-preset-btn${mode === 'fulfilled' ? ' active' : ''}`}
+                onClick={() => setMode('fulfilled')}
+              >
+                Fulfilled
+              </button>
+            </div>
           </div>
           <div className="rp-date-row">
             <div className="rp-date-group">
@@ -252,7 +269,9 @@ const styles = `
 .rp-sub { font-size: 13px; color: var(--gray-500); margin-top: 3px; }
 
 .rp-controls { padding: 16px 20px; margin-bottom: 20px; }
-.rp-presets { display: flex; gap: 6px; margin-bottom: 14px; }
+.rp-controls-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.rp-presets { display: flex; gap: 6px; }
+.rp-mode-toggle { display: flex; gap: 6px; }
 .rp-preset-btn { padding: 6px 14px; border-radius: 100px; border: 1.5px solid var(--border); background: var(--surface); font-size: 13px; font-weight: 600; color: var(--gray-600); cursor: pointer; font-family: inherit; transition: all 0.12s; }
 .rp-preset-btn.active { background: var(--brand); color: white; border-color: var(--brand); }
 .rp-date-row { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
