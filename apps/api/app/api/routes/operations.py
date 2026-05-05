@@ -137,21 +137,28 @@ def summary_report(
     start_date: date,
     end_date: date,
     location_id: str | None = Query(default=None),
+    mode: str = Query(default="booked"),  # "booked" = created_at, "fulfilled" = scheduled_date
     user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)),
     db: Session = Depends(db_dep),
 ):
     _date_range(start_date, end_date)
 
-    # Convert date range to UTC datetimes using Eastern midnight boundaries
-    start_dt = datetime.combine(start_date, time.min, tzinfo=EASTERN)
-    end_dt = datetime.combine(end_date, time.max, tzinfo=EASTERN)
-
-    drop_filters = [
-        Drop.tenant_id == user.tenant_id,
-        Drop.created_at >= start_dt,
-        Drop.created_at <= end_dt,
-        Drop.status != "cancelled",
-    ]
+    if mode == "fulfilled":
+        drop_filters = [
+            Drop.tenant_id == user.tenant_id,
+            Drop.scheduled_date >= start_date,
+            Drop.scheduled_date <= end_date,
+            Drop.status != "cancelled",
+        ]
+    else:
+        start_dt = datetime.combine(start_date, time.min, tzinfo=EASTERN)
+        end_dt = datetime.combine(end_date, time.max, tzinfo=EASTERN)
+        drop_filters = [
+            Drop.tenant_id == user.tenant_id,
+            Drop.created_at >= start_dt,
+            Drop.created_at <= end_dt,
+            Drop.status != "cancelled",
+        ]
     if location_id:
         drop_filters.append(Drop.location_id == location_id)
 
