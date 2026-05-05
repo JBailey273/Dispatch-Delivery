@@ -240,6 +240,7 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
             <>
               <div className="app-sidebar-divider" />
               <div className="app-sidebar-section-label">Admin</div>
+              <SidebarLink href="/dispatch/reports" icon={Icons.billing}>Reports</SidebarLink>
               <SidebarLink href="/admin/tenant" icon={Icons.settings}>Settings</SidebarLink>
               <SidebarLink href="/admin/locations" icon={Icons.locations}>Locations</SidebarLink>
               <SidebarLink href="/admin/catalog" icon={Icons.catalog}>Catalog</SidebarLink>
