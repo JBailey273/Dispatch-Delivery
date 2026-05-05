@@ -89,6 +89,7 @@ export default function ReportsPage() {
   }, [startDate, endDate, mode, activeLocation?.id]);
 
   useEffect(() => { fetchSummary(); }, [fetchSummary]);
+  useEffect(() => { fetchSummary(); }, [mode]);;
 
   if (!requireRole(['admin'])) return <div className="page"><p>Unauthorized</p></div>;
 
