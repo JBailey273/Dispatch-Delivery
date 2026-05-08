@@ -150,7 +150,9 @@ def list_customers(
     db: Session = Depends(db_dep),
 ):
     last_ordered_subquery = (
-        select(Drop.customer_id, func.max(Drop.scheduled_date).label("last_ordered"))
+        select(Drop.customer_id, func.max(
+            func.coalesce(Drop.scheduled_date, func.cast(Drop.created_at, Date))
+        ).label("last_ordered"))
         .where(Drop.tenant_id == user.tenant_id)
         .group_by(Drop.customer_id)
         .subquery()
@@ -180,7 +182,9 @@ def search_customers(
         normalized_phone = None
 
     last_ordered_subquery = (
-        select(Drop.customer_id, func.max(Drop.scheduled_date).label("last_ordered"))
+        select(Drop.customer_id, func.max(
+            func.coalesce(Drop.scheduled_date, func.cast(Drop.created_at, Date))
+        ).label("last_ordered"))
         .where(Drop.tenant_id == user.tenant_id)
         .group_by(Drop.customer_id)
         .subquery()
@@ -281,7 +285,7 @@ def get_customer(
 ):
     customer = _get_customer_or_404(db, customer_id, user.tenant_id)
     last_ordered_subquery = (
-        select(func.max(Drop.scheduled_date).label("last_ordered"))
+        select(func.max(func.cast(Drop.created_at, Date)).label("last_ordered"))
         .where(Drop.tenant_id == user.tenant_id, Drop.customer_id == customer.id)
     ).scalar_subquery()
     last_ordered = db.execute(select(last_ordered_subquery)).scalar_one_or_none()
