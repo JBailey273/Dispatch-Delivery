@@ -377,6 +377,16 @@ export default function NewOrderPage() {
     } finally { setLookupLoading(false); }
   }, [loadProducts]);
 
+  /* ── Pre-populate from ?customer= query param ── */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const name = params.get('customer');
+    if (name && name.trim().length >= 3) {
+      setLookupQuery(name);
+      runLookup(name);
+    }
+  }, [runLookup]);
+
   const handleLookupChange = (val: string) => {
     setLookupQuery(val);
     setLookupDone(false);
