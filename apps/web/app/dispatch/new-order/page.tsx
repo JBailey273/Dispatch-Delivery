@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { loadStripe } from '@stripe/stripe-js';
-import {
+import { 
   Elements,
   CardElement,
   useStripe,
@@ -320,7 +320,7 @@ export default function NewOrderPage() {
         setLastName(data.last_name || '');
         setEmail(data.email || '');
         setPhone(data.billing?.phone || data.phone || '');
-        const resolvedRole = data.role || (data.invoice_billing ? 'contractor' : null) || (data.customer_type === 'commercial' ? 'commercial' : null);
+        const resolvedRole = data.role || (data.invoice_billing ? 'contractor' : null) || (data.customer_type === 'commercial' ? 'contractor' : null);
         setWcRole(resolvedRole);
         setIsContractor(resolvedRole === 'contractor');
         setInvoiceBilling(data.invoice_billing || false);
