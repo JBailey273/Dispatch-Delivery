@@ -189,6 +189,17 @@ export default function CustomerSearchPage() {
   const [creating, setCreating] = useState(false);
   const [newCompany, setNewCompany] = useState('');
 
+  /* ── Sort ── */
+  type SortKey = 'name' | 'type' | 'last_ordered';
+  type SortDir = 'asc' | 'desc';
+  const [sortKey, setSortKey] = useState<SortKey>('name');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir(key === 'last_ordered' ? 'desc' : 'asc'); }
+  };
+
   /* ── Debounce timer ── */
   const [debounceTimer, setDebounceTimer] = useState<NodeJS.Timeout | null>(null);
 
@@ -231,12 +242,25 @@ useEffect(() => {
   };
 
   const displayed = (() => {
-    if (searchResults !== null) return searchResults;
-    if (!q.trim()) return allCustomers;
-    const lower = q.toLowerCase();
-    return allCustomers.filter(c =>
-      c.name.toLowerCase().includes(lower) || c.phone_e164.includes(q)
-    );
+    const base = searchResults !== null
+      ? searchResults
+      : !q.trim()
+        ? allCustomers
+        : allCustomers.filter(c => c.name.toLowerCase().includes(q.toLowerCase()) || c.phone_e164.includes(q));
+
+    return [...base].sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === 'name') {
+        cmp = (a.name || '').localeCompare(b.name || '');
+      } else if (sortKey === 'type') {
+        cmp = (a.customer_type || '').localeCompare(b.customer_type || '') || (a.name || '').localeCompare(b.name || '');
+      } else if (sortKey === 'last_ordered') {
+        const aDate = a.last_ordered || '';
+        const bDate = b.last_ordered || '';
+        cmp = aDate < bDate ? -1 : aDate > bDate ? 1 : 0;
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
   })();
 
   /* ── Expand / fetch addresses ── */
@@ -602,10 +626,16 @@ const createCustomer = async () => {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Customer</th>
-                  <th className="cs-type-col">Type</th>
+                  <th onClick={() => toggleSort('name')} className="cs-th-sort">
+                    Customer {sortKey === 'name' ? (sortDir === 'asc' ? '↑' : '↓') : <span className="cs-sort-idle">↕</span>}
+                  </th>
+                  <th className={`cs-type-col cs-th-sort`} onClick={() => toggleSort('type')}>
+                    Type {sortKey === 'type' ? (sortDir === 'asc' ? '↑' : '↓') : <span className="cs-sort-idle">↕</span>}
+                  </th>
                   <th className="cs-phone-col">Phone</th>
-                  <th className="cs-last-col">Last Order</th>
+                  <th className={`cs-last-col cs-th-sort`} onClick={() => toggleSort('last_ordered')}>
+                    Last Order {sortKey === 'last_ordered' ? (sortDir === 'asc' ? '↑' : '↓') : <span className="cs-sort-idle">↕</span>}
+                  </th>
                   <th style={{ width: 100 }}></th>
                 </tr>
               </thead>
@@ -1148,6 +1178,9 @@ const styles = `
   .cs-type-toggle.commercial { background: var(--blue-50,#eff6ff); color: var(--blue-700,#1d4ed8); border-color: var(--blue-200,#bfdbfe); }
   .cs-type-toggle.commercial:hover { background: var(--gray-100); color: var(--gray-600); border-color: var(--gray-200); }
   .cs-type-toggle:disabled { opacity: 0.5; cursor: wait; }
+  .cs-th-sort { cursor: pointer; user-select: none; white-space: nowrap; }
+  .cs-th-sort:hover { color: var(--gray-700); }
+  .cs-sort-idle { opacity: 0.3; font-size: 11px; }
 
   /* Expanded row */
   .cs-row-expanded td { background: var(--green-25,#f0fdf4); }
