@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import case, func, or_, select, delete
+from sqlalchemy import case, func, or_, select, delete, Date
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
