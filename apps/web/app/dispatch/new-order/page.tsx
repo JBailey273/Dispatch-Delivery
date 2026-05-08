@@ -62,6 +62,7 @@ type WcCustomer = {
   sms_opt_in?: boolean;
   email_opt_in?: boolean;
   invoice_billing?: boolean;
+  customer_type?: string;
 };
 
 type LineItem = {
