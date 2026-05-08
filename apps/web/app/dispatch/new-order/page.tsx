@@ -319,7 +319,7 @@ export default function NewOrderPage() {
         setLastName(data.last_name || '');
         setEmail(data.email || '');
         setPhone(data.billing?.phone || data.phone || '');
-        const resolvedRole = data.role || (data.invoice_billing ? 'contractor' : null);
+        const resolvedRole = data.role || (data.invoice_billing ? 'contractor' : null) || (data.customer_type === 'commercial' ? 'commercial' : null);
         setWcRole(resolvedRole);
         setIsContractor(resolvedRole === 'contractor');
         setInvoiceBilling(data.invoice_billing || false);
