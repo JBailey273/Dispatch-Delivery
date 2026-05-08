@@ -653,7 +653,7 @@ const createCustomer = async () => {
                         <td>
                           <button
                             className="btn btn-secondary btn-sm"
-                            onClick={e => { e.stopPropagation(); router.push(`/new-drop?customerId=${r.id}`); }}
+                            onClick={e => { e.stopPropagation(); router.push(`/dispatch/new-order?customer=${encodeURIComponent(r.name)}`); }}
                           >
                             New Order
                           </button>
@@ -985,7 +985,7 @@ const createCustomer = async () => {
                               <div className="cs-expand-footer">
                                 <button
                                   className="btn btn-primary btn-sm"
-                                  onClick={e => { e.stopPropagation(); router.push(`/new-drop?customerId=${r.id}`); }}
+                                  onClick={e => { e.stopPropagation(); router.push(`/dispatch/new-order?customer=${encodeURIComponent(r.name)}`); }}
                                 >
                                   New Order →
                                 </button>
