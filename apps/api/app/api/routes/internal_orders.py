@@ -239,6 +239,7 @@ def lookup_wc_customer(
                 "sms_opt_in": local.sms_opt_in,
                 "email_opt_in": local.email_opt_in,
                 "invoice_billing": local.invoice_billing if hasattr(local, 'invoice_billing') else False,
+                "customer_type": local.customer_type.value if local.customer_type else "residential",
             }
 
         # WC customers API found a match
@@ -361,6 +362,7 @@ def lookup_wc_customer(
         "email_opt_in": local.email_opt_in if local else False,
         "invoice_billing": local.invoice_billing if local else False,
         "local_customer_id": str(local.id) if local else None,
+        "customer_type": local.customer_type.value if local and local.customer_type else "residential",
     }
 
 
