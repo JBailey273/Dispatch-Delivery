@@ -689,8 +689,11 @@ def delete_drop(
             "message": "Cannot delete an order that is out for delivery or already delivered.",
         })
 
-    # Capture WC order id before deletion
+    # Capture fields needed for post-delete actions before session closes
     external_order_id = drop.external_order_id
+    stripe_payment_intent_id = drop.stripe_payment_intent_id
+    payment_method = drop.payment_method
+    order_total = float(drop.order_total) if drop.order_total else 0.0
 
     # Release capacity if scheduled and not priority
     if drop.scheduled_date and drop.scheduled_window and not drop.is_priority:
@@ -708,6 +711,9 @@ def delete_drop(
         "drop_id": drop_id,
         "scheduled_date": str(drop.scheduled_date) if drop.scheduled_date else None,
         "external_order_id": external_order_id,
+        "payment_method": payment_method,
+        "order_total": order_total,
+        "stripe_payment_intent_id": stripe_payment_intent_id,
     })
 
     # Fetch WC credentials before commit while session is still live
@@ -752,4 +758,38 @@ def delete_drop(
         except Exception:
             logger.exception(f"WooCommerce cancel sync failed for order {external_order_id} — drop is deleted locally")
 
-    return {"deleted": True, "drop_id": drop_id}
+    # Issue Stripe refund if this was a card payment (non-fatal — drop is already deleted)
+    stripe_refund_id = None
+    stripe_refund_error = None
+    if payment_method == "card" and stripe_payment_intent_id and order_total > 0:
+        try:
+            import stripe as _stripe_lib
+            stripe_key = os.environ.get("STRIPE_SECRET_KEY")
+            if stripe_key:
+                _stripe_lib.api_key = stripe_key
+                refund = _stripe_lib.Refund.create(
+                    payment_intent=stripe_payment_intent_id,
+                    reason="requested_by_customer",
+                    metadata={
+                        "drop_id": drop_id,
+                        "wc_order_id": external_order_id or "",
+                        "deleted_by": str(user.user_id),
+                        "reason": "order deleted by dispatcher",
+                    },
+                )
+                stripe_refund_id = refund.id
+                logger.info(f"delete_drop: Stripe refund {refund.id} issued for drop {drop_id}, amount=${order_total:.2f}")
+            else:
+                stripe_refund_error = "STRIPE_SECRET_KEY not configured"
+                logger.error("delete_drop: STRIPE_SECRET_KEY not set — refund not issued")
+        except Exception as e:
+            stripe_refund_error = str(e)
+            logger.error(f"delete_drop: Stripe refund failed for drop {drop_id}: {e}")
+
+    return {
+        "deleted": True,
+        "drop_id": drop_id,
+        "stripe_refund_id": stripe_refund_id,
+        "stripe_refund_error": stripe_refund_error,
+        "refund_amount": order_total if stripe_refund_id else None,
+    }
