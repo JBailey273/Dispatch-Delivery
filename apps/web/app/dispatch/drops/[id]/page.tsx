@@ -230,7 +230,14 @@ function DispatchDropDetailPage() {
   const handleDelete = async () => {
     setDeleting(true);
     try {
-      await api(`/drops/${id}`, { method: 'DELETE' });
+      const result = await api(`/drops/${id}`, { method: 'DELETE' });
+      if (result.stripe_refund_error) {
+        // Drop deleted but refund failed — show error before navigating
+        setError(`Order deleted, but Stripe refund failed: ${result.stripe_refund_error}`);
+        setDeleting(false);
+        setConfirmDelete(false);
+        return;
+      }
       router.back();
     } catch (err) {
       setError((err as ApiError).message || 'Failed to delete order.');
@@ -413,7 +420,14 @@ function DispatchDropDetailPage() {
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 {confirmDelete ? (
                   <>
-                    <span style={{ fontSize: 13, color: 'var(--red-600)', fontWeight: 600 }}>Delete this order?</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                      <span style={{ fontSize: 13, color: 'var(--red-600)', fontWeight: 600 }}>Delete this order?</span>
+                      {drop.payment_method === 'card' && drop.order_total ? (
+                        <span style={{ fontSize: 12, color: 'var(--gray-500)' }}>
+                          A refund of {fmt(drop.order_total)} will be issued to the card on file.
+                        </span>
+                      ) : null}
+                    </div>
                     <button className="btn btn-sm" style={{ background: 'var(--red-600)', color: '#fff', borderColor: 'var(--red-600)' }} onClick={handleDelete} disabled={deleting}>
                       {deleting ? 'Deleting…' : 'Yes, delete'}
                     </button>
