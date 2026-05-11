@@ -43,6 +43,35 @@ type DropDetail = {
   external_order_id?: string | null;
 };
 
+type InvoiceLineItem = {
+  name: string;
+  sku: string;
+  quantity: number;
+  unit_price: number | null;
+  subtotal: number | null;
+};
+
+type InvoiceData = {
+  ref: string;
+  order_number: number | null;
+  created_at: string | null;
+  scheduled_date: string | null;
+  delivery_method: string | null;
+  customer_name: string;
+  customer_phone: string | null;
+  customer_email: string | null;
+  customer_company: string | null;
+  delivery_address: { line1: string; line2?: string; city: string; state: string; postal_code: string } | null;
+  line_items: InvoiceLineItem[];
+  shipping_total: number;
+  tax_total: number;
+  order_total: number | null;
+  payment_method: string | null;
+  payment_status: string | null;
+  payment_note: string | null;
+  wc_source: boolean;
+};
+
 type WcProduct = {
   id: number; name: string; sku: string; price: string;
   regular_price: string; contractor_price: string | null; wholesale_price: string | null;
@@ -210,6 +239,8 @@ function DispatchDropDetailPage() {
   const { activeLocation } = useLocation();
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [invoiceData, setInvoiceData] = useState<InvoiceData | null>(null);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
 
   /* ── Modify order state ── */
   const [modifyMode, setModifyMode] = useState(false);
@@ -227,6 +258,109 @@ function DispatchDropDetailPage() {
   const [deltaCents, setDeltaCents] = useState(0);
   const [pendingStripeCustomerId, setPendingStripeCustomerId] = useState<string | null>(null);
   const [pendingPayload, setPendingPayload] = useState<null>(null);
+  const fetchInvoice = async () => {
+    if (invoiceLoading) return;
+    setInvoiceLoading(true);
+    try {
+      const data = await api(`/dispatch/drops/${id}/invoice`);
+      setInvoiceData(data);
+      return data;
+    } catch {
+      return null;
+    } finally {
+      setInvoiceLoading(false);
+    }
+  };
+
+  const printInvoice = async () => {
+    const inv = invoiceData || await fetchInvoice();
+    if (!inv) return;
+
+    const fmtCurrency = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+    const dateStr = inv.scheduled_date
+      ? new Date(inv.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+      : inv.created_at
+        ? new Date(inv.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+        : '—';
+    const addrStr = inv.delivery_address
+      ? [inv.delivery_address.line1, inv.delivery_address.line2, `${inv.delivery_address.city}, ${inv.delivery_address.state} ${inv.delivery_address.postal_code}`].filter(Boolean).join('<br>')
+      : 'Pickup';
+
+    const itemRows = inv.line_items.map(item => {
+      const unitPriceCell = item.unit_price != null ? fmtCurrency(item.unit_price) : '—';
+      const subtotalCell = item.subtotal != null ? fmtCurrency(item.subtotal) : '—';
+      return `<tr><td>${item.name}</td><td class="pt-right">${item.quantity}</td><td class="pt-right">${unitPriceCell}</td><td class="pt-right">${subtotalCell}</td></tr>`;
+    }).join('');
+
+    const shippingRow = inv.shipping_total > 0
+      ? `<tr><td colspan="3" style="text-align:right;color:#666;font-style:italic">Delivery Fee</td><td class="pt-right">${fmtCurrency(inv.shipping_total)}</td></tr>`
+      : '';
+    const taxRow = inv.tax_total > 0
+      ? `<tr><td colspan="3" style="text-align:right;color:#666;font-style:italic">Tax</td><td class="pt-right">${fmtCurrency(inv.tax_total)}</td></tr>`
+      : '';
+
+    const paymentLabel = { cash: 'Cash', card: 'Card', invoice: 'Invoice', payment_link: 'Payment Link' }[inv.payment_method || ''] || (inv.payment_method || '');
+    const paymentStatusLabel = { paid: 'Paid', unpaid: 'Unpaid', pending_link: 'Awaiting Payment', refunded: 'Refunded' }[inv.payment_status || ''] || '';
+
+    const w = window.open('', '_blank', 'width=800,height=900');
+    if (!w) return;
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${inv.ref}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 13px; color: #222; background: #fff; padding: 40px; }
+  .pt-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; padding-bottom: 20px; border-bottom: 2px solid #2d6a2d; }
+  .pt-logo { height: 72px; width: auto; }
+  .pt-header-right { text-align: right; }
+  .pt-invoice-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #666; }
+  .pt-invoice-num { font-size: 26px; font-weight: 800; color: #2d6a2d; }
+  .pt-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 28px; padding: 20px; background: #f9fafb; border-radius: 6px; }
+  .pt-meta-block dt { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #888; margin-bottom: 3px; }
+  .pt-meta-block dd { font-size: 13px; font-weight: 500; color: #222; line-height: 1.4; }
+  .pt-section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: #555; margin-bottom: 10px; }
+  .pt-items-table { width: 100%; border-collapse: collapse; margin-bottom: 0; }
+  .pt-items-table thead tr { background: #2d6a2d; color: #fff; }
+  .pt-items-table th { padding: 9px 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; text-align: left; }
+  .pt-items-table th.pt-right, .pt-items-table td.pt-right { text-align: right; }
+  .pt-items-table tbody tr { border-bottom: 1px solid #eee; }
+  .pt-items-table tbody tr:last-child { border-bottom: none; }
+  .pt-items-table td { padding: 10px 12px; font-size: 13px; }
+  .pt-total-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px; margin-top: 8px; font-size: 16px; font-weight: 800; color: #166534; }
+  .pt-payment { margin-top: 20px; padding: 14px; background: #f9fafb; border-radius: 6px; }
+  .pt-payment-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #888; margin-bottom: 4px; }
+  .pt-footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #ddd; text-align: center; font-size: 11px; color: #999; }
+  @media print { body { padding: 20px; } }
+</style>
+</head><body>
+<div class="pt-header">
+  <img class="pt-logo" src="https://pub-2acb2bd410ad4b7094ea64a66e6531f5.r2.dev/logo/Garden%20Center%20PNG.png" alt="East Meadow Garden Center" />
+  <div class="pt-header-right">
+    <div class="pt-invoice-label">Invoice</div>
+    <div class="pt-invoice-num">${inv.ref}</div>
+    <div style="font-size:12px;color:#666;margin-top:4px">${dateStr}</div>
+  </div>
+</div>
+<div class="pt-meta">
+  <dl class="pt-meta-block"><dt>Bill To</dt><dd>${inv.customer_name}${inv.customer_company ? `<br><span style="color:#666">${inv.customer_company}</span>` : ''}</dd></dl>
+  <dl class="pt-meta-block"><dt>${inv.delivery_method === 'delivery' ? 'Delivery Address' : 'Pickup'}</dt><dd>${addrStr}</dd></dl>
+  ${inv.customer_phone ? `<dl class="pt-meta-block"><dt>Phone</dt><dd>${inv.customer_phone}</dd></dl>` : ''}
+  ${inv.customer_email ? `<dl class="pt-meta-block"><dt>Email</dt><dd>${inv.customer_email}</dd></dl>` : ''}
+</div>
+<div class="pt-section-label">Items</div>
+<table class="pt-items-table">
+  <thead><tr><th>Description</th><th class="pt-right">Qty</th><th class="pt-right">Unit Price</th><th class="pt-right">Amount</th></tr></thead>
+  <tbody>${itemRows}${shippingRow}${taxRow}</tbody>
+</table>
+${inv.order_total != null ? `<div class="pt-total-row"><span>Total</span><span>${fmtCurrency(inv.order_total)}</span></div>` : ''}
+<div class="pt-payment">
+  <div class="pt-payment-label">Payment</div>
+  <div style="font-weight:700">${paymentLabel}${paymentStatusLabel ? ` — ${paymentStatusLabel}` : ''}${inv.payment_note ? ` · ${inv.payment_note}` : ''}</div>
+</div>
+<div class="pt-footer">East Meadow Garden Center &nbsp;·&nbsp; 47 Somers Rd, Hampden, MA 01036 &nbsp;·&nbsp; (413) 566-3602</div>
+</body></html>`);
+    w.document.close();
+    setTimeout(() => w.print(), 400);
+  };
+
   const handleDelete = async () => {
     setDeleting(true);
     try {
@@ -435,6 +569,14 @@ function DispatchDropDetailPage() {
                   </>
                 ) : (
                   <>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ color: 'var(--gray-600)' }}
+                      onClick={printInvoice}
+                      disabled={invoiceLoading}
+                    >
+                      {invoiceLoading ? '…' : '🖨 Print Invoice'}
+                    </button>
                     <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red-500)' }} onClick={() => setConfirmDelete(true)}>Delete</button>
                     <button className="btn btn-primary dd-manage-btn" onClick={() => setShowPanel(true)}>Manage Order</button>
                   </>
