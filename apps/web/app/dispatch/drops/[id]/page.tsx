@@ -299,8 +299,10 @@ function DispatchDropDetailPage() {
       ? `<tr><td colspan="3" style="text-align:right;color:#666;font-style:italic">Tax</td><td class="pt-right">${fmtCurrency(inv.tax_total)}</td></tr>`
       : '';
 
-    const paymentLabel = { cash: 'Cash', card: 'Card', invoice: 'Invoice', payment_link: 'Payment Link' }[inv.payment_method || ''] || (inv.payment_method || '');
-    const paymentStatusLabel = { paid: 'Paid', unpaid: 'Unpaid', pending_link: 'Awaiting Payment', refunded: 'Refunded' }[inv.payment_status || ''] || '';
+    const paymentMethodMap: Record<string, string> = { cash: 'Cash', card: 'Card', invoice: 'Invoice', payment_link: 'Payment Link' };
+    const paymentLabel = paymentMethodMap[inv.payment_method || ''] || (inv.payment_method || '');
+    const paymentStatusMap: Record<string, string> = { paid: 'Paid', unpaid: 'Unpaid', pending_link: 'Awaiting Payment', refunded: 'Refunded' };
+    const paymentStatusLabel = paymentStatusMap[inv.payment_status || ''] || '';
 
     const w = window.open('', '_blank', 'width=800,height=900');
     if (!w) return;
