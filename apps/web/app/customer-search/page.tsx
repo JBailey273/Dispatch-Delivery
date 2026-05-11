@@ -5,6 +5,20 @@ import { useEffect, useRef, useState } from 'react';
 import { ApiError, api, requireRole } from '../lib/auth';
 
 type CustomerResult = { id: string; first_name: string; last_name: string; company_name: string | null; name: string; phone_e164: string; customer_type: string; last_ordered: string | null; email: string | null; sms_opt_in: boolean; email_opt_in: boolean; invoice_billing: boolean; stripe_customer_id: string | null; exact_phone_match?: boolean; };
+type CustomerOrder = {
+  drop_id: string;
+  ref: string;
+  order_number: number | null;
+  scheduled_date: string | null;
+  created_at: string | null;
+  delivery_method: string | null;
+  order_total: number | null;
+  payment_method: string | null;
+  payment_status: string | null;
+  materials: string[];
+  load_count: number;
+};
+
 type Address = {
   id: string; line1: string; line2?: string | null;
   city: string; state: string; postal_code: string; is_default?: boolean;
@@ -174,6 +188,10 @@ export default function CustomerSearchPage() {
   /* ── Invoice billing toggle ── */
   const [togglingInvoice, setTogglingInvoice] = useState<string | null>(null);
 
+  /* ── Order history ── */
+  const [orderHistory, setOrderHistory] = useState<CustomerOrder[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+
   /* ── Card capture ── */
   const [showCardCapture, setShowCardCapture] = useState<string | null>(null);
 
@@ -272,14 +290,22 @@ useEffect(() => {
     }
     setExpanded(id);
     resetEditState();
+    setOrderHistory([]);
     setAddrLoading(true);
+    setOrdersLoading(true);
     try {
-      const data = await api(`/customers/${id}/addresses`);
-      setAddresses(data.addresses || []);
+      const [addrData, orderData] = await Promise.all([
+        api(`/customers/${id}/addresses`),
+        api(`/customers/${id}/orders`),
+      ]);
+      setAddresses(addrData.addresses || []);
+      setOrderHistory(orderData.orders || []);
     } catch {
       setAddresses([]);
+      setOrderHistory([]);
     } finally {
       setAddrLoading(false);
+      setOrdersLoading(false);
     }
   };
 
@@ -1011,6 +1037,44 @@ const createCustomer = async () => {
                                 </div>
                               </div>
 
+                              {/* Order History */}
+                              <div className="cs-section">
+                                <div className="cs-section-label">Order History</div>
+                                {ordersLoading ? (
+                                  <div style={{ padding: '8px 0' }}><div className="spinner" /></div>
+                                ) : orderHistory.length === 0 ? (
+                                  <div style={{ fontSize: 13, color: 'var(--gray-400)', fontStyle: 'italic' }}>No orders on record.</div>
+                                ) : (
+                                  <div className="cs-order-list">
+                                    {orderHistory.map(o => {
+                                      const dateStr = o.scheduled_date
+                                        ? new Date(o.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                        : o.created_at
+                                          ? new Date(o.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                          : '—';
+                                      const statusCls = o.payment_status === 'paid' ? 'pill-green' : o.payment_status === 'unpaid' ? 'pill-amber' : 'pill-gray';
+                                      const statusLabel = o.payment_status === 'paid' ? 'Paid' : o.payment_status === 'unpaid' ? 'Unpaid' : o.payment_status || '—';
+                                      return (
+                                        <div
+                                          key={o.drop_id}
+                                          className="cs-order-row"
+                                          onClick={e => { e.stopPropagation(); router.push(`/dispatch/drops/${o.drop_id}`); }}
+                                        >
+                                          <div className="cs-order-ref">{o.ref}</div>
+                                          <div className="cs-order-date">{dateStr}</div>
+                                          <div className="cs-order-mats">{o.materials.slice(0, 2).join(', ')}{o.materials.length > 2 ? ` +${o.materials.length - 2} more` : ''}</div>
+                                          <div className="cs-order-right">
+                                            {o.order_total != null && <span className="cs-order-total">{o.order_total.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</span>}
+                                            {o.payment_status && <span className={`pill pill-sm ${statusCls}`}><span className="pill-dot" />{statusLabel}</span>}
+                                            <span className="cs-order-arrow">→</span>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+
                               {/* Footer: New Order + Delete Customer */}
                               <div className="cs-expand-footer">
                                 <button
@@ -1243,6 +1307,18 @@ const styles = `
   /* Add address button */
   .cs-add-addr-btn { margin-top: 8px; padding: 7px 14px; border: 1.5px dashed var(--border); border-radius: var(--radius-md); background: none; font-family: var(--font-heading); font-size: 12px; font-weight: 600; color: var(--gray-500); cursor: pointer; transition: all 0.15s; width: 100%; text-align: center; }
   .cs-add-addr-btn:hover { border-color: var(--green-400); color: var(--green-700); background: var(--green-25,#f0fdf4); }
+
+  /* Order history */
+  .cs-order-list { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--border-light); border-radius: var(--radius-md); overflow: hidden; }
+  .cs-order-row { display: flex; align-items: center; gap: 12px; padding: 11px 14px; cursor: pointer; transition: background 0.12s; border-bottom: 1px solid var(--border-light); flex-wrap: wrap; }
+  .cs-order-row:last-child { border-bottom: none; }
+  .cs-order-row:hover { background: var(--green-25,#f0fdf4); }
+  .cs-order-ref { font-weight: 700; font-size: 13px; color: var(--gray-900); min-width: 64px; }
+  .cs-order-date { font-size: 12px; color: var(--gray-500); min-width: 90px; }
+  .cs-order-mats { font-size: 12px; color: var(--gray-600); flex: 1; }
+  .cs-order-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .cs-order-total { font-size: 13px; font-weight: 700; color: var(--gray-800); }
+  .cs-order-arrow { font-size: 13px; color: var(--gray-400); }
 
   /* Delete customer */
   .cs-expand-footer { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; background: var(--surface); border-top: 1px solid var(--border-light); flex-wrap: wrap; gap: 10px; }
