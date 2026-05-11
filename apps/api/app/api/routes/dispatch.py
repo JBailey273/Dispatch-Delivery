@@ -407,6 +407,86 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
         "delivery_method": drop.delivery_method,
         "wc_customer_id": drop.wc_customer_id,
     }
+@router.get("/drops/{drop_id}/invoice")
+def drop_invoice(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
+    """
+    Returns line item pricing for the invoice view.
+    Fetches from WooCommerce if external_order_id exists; falls back to loads snapshot.
+    """
+    row = db.execute(
+        select(Drop, Customer).join(Customer, Customer.id == Drop.customer_id)
+        .where(Drop.tenant_id == user.tenant_id, Drop.id == drop_id)
+    ).one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
+    drop, customer = row
+
+    address = db.execute(select(CustomerAddress).where(CustomerAddress.id == drop.address_id)).scalar_one_or_none()
+
+    line_items = []
+    shipping_total = 0.0
+    tax_total = 0.0
+    wc_source = False
+
+    if drop.external_order_id:
+        try:
+            from app.api.routes.internal_orders import _wc_request
+            wc_order = _wc_request(f"orders/{drop.external_order_id}")
+            for item in wc_order.get("line_items", []):
+                qty = int(item.get("quantity", 1))
+                subtotal = float(item.get("subtotal") or item.get("total") or 0)
+                unit_price = round(subtotal / qty, 2) if qty else 0
+                line_items.append({
+                    "name": item.get("name", ""),
+                    "sku": item.get("sku", ""),
+                    "quantity": qty,
+                    "unit_price": unit_price,
+                    "subtotal": subtotal,
+                })
+            shipping_total = float(wc_order.get("shipping_total") or 0)
+            tax_total = float(wc_order.get("total_tax") or 0)
+            wc_source = True
+        except Exception:
+            logger.warning(f"drop_invoice: WC fetch failed for drop {drop_id}, falling back to loads")
+
+    if not wc_source:
+        # Fallback: build from loads snapshot, no pricing available
+        loads = db.execute(select(Load).where(Load.drop_id == drop.id)).scalars().all()
+        for l in loads:
+            line_items.append({
+                "name": l.material_name_snapshot,
+                "sku": l.bulk_group_snapshot or "",
+                "quantity": l.qty,
+                "unit_price": None,
+                "subtotal": None,
+            })
+
+    return {
+        "drop_id": drop_id,
+        "ref": f"#{drop.order_number}" if drop.order_number else (f"QD-{drop.qd_number}" if drop.qd_number else drop_id[:8]),
+        "order_number": drop.order_number,
+        "created_at": drop.created_at.isoformat() if drop.created_at else None,
+        "scheduled_date": str(drop.scheduled_date) if drop.scheduled_date else None,
+        "delivery_method": drop.delivery_method,
+        "customer_name": customer.name,
+        "customer_phone": customer.phone_e164,
+        "customer_email": customer.email,
+        "customer_company": customer.company_name,
+        "delivery_address": {
+            "line1": address.line1, "line2": address.line2,
+            "city": address.city, "state": address.state, "postal_code": address.postal_code,
+        } if address else None,
+        "line_items": line_items,
+        "shipping_total": shipping_total,
+        "tax_total": tax_total,
+        "order_total": float(drop.order_total) if drop.order_total else None,
+        "payment_method": drop.payment_method,
+        "payment_status": drop.payment_status,
+        "payment_note": drop.payment_note,
+        "wc_source": wc_source,
+    }
+
+
 @router.get("/unscheduled")
 def get_unscheduled_drops(
     location_id: str | None = Query(default=None),
