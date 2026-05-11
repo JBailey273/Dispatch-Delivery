@@ -357,7 +357,7 @@ ${inv.order_total != null ? `<div class="pt-total-row"><span>Total</span><span>$
   <div class="pt-payment-label">Payment</div>
   <div style="font-weight:700">${paymentLabel}${paymentStatusLabel ? ` — ${paymentStatusLabel}` : ''}${inv.payment_note ? ` · ${inv.payment_note}` : ''}</div>
 </div>
-<div class="pt-footer">East Meadow Garden Center &nbsp;·&nbsp; 47 Somers Rd, Hampden, MA 01036 &nbsp;·&nbsp; (413) 566-3602</div>
+<div class="pt-footer">East Meadow Garden Center &nbsp;·&nbsp; 16 Somers Rd, Hampden, MA 01036 &nbsp;·&nbsp; (413) 599-6600</div>
 </body></html>`);
     w.document.close();
     setTimeout(() => w.print(), 400);
