@@ -286,7 +286,7 @@ function DispatchDropDetailPage() {
       ? [inv.delivery_address.line1, inv.delivery_address.line2, `${inv.delivery_address.city}, ${inv.delivery_address.state} ${inv.delivery_address.postal_code}`].filter(Boolean).join('<br>')
       : 'Pickup';
 
-    const itemRows = inv.line_items.map(item => {
+    const itemRows = inv.line_items.map((item: InvoiceLineItem) => {
       const unitPriceCell = item.unit_price != null ? fmtCurrency(item.unit_price) : '—';
       const subtotalCell = item.subtotal != null ? fmtCurrency(item.subtotal) : '—';
       return `<tr><td>${item.name}</td><td class="pt-right">${item.quantity}</td><td class="pt-right">${unitPriceCell}</td><td class="pt-right">${subtotalCell}</td></tr>`;
