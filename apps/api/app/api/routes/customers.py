@@ -277,6 +277,44 @@ def create_customer(
     return {"existing": False, "customer": _customer_dict(customer)}
 
 
+@router.get("/{customer_id}/orders")
+def get_customer_orders(
+    customer_id: str,
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.DRIVER)),
+    db: Session = Depends(db_dep),
+):
+    customer = _get_customer_or_404(db, customer_id, user.tenant_id)
+    from app.models.entities import Load, CustomerAddress
+    drops = db.execute(
+        select(Drop)
+        .where(Drop.customer_id == customer.id, Drop.tenant_id == user.tenant_id)
+        .order_by(Drop.created_at.desc())
+    ).scalars().all()
+
+    result = []
+    for drop in drops:
+        loads = db.execute(
+            select(Load).where(Load.drop_id == drop.id)
+        ).scalars().all()
+        materials = [f"{l.qty} {l.unit} {l.material_name_snapshot}" for l in loads]
+
+        ref = f"#{drop.order_number}" if drop.order_number else (f"QD-{drop.qd_number}" if drop.qd_number else str(drop.id)[:8])
+        result.append({
+            "drop_id": str(drop.id),
+            "ref": ref,
+            "order_number": drop.order_number,
+            "scheduled_date": str(drop.scheduled_date) if drop.scheduled_date else None,
+            "created_at": drop.created_at.isoformat() if drop.created_at else None,
+            "delivery_method": drop.delivery_method,
+            "order_total": float(drop.order_total) if drop.order_total else None,
+            "payment_method": drop.payment_method,
+            "payment_status": drop.payment_status,
+            "materials": materials,
+            "load_count": len(loads),
+        })
+    return {"orders": result}
+
+
 @router.get("/{customer_id}")
 def get_customer(
     customer_id: str,
