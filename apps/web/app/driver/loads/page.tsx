@@ -32,6 +32,7 @@ type DropItem = {
   notify_sent: boolean;
   scheduled_window: string | null;
   is_priority?: boolean;
+  collect_payment?: boolean;
   drop_photos: string[];
   loads: LoadItem[];
 };
