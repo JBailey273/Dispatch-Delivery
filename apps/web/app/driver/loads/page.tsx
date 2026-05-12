@@ -152,12 +152,7 @@ export default function DriverPage() {
     return () => clearInterval(interval);
   }, [fetchDrops]);
 
-  useEffect(() => {
-    if (drops.length > 0 && !expandedDrop) {
-      const active = drops.find(d => ['assigned', 'loaded_leaving'].includes(getDropStatus(d)));
-      if (active) setExpandedDrop(active.drop_id);
-    }
-  }, [drops, expandedDrop]);
+  // Auto-expand removed — drivers tap to open the card they need
 
   useEffect(() => {
     if (!toast) return;
@@ -308,18 +303,7 @@ export default function DriverPage() {
         showToast('Photo saved & delivery confirmed!');
         setExpandedDrop(null);
         setPhotoTarget(null);
-        const updated = await fetchDrops();
-        if (updated) {
-          const sorted = [...updated].sort((a, b) => {
-            const doneA = ['delivered', 'cancelled'].includes(getDropStatus(a));
-            const doneB = ['delivered', 'cancelled'].includes(getDropStatus(b));
-            if (doneA !== doneB) return doneA ? 1 : -1;
-            if (a.is_priority !== b.is_priority) return a.is_priority ? -1 : 1;
-            return 0;
-          });
-          const next = sorted.find(d => !['delivered', 'cancelled'].includes(getDropStatus(d)));
-          if (next) setExpandedDrop(next.drop_id);
-        }
+        await fetchDrops();
         return;
       } else if (photoTarget.type === 'condition') {
         const capturedLoadId = photoTarget.loadId;
