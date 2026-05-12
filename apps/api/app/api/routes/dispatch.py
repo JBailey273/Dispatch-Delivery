@@ -137,10 +137,10 @@ def dispatch_schedule(
         else:
             by_window[load.route_window.value][driver_display].append(load_dict)
 
-    # Sort loads within each window group by bulk_group_snapshot for material grouping
+    # Sort loads within each window group by material_category for material grouping
     for window_groups in by_window.values():
         for driver_loads in window_groups.values():
-            driver_loads.sort(key=lambda l: (l.get("bulk_group") or ""))
+            driver_loads.sort(key=lambda l: (l.get("material_category") or ""))
 
     # Count priority loads for the warning
     priority_load_count = sum(len(v) for v in priority_groups.values())
@@ -330,8 +330,9 @@ def list_orders(
             "customer_phone": customer.phone_e164,
             "address_short": f"{address.line1}, {address.city}" if address else "Pickup",
             "material": load.material_name_snapshot,
+            "bulk_group": load.bulk_group_snapshot,
+            "material_category": load.material_category_snapshot,
             "qty": load.qty,
-            "unit": load.unit,
             "status": "fulfilled" if drop.fulfilled_at else load.status.value,
             "driver_name": driver_display,
             "is_priority": drop.is_priority,
