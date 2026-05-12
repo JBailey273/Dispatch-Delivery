@@ -44,6 +44,7 @@ def _build_load_dict(load: Load, drop: Drop, driver: User | None, customer: Cust
         "order_ref": _build_order_ref(drop),
         "status": load.status.value,
         "material": load.material_name_snapshot,
+        "bulk_group": load.bulk_group_snapshot,
         "qty": load.qty,
         "unit": load.unit,
         "customer_name": customer.name,
@@ -135,6 +136,11 @@ def dispatch_schedule(
             priority_groups[driver_display].append(load_dict)
         else:
             by_window[load.route_window.value][driver_display].append(load_dict)
+
+    # Sort loads within each window group by bulk_group_snapshot for material grouping
+    for window_groups in by_window.values():
+        for driver_loads in window_groups.values():
+            driver_loads.sort(key=lambda l: (l.get("bulk_group") or ""))
 
     # Count priority loads for the warning
     priority_load_count = sum(len(v) for v in priority_groups.values())
