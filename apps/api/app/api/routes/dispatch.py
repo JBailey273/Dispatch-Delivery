@@ -224,16 +224,19 @@ def month_summary(
         drops_query = drops_query.where(Drop.location_id == location_id)
     drops = db.execute(drops_query).all()
 
-    # Collect materials per drop
+    # Collect materials and material_category per drop
     drop_ids = [str(d.id) for d, _ in drops]
     materials_map: dict[str, list[str]] = defaultdict(list)
+    category_map: dict[str, str] = {}
     if drop_ids:
         loads = db.execute(
-            select(Load.drop_id, Load.material_name_snapshot)
+            select(Load.drop_id, Load.material_name_snapshot, Load.material_category_snapshot)
             .where(Load.drop_id.in_([d.id for d, _ in drops]))
         ).all()
-        for load_drop_id, mat in loads:
+        for load_drop_id, mat, cat in loads:
             materials_map[str(load_drop_id)].append(mat)
+            if cat and str(load_drop_id) not in category_map:
+                category_map[str(load_drop_id)] = cat
 
     days: dict[str, list] = defaultdict(list)
     for drop, customer in drops:
@@ -246,7 +249,16 @@ def month_summary(
             "window": drop.scheduled_window.value if drop.scheduled_window else "P",
             "status": drop.status,
             "is_priority": drop.is_priority,
+            "material_category": category_map.get(str(drop.id), ""),
         })
+
+    # Sort chips within each day: priority first, then by window, then by material_category
+    for day_drops in days.values():
+        day_drops.sort(key=lambda d: (
+            0 if d["is_priority"] else 1,
+            d["window"],
+            d["material_category"],
+        ))
 
     return {"days": dict(days)}
 
