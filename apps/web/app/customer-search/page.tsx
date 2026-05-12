@@ -1243,11 +1243,9 @@ const styles = `
   .cs-avatar.commercial { background: var(--blue-100,#dbeafe); color: var(--blue-700,#1d4ed8); font-size: 16px; font-weight: normal; }
 
   /* Type toggle */
-  .cs-type-toggle { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; border: 1px solid transparent; cursor: pointer; transition: all 0.15s; font-family: inherit; line-height: 1.4; }
+  .cs-type-toggle { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; border: 1px solid transparent; font-family: inherit; line-height: 1.4; }
   .cs-type-toggle.residential { background: var(--gray-100); color: var(--gray-600); border-color: var(--gray-200); }
-  .cs-type-toggle.residential:hover { background: var(--blue-50,#eff6ff); color: var(--blue-700,#1d4ed8); border-color: var(--blue-200,#bfdbfe); }
   .cs-type-toggle.commercial { background: var(--blue-50,#eff6ff); color: var(--blue-700,#1d4ed8); border-color: var(--blue-200,#bfdbfe); }
-  .cs-type-toggle.commercial:hover { background: var(--gray-100); color: var(--gray-600); border-color: var(--gray-200); }
   .cs-type-toggle:disabled { opacity: 0.5; cursor: wait; }
   .cs-th-sort { cursor: pointer; user-select: none; white-space: nowrap; }
   .cs-th-sort:hover { color: var(--gray-700); }
