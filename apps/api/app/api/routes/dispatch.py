@@ -430,6 +430,7 @@ def drop_detail(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DI
         "stripe_payment_intent_id": drop.stripe_payment_intent_id,
         "delivery_method": drop.delivery_method,
         "wc_customer_id": drop.wc_customer_id,
+        "collect_payment": drop.collect_payment,
     }
 @router.get("/drops/{drop_id}/invoice")
 def drop_invoice(drop_id: str, user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)), db: Session = Depends(db_dep)):
