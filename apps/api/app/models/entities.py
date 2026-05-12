@@ -199,6 +199,7 @@ class ProductCatalogItem(Base, TenantScopedMixin, TimestampMixin):
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     category: Mapped[str | None] = mapped_column(String(120), nullable=True)
     bulk_group: Mapped[str] = mapped_column(String(120), nullable=False)
+    material_category: Mapped[str | None] = mapped_column(String(120), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
@@ -355,6 +356,7 @@ class Load(Base, TenantScopedMixin, TimestampMixin):
     route_date: Mapped[date] = mapped_column(Date, nullable=False)
     route_window: Mapped[WindowCode] = mapped_column(Enum(WindowCode, name="load_window_code"), nullable=False)
     bulk_group_snapshot: Mapped[str] = mapped_column(String(120), nullable=False)
+    material_category_snapshot: Mapped[str | None] = mapped_column(String(120), nullable=True)
     material_name_snapshot: Mapped[str] = mapped_column(String(255), nullable=False)
     qty: Mapped[int] = mapped_column(Integer, nullable=False)
     unit: Mapped[str] = mapped_column(String(32), nullable=False)
