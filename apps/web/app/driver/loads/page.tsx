@@ -19,6 +19,7 @@ type LoadItem = {
   exception_notes: string | null;
   condition_photo_url: string | null;
   condition_notes: string | null;
+  bulk_group_snapshot: string | null;
 };
 
 type DropItem = {
