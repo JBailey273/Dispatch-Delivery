@@ -691,14 +691,9 @@ const createCustomer = async () => {
                           </div>
                         </td>
                         <td className="cs-type-col">
-                          <button
-                            className={`cs-type-toggle ${isCommercial ? 'commercial' : 'residential'}`}
-                            onClick={e => { e.stopPropagation(); toggleCustomerType(r.id, r.customer_type || 'residential'); }}
-                            disabled={typeToggling === r.id}
-                            title={`Click to switch to ${isCommercial ? 'residential' : 'commercial'}`}
-                          >
-                            {typeToggling === r.id ? '…' : (isCommercial ? 'Commercial' : 'Residential')}
-                          </button>
+                          <span className={`cs-type-toggle ${isCommercial ? 'commercial' : 'residential'}`}>
+                            {isCommercial ? 'Commercial' : 'Residential'}
+                          </span>
                         </td>
                         <td className="cs-phone-col" style={{ fontSize: 13 }}>{fmtPhone(r.phone_e164)}</td>
                         <td className="cs-last-col">
