@@ -45,6 +45,7 @@ def _build_load_dict(load: Load, drop: Drop, driver: User | None, customer: Cust
         "status": load.status.value,
         "material": load.material_name_snapshot,
         "bulk_group": load.bulk_group_snapshot,
+        "material_category": load.material_category_snapshot or "",
         "qty": load.qty,
         "unit": load.unit,
         "customer_name": customer.name,
