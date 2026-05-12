@@ -78,7 +78,7 @@ def driver_drops(
             } if addr else None,
             "notes": drop.notes,
             "collect_payment": drop.collect_payment,
-            "notify_sent": drop.notify_sent_at
+            "notify_sent": drop.notify_sent_at,
             "scheduled_window": drop.scheduled_window.value if drop.scheduled_window else None,
             "is_priority": drop.is_priority,
             "drop_photos": drop.drop_photos if drop.drop_photos else [],
