@@ -832,26 +832,32 @@ const sendSchedulingLink = async () => {
             </div>
 
             {/* Collect Payment */}
-            <div className="so-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <div className="so-card-label" style={{ marginBottom: 2 }}>💵 Collect Payment</div>
-                <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>Driver will collect payment at delivery</div>
+            <div className="so-card">
+              <div className="so-card-label">Collect Payment</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
+                <div style={{ fontSize: 13, color: 'var(--gray-500)' }}>
+                  {dropDetail.collect_payment
+                    ? '💵 Driver will collect payment at delivery'
+                    : 'No payment collection required'}
+                </div>
+                <label className="so-switch" style={{ flexShrink: 0, marginLeft: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={!!dropDetail.collect_payment}
+                    onChange={async () => {
+                      try {
+                        await api(`/drops/${dropId}/collect-payment`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ collect_payment: !dropDetail.collect_payment }),
+                        });
+                        await refreshDetail();
+                      } catch { /* silent */ }
+                    }}
+                  />
+                  <span className="so-switch-track" />
+                </label>
               </div>
-              <button
-                className={`so-collect-toggle${dropDetail.collect_payment ? ' on' : ''}`}
-                onClick={async () => {
-                  try {
-                    await api(`/drops/${dropId}/collect-payment`, {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ collect_payment: !dropDetail.collect_payment }),
-                    });
-                    await refreshDetail();
-                  } catch { /* silent */ }
-                }}
-              >
-                {dropDetail.collect_payment ? 'On' : 'Off'}
-              </button>
             </div>
 
             {/* Notes */}
@@ -1124,8 +1130,12 @@ const panelStyles = `
 
   /* Notes */
   .so-notes-text { font-size: 13px; color: var(--gray-700); line-height: 1.5; font-style: italic; }
-  .so-collect-toggle { padding: 5px 16px; border-radius: 20px; border: 1.5px solid var(--border); background: var(--gray-100); color: var(--gray-500); font-family: var(--font-heading); font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.15s; }
-  .so-collect-toggle.on { background: #fef9c3; color: #854d0e; border-color: #fde68a; }
+  .so-switch { position: relative; display: inline-block; width: 44px; height: 24px; cursor: pointer; }
+  .so-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .so-switch-track { position: absolute; inset: 0; border-radius: 12px; background: var(--gray-200); transition: background 0.2s; }
+  .so-switch-track::after { content: ''; position: absolute; width: 18px; height: 18px; border-radius: 50%; background: #fff; top: 3px; left: 3px; transition: transform 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+  .so-switch input:checked + .so-switch-track { background: var(--green-500); }
+  .so-switch input:checked + .so-switch-track::after { transform: translateX(20px); }
 
   /* Footer link */
   .so-full-link { display: block; text-align: center; font-family: var(--font-heading); font-size: 13px; font-weight: 600; color: var(--gray-400); padding: 8px; transition: color 0.15s; }
