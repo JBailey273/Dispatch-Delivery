@@ -20,6 +20,7 @@ type LoadItem = {
   condition_photo_url: string | null;
   condition_notes: string | null;
   bulk_group_snapshot: string | null;
+  material_category_snapshot: string | null;
 };
 
 type DropItem = {
@@ -422,8 +423,8 @@ export default function DriverPage() {
     const doneA = ['delivered', 'cancelled', 'exception'].includes(getDropStatus(a));
     const doneB = ['delivered', 'cancelled', 'exception'].includes(getDropStatus(b));
     if (doneA !== doneB) return doneA ? 1 : -1;
-    const groupA = a.loads[0]?.bulk_group_snapshot || '';
-    const groupB = b.loads[0]?.bulk_group_snapshot || '';
+    const groupA = a.loads[0]?.material_category_snapshot || '';
+    const groupB = b.loads[0]?.material_category_snapshot || '';
     return groupA.localeCompare(groupB);
   });
 
