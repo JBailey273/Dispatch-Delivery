@@ -259,13 +259,14 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
     if len(by_sku) != len(set(skus)):
         raise HTTPException(status_code=400, detail={"code": "invalid_items", "message": "One or more SKUs not found/active"})
 
-    grouped: dict[str, dict] = defaultdict(lambda: {"qty": 0, "name": "", "unit": ""})
+    grouped: dict[str, dict] = defaultdict(lambda: {"qty": 0, "name": "", "unit": "", "material_category": None})
     for item in payload.items:
         cat = by_sku[item.sku]
         if cat.delivery_mode == DeliveryMode.BULK_LOAD:
             grouped[cat.bulk_group]["qty"] += item.qty
             grouped[cat.bulk_group]["name"] = cat.name
             grouped[cat.bulk_group]["unit"] = cat.unit
+            grouped[cat.bulk_group]["material_category"] = cat.material_category
 
     required_loads = len(grouped.keys())
 
@@ -308,6 +309,7 @@ def create_manual_drop(payload: ManualDropIn, user: AuthUser = Depends(require_r
                     route_date=payload.scheduled_date,
                     route_window=load_window,
                     bulk_group_snapshot=bulk_group,
+                    material_category_snapshot=snap.get("material_category"),
                     material_name_snapshot=snap["name"],
                     qty=snap["qty"],
                     unit=snap["unit"],
