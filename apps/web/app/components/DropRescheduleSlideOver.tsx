@@ -86,6 +86,7 @@ export type SlideOverDropDetail = {
   customer_email?: string | null;
   customer_sms_opt_in?: boolean;
   customer_email_opt_in?: boolean;
+  collect_payment?: boolean;
 };
 
 type Driver = { id: string; name: string; email: string; truck?: string | null };
@@ -828,6 +829,29 @@ const sendSchedulingLink = async () => {
                   <div className="so-notif-err">{schedLinkMsg}</div>
                 )}
               </div>
+            </div>
+
+            {/* Collect Payment */}
+            <div className="so-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div className="so-card-label" style={{ marginBottom: 2 }}>💵 Collect Payment</div>
+                <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>Driver will collect payment at delivery</div>
+              </div>
+              <button
+                className={`so-collect-toggle${dropDetail.collect_payment ? ' on' : ''}`}
+                onClick={async () => {
+                  try {
+                    await api(`/drops/${dropId}/collect-payment`, {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ collect_payment: !dropDetail.collect_payment }),
+                    });
+                    await refreshDetail();
+                  } catch { /* silent */ }
+                }}
+              >
+                {dropDetail.collect_payment ? 'On' : 'Off'}
+              </button>
             </div>
 
             {/* Notes */}
