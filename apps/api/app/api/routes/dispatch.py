@@ -137,10 +137,13 @@ def dispatch_schedule(
         else:
             by_window[load.route_window.value][driver_display].append(load_dict)
 
-    # Sort loads within each window group by material_category for material grouping
+    # Sort loads within each window group by material_category then customer_name
     for window_groups in by_window.values():
         for driver_loads in window_groups.values():
-            driver_loads.sort(key=lambda l: (l.get("material_category") or ""))
+            driver_loads.sort(key=lambda l: (
+                l.get("material_category") or "",
+                l.get("customer_name") or "",
+            ))
 
     # Count priority loads for the warning
     priority_load_count = sum(len(v) for v in priority_groups.values())
@@ -252,12 +255,13 @@ def month_summary(
             "material_category": category_map.get(str(drop.id), ""),
         })
 
-    # Sort chips within each day: priority first, then by window, then by material_category
+    # Sort chips within each day: priority first, then by window, then by material_category, then customer_name
     for day_drops in days.values():
         day_drops.sort(key=lambda d: (
             0 if d["is_priority"] else 1,
             d["window"],
-            d["material_category"],
+            d["material_category"] or "",
+            d["customer_name"] or "",
         ))
 
     return {"days": dict(days)}
