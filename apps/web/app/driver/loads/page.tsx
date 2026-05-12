@@ -420,8 +420,10 @@ export default function DriverPage() {
   const sortDrops = (list: typeof drops) => [...list].sort((a, b) => {
     const doneA = ['delivered', 'cancelled', 'exception'].includes(getDropStatus(a));
     const doneB = ['delivered', 'cancelled', 'exception'].includes(getDropStatus(b));
-    if (doneA === doneB) return 0;
-    return doneA ? 1 : -1;
+    if (doneA !== doneB) return doneA ? 1 : -1;
+    const groupA = a.loads[0]?.bulk_group_snapshot || '';
+    const groupB = b.loads[0]?.bulk_group_snapshot || '';
+    return groupA.localeCompare(groupB);
   });
 
   const sections: { key: string; label: string; emoji: string; drops: typeof drops }[] = [];
