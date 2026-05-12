@@ -458,7 +458,7 @@ export default function DriverPage() {
         const isException = dropStatus === 'exception';
         const isPriority = drop.is_priority && !isDone;
         const activeLoads = drop.loads.filter(l => l.status === 'assigned' || l.status === 'loaded_leaving');
-        const siteDocumented = drop.loads.every(l => l.condition_photo_url || l.condition_notes);
+        const siteDocumented = drop.loads.every(l => l.condition_photo_url || l.condition_notes || conditionPhotoTaken === l.id);
 
         return (
           <div key={drop.drop_id} className={`drv-card${isDone ? ' drv-card--done' : ''}${isException ? ' drv-card--exc' : ''}${isPriority ? ' drv-card--priority' : ''}`}>
