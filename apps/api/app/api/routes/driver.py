@@ -86,6 +86,7 @@ def driver_drops(
                     "id": str(l.id),
                     "status": l.status.value,
                     "material": l.material_name_snapshot,
+                    "bulk_group_snapshot": l.bulk_group_snapshot,
                     "qty": l.qty,
                     "unit": l.unit,
                     "pod_photo_url": l.pod_photo_url,
