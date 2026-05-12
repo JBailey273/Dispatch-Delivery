@@ -320,6 +320,7 @@ class Drop(Base, TenantScopedMixin, TimestampMixin):
     notify_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_reschedule_sms_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     needs_reschedule: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    collect_payment: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     delivery_method: Mapped[str] = mapped_column(String(20), nullable=False, default="delivery")
     payment_method: Mapped[str | None] = mapped_column(String(50), nullable=True)
     payment_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
