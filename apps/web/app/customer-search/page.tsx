@@ -1002,6 +1002,18 @@ const createCustomer = async () => {
                                 <div className="cs-section-label">Billing</div>
                                 <div className="cs-info-grid">
                                   <div className="cs-info-field">
+                                    <div className="cs-field-label">Customer Type</div>
+                                    <div className="cs-field-value">
+                                      <button
+                                        className={`btn btn-sm ${isCommercial ? 'btn-primary' : 'btn-secondary'}`}
+                                        disabled={typeToggling === r.id}
+                                        onClick={e => { e.stopPropagation(); toggleCustomerType(r.id, r.customer_type || 'residential'); }}
+                                      >
+                                        {typeToggling === r.id ? '…' : (isCommercial ? '🏢 Commercial' : '🏠 Residential')}
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <div className="cs-info-field">
                                     <div className="cs-field-label">Invoice Billing</div>
                                     <div className="cs-field-value">
                                       <button
