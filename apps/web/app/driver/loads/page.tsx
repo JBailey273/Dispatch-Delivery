@@ -458,7 +458,14 @@ export default function DriverPage() {
             <div className="drv-card-hd" onClick={() => setExpandedDrop(isExpanded ? null : drop.drop_id)}>
               <div className="drv-dot" style={{ background: isPriority ? '#2563eb' : cfg.color }} />
               <div className="drv-card-info">
-                <div className="drv-name">{drop.customer_name}</div>
+                <div className="drv-name">
+                  {drop.customer_name}
+                  {drop.collect_payment && (
+                    <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 700, background: '#fef9c3', color: '#854d0e', border: '1px solid #fde68a', borderRadius: 6, padding: '1px 7px', verticalAlign: 'middle' }}>
+                      💵 Collect Payment
+                    </span>
+                  )}
+                </div>
                 <div className="drv-sub">
                   {drop.loads.length} item{drop.loads.length !== 1 ? 's' : ''}
                   {drop.address ? ` · ${drop.address.city}` : ''}
