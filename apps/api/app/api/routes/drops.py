@@ -521,6 +521,28 @@ def split_load(drop_id: str, payload: SplitLoadIn, user: AuthUser = Depends(requ
     }
 
 
+class CollectPaymentIn(BaseModel):
+    collect_payment: bool
+
+
+@router.patch("/{drop_id}/collect-payment")
+def set_collect_payment(
+    drop_id: str,
+    payload: CollectPaymentIn,
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER)),
+    db: Session = Depends(db_dep),
+):
+    drop = db.execute(
+        select(Drop).where(Drop.id == drop_id, Drop.tenant_id == user.tenant_id).with_for_update()
+    ).scalar_one_or_none()
+    if not drop:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Drop not found"})
+    drop.collect_payment = payload.collect_payment
+    log_event(db, user.tenant_id, "drop.collect_payment_set", "dispatch", {"drop_id": drop_id, "collect_payment": payload.collect_payment})
+    db.commit()
+    return {"collect_payment": drop.collect_payment}
+
+
 class RescheduleIn(BaseModel):
     scheduled_date: date
     scheduled_window: WindowCode | None = None  # None allowed for priority drops
