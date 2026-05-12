@@ -1124,6 +1124,8 @@ const panelStyles = `
 
   /* Notes */
   .so-notes-text { font-size: 13px; color: var(--gray-700); line-height: 1.5; font-style: italic; }
+  .so-collect-toggle { padding: 5px 16px; border-radius: 20px; border: 1.5px solid var(--border); background: var(--gray-100); color: var(--gray-500); font-family: var(--font-heading); font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.15s; }
+  .so-collect-toggle.on { background: #fef9c3; color: #854d0e; border-color: #fde68a; }
 
   /* Footer link */
   .so-full-link { display: block; text-align: center; font-family: var(--font-heading); font-size: 13px; font-weight: 600; color: var(--gray-400); padding: 8px; transition: color 0.15s; }
