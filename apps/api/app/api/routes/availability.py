@@ -128,7 +128,7 @@ def _required_loads(db: Session, tenant_id, location_id, items: list[CartItemIn]
     if len(by_sku) != len(set(skus)):
         raise HTTPException(status_code=400, detail={"code": "invalid_items", "message": "One or more SKUs not found/active"})
 
-    grouped = defaultdict(lambda: {"qty": 0, "name": "", "unit": ""})
+    grouped = defaultdict(lambda: {"qty": 0, "name": "", "unit": "", "material_category": None})
     for item in items:
         cat = by_sku[item.sku]
         if cat.delivery_mode != DeliveryMode.BULK_LOAD:
@@ -136,6 +136,7 @@ def _required_loads(db: Session, tenant_id, location_id, items: list[CartItemIn]
         grouped[cat.bulk_group]["qty"] += item.qty
         grouped[cat.bulk_group]["name"] = cat.name
         grouped[cat.bulk_group]["unit"] = cat.unit
+        grouped[cat.bulk_group]["material_category"] = cat.material_category
     return len(grouped.keys()), grouped
 
 
@@ -287,6 +288,7 @@ def _create_drop_and_loads(db: Session, tenant_id, location_id, payload: Confirm
             route_window=payload.drop.requested_window,
             bulk_group_snapshot=bulk_group,
             material_name_snapshot=snap["name"],
+            material_category_snapshot=snap.get("material_category"),
             qty=snap["qty"],
             unit=snap["unit"],
         )
