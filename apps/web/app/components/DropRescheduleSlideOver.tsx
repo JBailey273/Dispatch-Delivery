@@ -231,6 +231,7 @@ export default function DropRescheduleSlideOver({
   /* ── Reschedule state ── */
   const [rescDate, setRescDate] = useState('');
   const [rescWindow, setRescWindow] = useState<'A' | 'B'>('A');
+  const [rescPriority, setRescPriority] = useState(false);
   const [rescheduling, setRescheduling] = useState(false);
   const [rescMsg, setRescMsg] = useState('');
   const [rescSuccess, setRescSuccess] = useState(false);
@@ -240,6 +241,7 @@ export default function DropRescheduleSlideOver({
 
   useEffect(() => {
     if (dropDetail && !rescDate) {
+      setRescPriority(dropDetail.is_priority ?? false);
       setRescDate(dropDetail.scheduled_date ?? '');
       setRescWindow((dropDetail.scheduled_window as 'A' | 'B') || 'A');
     }
@@ -329,7 +331,8 @@ const sendSchedulingLink = async () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           scheduled_date: rescDate,
-          scheduled_window: dropDetail?.is_priority ? null : rescWindow,
+          scheduled_window: rescPriority ? null : rescWindow,
+          is_priority: rescPriority,
         }),
       });
       setRescSuccess(true);
@@ -985,7 +988,59 @@ const sendSchedulingLink = async () => {
                   </div>
                 </div>
 
-                {rescDate && !dropDetail.is_priority && (
+                {rescDate && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 14px',
+                      background: rescPriority ? 'var(--amber-50)' : 'var(--gray-50)',
+                      border: `1px solid ${rescPriority ? 'var(--amber-200)' : 'var(--gray-200)'}`,
+                      borderRadius: 8,
+                      marginBottom: 10,
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                    }}
+                    onClick={() => setRescPriority(p => !p)}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14, color: rescPriority ? 'var(--amber-700)' : 'var(--gray-700)' }}>
+                        ⚡ Priority Delivery
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 2 }}>
+                        Bypasses window capacity, appears at top of driver list
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        width: 40,
+                        height: 22,
+                        borderRadius: 11,
+                        background: rescPriority ? 'var(--amber-500)' : 'var(--gray-300)',
+                        position: 'relative',
+                        transition: 'background 0.2s',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 3,
+                          left: rescPriority ? 21 : 3,
+                          width: 16,
+                          height: 16,
+                          borderRadius: '50%',
+                          background: '#fff',
+                          transition: 'left 0.2s',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {rescDate && !rescPriority && (
                   <div className="so-window-pick">
                     <div className="so-window-pick-date">{fmtDateLong(rescDate)}</div>
                     <div className="so-window-btns">
