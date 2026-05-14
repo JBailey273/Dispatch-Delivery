@@ -347,7 +347,8 @@ const sendSchedulingLink = async () => {
   const windowCap = rescWindow === 'A' ? targetCap?.A : targetCap?.B;
   const isSameAsOriginal =
     rescDate === dropDetail?.scheduled_date &&
-    rescWindow === (dropDetail?.scheduled_window || 'A');
+    rescPriority === (dropDetail?.is_priority ?? false) &&
+    (rescPriority || rescWindow === (dropDetail?.scheduled_window || 'A'));
 
   /* Escape key */
   useEffect(() => {
@@ -1070,7 +1071,7 @@ const sendSchedulingLink = async () => {
                     onClick={doReschedule}
                     disabled={rescheduling || !rescDate || isSameAsOriginal}
                   >
-                    {rescheduling ? 'Saving…' : isSameAsOriginal ? 'No Change Made' : rescDate ? `Move to ${fmtDateShort(rescDate)}` : 'Select A Date Above'}
+                    {rescheduling ? 'Saving…' : isSameAsOriginal ? 'No Change Made' : rescDate ? (rescPriority && rescDate === dropDetail?.scheduled_date ? '⚡ Mark as Priority' : `Move to ${fmtDateShort(rescDate)}`) : 'Select A Date Above'}
                   </button>
                   <button className="btn btn-ghost" onClick={startOnReschedule ? onClose : () => setView('main')}>
                     Cancel
