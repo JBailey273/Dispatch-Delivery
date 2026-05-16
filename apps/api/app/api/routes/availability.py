@@ -546,7 +546,9 @@ def get_embed_order(
         select(Load).where(Load.drop_id == drop.id)
     ).scalars().all()
  
-    items = [f"{l.qty} {l.unit} {l.material_name_snapshot}" for l in loads]
+    def _fmt_qty(qty):
+        return str(int(qty)) if qty == int(qty) else str(qty)
+    items = [f"{_fmt_qty(l.qty)} {l.unit} {l.material_name_snapshot}" for l in loads]
 
     location = db.execute(
         select(Location).where(Location.id == drop.location_id)
@@ -711,11 +713,13 @@ def schedule_embed_order(
             date_str = payload.scheduled_date.strftime("%A, %B %d")
             win_label = "Morning" if payload.scheduled_window == WindowCode.A else "Afternoon"
             time_range = _time_range
+            def _fmt_qty(qty):
+                return str(int(qty)) if qty == int(qty) else str(qty)
             def _unit_label(qty, unit):
                 if qty == 1:
                     return unit.rstrip('s') if unit.lower().endswith('s') else unit
                 return unit if unit.lower().endswith('s') else unit + 's'
-            materials = [f"{l.qty} {_unit_label(l.qty, l.unit)} {l.material_name_snapshot}" for l in loads]
+            materials = [f"{_fmt_qty(l.qty)} {_unit_label(l.qty, l.unit)} {l.material_name_snapshot}" for l in loads]
             address_line = f"{address.line1}, {address.city}, {address.state}" if address else None
 
             if customer.email and customer.email_opt_in:
