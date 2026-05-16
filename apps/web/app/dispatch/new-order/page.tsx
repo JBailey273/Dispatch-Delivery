@@ -481,9 +481,13 @@ export default function NewOrderPage() {
     });
   };
 
+  const qtyStep = deliveryMethod === 'pickup' ? 0.5 : 1;
+  const qtyMin = deliveryMethod === 'pickup' ? 0.5 : 1;
+
   const updateQty = (productId: number, qty: number) => {
-    if (qty < 1) { removeItem(productId); return; }
-    setLineItems(prev => prev.map(l => l.product_id === productId ? { ...l, quantity: qty, _qtyDraft: undefined } : l));
+    if (qty < qtyMin) { removeItem(productId); return; }
+    const snapped = Math.round(qty / qtyStep) * qtyStep;
+    setLineItems(prev => prev.map(l => l.product_id === productId ? { ...l, quantity: snapped, _qtyDraft: undefined } : l));
   };
   const updateQtyRaw = (productId: number, raw: string) => {
     // Allow empty string while typing; commit on blur
@@ -493,8 +497,8 @@ export default function NewOrderPage() {
   };
 
   const commitQty = (productId: number, raw: string) => {
-    const parsed = parseInt(raw);
-    if (!isNaN(parsed) && parsed >= 1) {
+    const parsed = parseFloat(raw);
+    if (!isNaN(parsed) && parsed >= qtyMin) {
       updateQty(productId, parsed);
     } else {
       // Reset to current committed quantity (strip draft)
@@ -563,10 +567,11 @@ export default function NewOrderPage() {
     const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
     const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 
+    const fmtQty = (q: number) => q === Math.floor(q) ? String(Math.floor(q)) : String(q);
     const itemRows = lineItems.map(l => `
       <tr>
         <td class="pt-item">${l.name}</td>
-        <td class="pt-item pt-right">${l.quantity} yd</td>
+        <td class="pt-item pt-right">${fmtQty(l.quantity)} yd</td>
         <td class="pt-item pt-right">$${l.unit_price.toFixed(2)}/yd</td>
         <td class="pt-item pt-right">$${(l.unit_price * l.quantity).toFixed(2)}</td>
       </tr>
@@ -1347,16 +1352,17 @@ export default function NewOrderPage() {
                           {underMin && <div className="no-cart-warn">⚠ Under 3 yds — Will Be Pickup</div>}
                         </div>
                         <div className="no-qty-wrap">
-                          <button className="no-qty-btn" onClick={() => updateQty(item.product_id, (item._qtyDraft !== undefined ? parseInt(item._qtyDraft) || item.quantity : item.quantity) - 1)}>−</button>
+                          <button className="no-qty-btn" onClick={() => updateQty(item.product_id, (item._qtyDraft !== undefined ? parseFloat(item._qtyDraft) || item.quantity : item.quantity) - qtyStep)}>−</button>
                           <input
                             className="no-qty-input"
                             type="number"
-                            min={1}
+                            min={qtyMin}
+                            step={qtyStep}
                             value={item._qtyDraft !== undefined ? item._qtyDraft : item.quantity}
                             onChange={e => updateQtyRaw(item.product_id, e.target.value)}
                             onBlur={e => commitQty(item.product_id, e.target.value)}
                           />
-                          <button className="no-qty-btn" onClick={() => updateQty(item.product_id, (item._qtyDraft !== undefined ? parseInt(item._qtyDraft) || item.quantity : item.quantity) + 1)}>+</button>
+                          <button className="no-qty-btn" onClick={() => updateQty(item.product_id, (item._qtyDraft !== undefined ? parseFloat(item._qtyDraft) || item.quantity : item.quantity) + qtyStep)}>+</button>
                           <button className="no-qty-btn no-qty-del" onClick={() => removeItem(item.product_id)}>✕</button>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
