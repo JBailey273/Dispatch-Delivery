@@ -359,7 +359,7 @@ class Load(Base, TenantScopedMixin, TimestampMixin):
     bulk_group_snapshot: Mapped[str] = mapped_column(String(120), nullable=False)
     material_category_snapshot: Mapped[str | None] = mapped_column(String(120), nullable=True)
     material_name_snapshot: Mapped[str] = mapped_column(String(255), nullable=False)
-    qty: Mapped[int] = mapped_column(Integer, nullable=False)
+    qty: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     unit: Mapped[str] = mapped_column(String(32), nullable=False)
     idempotency_key_last: Mapped[str | None] = mapped_column(String(128), nullable=True)
     pod_photo_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
