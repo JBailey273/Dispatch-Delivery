@@ -665,7 +665,7 @@ def create_internal_order(
         line_total = str(round(unit_price * item.quantity, 2))
         li: dict = {
             "product_id": item.product_id,
-            "quantity": item.quantity,
+            "quantity": 1,  # WC requires integer quantity; fractional qty is folded into subtotal/total
             "subtotal": line_total,
             "total": line_total,
         }
@@ -887,9 +887,13 @@ def create_internal_order(
             wc_line_items_full = wc_order.get("line_items", [])
             matched_items: list[tuple] = []
 
+            # Build a SKU → payload quantity map since WC quantity is always 1 (fractional qty folded into price)
+            payload_qty_by_product_id = {item.product_id: item.quantity for item in payload.line_items}
+
             for wc_item in wc_line_items_full:
                 sku = (wc_item.get("sku") or "").strip()
-                qty = int(wc_item.get("quantity", 1))
+                wc_product_id = wc_item.get("product_id")
+                qty = payload_qty_by_product_id.get(wc_product_id, float(wc_item.get("quantity", 1)))
                 if not sku:
                     continue
                 catalog_item = db.execute(
@@ -1600,7 +1604,7 @@ def modify_drop_order(
         line_total = str(round(float(item.price) * item.quantity, 2))
         wc_line_items.append({
             "product_id": item.product_id,
-            "quantity": item.quantity,
+            "quantity": 1,  # WC requires integer quantity; fractional qty is folded into subtotal/total
             "subtotal": line_total,
             "total": line_total,
         })
