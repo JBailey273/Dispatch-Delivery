@@ -195,6 +195,7 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
   const isDriver = session.role === 'driver';
   const isDispatcherOrAdmin = session.role === 'dispatcher' || isAdmin;
   const router = useRouter();
+  const pathname = usePathname();
   const name = session.name || session.role;
   const initials = name.split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase();
 
@@ -205,6 +206,46 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
   );
 
   const [panelOpen, setPanelOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const closeDrawer = () => setDrawerOpen(false);
+
+  const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
+
+  // Dispatcher primary tabs (icons only)
+  const primaryTabs = !isDriver ? [
+    { href: '/ops-dashboard', icon: Icons.dashboard, label: 'Dashboard' },
+    { href: '/dispatch-schedule', icon: Icons.schedule, label: 'Schedule' },
+    { href: '/dispatch/new-order', icon: Icons.neworder, label: 'New Order' },
+    { href: '/all-orders', icon: Icons.allorders, label: 'Orders' },
+  ] : [
+    { href: '/driver/loads', icon: Icons.loads, label: 'My Loads' },
+  ];
+
+  // Overflow items for the "More" drawer
+  const overflowItems = !isDriver ? [
+    { href: '/new-drop', icon: Icons.quickdrop, label: 'Quick Drop' },
+    { href: '/customer-search', icon: Icons.customers, label: 'Customers' },
+    { href: '/pickup', icon: Icons.pickup, label: 'Pickup' },
+    { href: '/dispatch/billing', icon: Icons.billing, label: 'Billing' },
+  ] : [];
+
+  const adminItems = isAdmin ? [
+    { href: '/dispatch/reports', icon: Icons.billing, label: 'Reports' },
+    { href: '/admin/tenant', icon: Icons.settings, label: 'Settings' },
+    { href: '/admin/locations', icon: Icons.locations, label: 'Locations' },
+    { href: '/admin/catalog', icon: Icons.catalog, label: 'Catalog' },
+    { href: '/admin/users', icon: Icons.users, label: 'Users' },
+    { href: '/admin/delivery-availability', icon: Icons.schedule, label: 'Availability' },
+    { href: '/admin/channels', icon: Icons.channels, label: 'Channels' },
+    { href: '/admin/billing', icon: Icons.billing, label: 'Billing' },
+  ] : [];
+
+  const MoreIcon = (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>
+    </svg>
+  );
 
   return (
     <div className="app-shell">
@@ -306,10 +347,98 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
           onClose={() => setPanelOpen(false)}
         />
       )}
+
+      {/* ── Mobile Bottom Tab Bar ── */}
+      {!isDriver && (
+        <>
+          <nav className="mobile-tab-bar">
+            {primaryTabs.map(tab => (
+              <Link
+                key={tab.href}
+                href={tab.href}
+                className={`mobile-tab-btn${isActive(tab.href) ? ' active' : ''}`}
+              >
+                {tab.icon}
+              </Link>
+            ))}
+            <button
+              className={`mobile-tab-btn${drawerOpen ? ' active' : ''}`}
+              onClick={() => setDrawerOpen(o => !o)}
+              aria-label="More"
+            >
+              {unreadCount > 0 && !drawerOpen && (
+                <span className="mobile-tab-badge">{unreadCount}</span>
+              )}
+              {MoreIcon}
+            </button>
+          </nav>
+
+          {/* Drawer backdrop */}
+          <div
+            className={`mobile-drawer-backdrop${drawerOpen ? ' open' : ''}`}
+            onClick={closeDrawer}
+          />
+
+          {/* Slide-up drawer */}
+          <div className={`mobile-drawer${drawerOpen ? ' open' : ''}`}>
+            <div className="mobile-drawer-handle" />
+
+            <div className="mobile-drawer-grid">
+              {overflowItems.map(item => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`mobile-drawer-item${isActive(item.href) ? ' active' : ''}`}
+                  onClick={closeDrawer}
+                >
+                  {item.icon}
+                  {item.label}
+                </Link>
+              ))}
+              {/* Notifications as a drawer item */}
+              <button
+                className="mobile-drawer-item"
+                onClick={() => { setPanelOpen(o => !o); closeDrawer(); }}
+              >
+                {Icons.bell}
+                {unreadCount > 0 ? `Orders (${unreadCount})` : 'Orders'}
+              </button>
+            </div>
+
+            {adminItems.length > 0 && (
+              <>
+                <div className="mobile-drawer-section">Admin</div>
+                <div className="mobile-drawer-admin-grid">
+                  {adminItems.map(item => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`mobile-drawer-item${isActive(item.href) ? ' active' : ''}`}
+                      onClick={closeDrawer}
+                    >
+                      {item.icon}
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <div className="mobile-drawer-footer">
+              <span className="mobile-drawer-user">{name}</span>
+              <button
+                className="mobile-drawer-signout"
+                onClick={() => { clearSession(); router.push('/login'); }}
+              >
+                {Icons.signout} Sign out
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
-
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
