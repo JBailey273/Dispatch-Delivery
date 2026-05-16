@@ -718,9 +718,16 @@ def create_capacity_override(
     db.add(override)
 
     # Apply override as source of truth: upsert WindowCapacity rows for every date in range
+    # Skip any window that is DOW-disabled for that date via location's window_dow_rules
+    dow_rules = location.window_dow_rules or {"A": {"disabled_days": []}, "B": {"disabled_days": []}}
     current = payload.start_date
     while current <= payload.end_date:
+        dow = current.weekday()  # 0=Mon, 5=Sat, 6=Sun
         for window_code, cap_val in [(WindowCode.A, payload.window_a_capacity), (WindowCode.B, payload.window_b_capacity)]:
+            wk = window_code.value  # "A" or "B"
+            disabled_days = (dow_rules.get(wk) or {}).get("disabled_days", [])
+            if dow in disabled_days:
+                continue
             existing = db.execute(
                 select(WindowCapacity).where(
                     WindowCapacity.tenant_id == user.tenant_id,
