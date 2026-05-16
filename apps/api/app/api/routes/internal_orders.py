@@ -966,16 +966,17 @@ def create_internal_order(
             # Build line items for Stripe Payment Link
             stripe_line_items = []
             for item in payload.line_items:
-                price_cents = int(float(item.price) * 100)
+                # Stripe requires integer quantities — fold fractional qty into unit_amount
+                line_total_cents = int(round(float(item.price) * item.quantity * 100))
                 stripe_line_items.append({
                     "price_data": {
                         "currency": "usd",
-                        "unit_amount": price_cents,
+                        "unit_amount": line_total_cents,
                         "product_data": {
                             "name": item.name or f"Product #{item.product_id}",
                         },
                     },
-                    "quantity": item.quantity,
+                    "quantity": 1,
                 })
 
             # Add delivery fee as separate line item if applicable
