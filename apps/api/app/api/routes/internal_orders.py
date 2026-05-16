@@ -544,7 +544,7 @@ def create_payment_intent(
 
 class OrderLineItem(BaseModel):
     product_id: int
-    quantity: int
+    quantity: float
     price: str  # unit price at time of order (role-based)
     name: str = ""
 
