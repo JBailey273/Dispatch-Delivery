@@ -499,7 +499,7 @@ function DispatchSchedulePage() {
               </div>
               <div className="mobile-day-sub">{selDate.getFullYear()}</div>
               {!sameDay(selDate, today) && (
-                <button className="mobile-today-btn" onClick={() => setSelDate(today)}>Today</button>
+                <button className="mobile-today-btn" onClick={() => setSelDate(today)}>← Today</button>
               )}
             </div>
             <button
