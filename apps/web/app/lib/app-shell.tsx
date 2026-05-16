@@ -212,7 +212,21 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
 
-  // Dispatcher primary tabs (icons only)
+  // All dispatcher nav items — shown in drawer
+  const allDispatchItems = !isDriver ? [
+    { href: '/ops-dashboard', icon: Icons.dashboard, label: 'Dashboard' },
+    { href: '/dispatch-schedule', icon: Icons.schedule, label: 'Schedule' },
+    { href: '/dispatch/new-order', icon: Icons.neworder, label: 'New Order' },
+    { href: '/all-orders', icon: Icons.allorders, label: 'Orders' },
+    { href: '/new-drop', icon: Icons.quickdrop, label: 'Quick Drop' },
+    { href: '/customer-search', icon: Icons.customers, label: 'Customers' },
+    { href: '/pickup', icon: Icons.pickup, label: 'Pickup' },
+    { href: '/dispatch/billing', icon: Icons.billing, label: 'Billing' },
+  ] : [
+    { href: '/driver/loads', icon: Icons.loads, label: 'My Loads' },
+  ];
+
+  // Primary tabs (icon only, bottom bar) — the 4 most used
   const primaryTabs = !isDriver ? [
     { href: '/ops-dashboard', icon: Icons.dashboard, label: 'Dashboard' },
     { href: '/dispatch-schedule', icon: Icons.schedule, label: 'Schedule' },
@@ -221,14 +235,6 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
   ] : [
     { href: '/driver/loads', icon: Icons.loads, label: 'My Loads' },
   ];
-
-  // Overflow items for the "More" drawer
-  const overflowItems = !isDriver ? [
-    { href: '/new-drop', icon: Icons.quickdrop, label: 'Quick Drop' },
-    { href: '/customer-search', icon: Icons.customers, label: 'Customers' },
-    { href: '/pickup', icon: Icons.pickup, label: 'Pickup' },
-    { href: '/dispatch/billing', icon: Icons.billing, label: 'Billing' },
-  ] : [];
 
   const adminItems = isAdmin ? [
     { href: '/dispatch/reports', icon: Icons.billing, label: 'Reports' },
@@ -240,7 +246,6 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
     { href: '/admin/channels', icon: Icons.channels, label: 'Channels' },
     { href: '/admin/billing', icon: Icons.billing, label: 'Billing' },
   ] : [];
-
   const MoreIcon = (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>
@@ -363,7 +368,7 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
             ))}
             <button
               className={`mobile-tab-btn${drawerOpen ? ' active' : ''}`}
-              onClick={() => setDrawerOpen(o => !o)}
+              onClick={(e) => { e.stopPropagation(); setDrawerOpen(o => !o); }}
               aria-label="More"
             >
               {unreadCount > 0 && !drawerOpen && (
@@ -383,8 +388,9 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
           <div className={`mobile-drawer${drawerOpen ? ' open' : ''}`}>
             <div className="mobile-drawer-handle" />
 
+            {/* All dispatcher links */}
             <div className="mobile-drawer-grid">
-              {overflowItems.map(item => (
+              {allDispatchItems.map(item => (
                 <Link
                   key={item.href}
                   href={item.href}
@@ -395,16 +401,17 @@ function ShellInner({ children, session }: { children: React.ReactNode; session:
                   {item.label}
                 </Link>
               ))}
-              {/* Notifications as a drawer item */}
+              {/* New orders notification */}
               <button
                 className="mobile-drawer-item"
                 onClick={() => { setPanelOpen(o => !o); closeDrawer(); }}
               >
                 {Icons.bell}
-                {unreadCount > 0 ? `Orders (${unreadCount})` : 'Orders'}
+                {unreadCount > 0 ? `Orders (${unreadCount})` : 'New Orders'}
               </button>
             </div>
 
+            {/* Admin section */}
             {adminItems.length > 0 && (
               <>
                 <div className="mobile-drawer-section">Admin</div>
