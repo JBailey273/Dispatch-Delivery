@@ -484,8 +484,46 @@ function DispatchSchedulePage() {
           </div>
         </div>
 
-        {/* ── RIGHT: Day Detail Panel ── */}
+        {/* ── RIGHT: Detail Panel ── */}
         <div className="detail-panel">
+          {/* Mobile day navigator — only visible ≤640px */}
+          <div className="mobile-day-nav">
+            <button
+              className="mobile-day-nav-btn"
+              onClick={() => setSelDate(d => { const n = new Date(d); n.setDate(n.getDate() - 1); return n; })}
+              aria-label="Previous day"
+            >‹</button>
+            <div className="mobile-day-center">
+              <div className="mobile-day-label">
+                {DAYS[selDate.getDay()]}, {SHORT_MONTHS[selDate.getMonth()]} {selDate.getDate()}
+              </div>
+              <div className="mobile-day-sub">{selDate.getFullYear()}</div>
+              {!sameDay(selDate, today) && (
+                <button className="mobile-today-btn" onClick={() => setSelDate(today)}>Today</button>
+              )}
+            </div>
+            <button
+              className="mobile-day-nav-btn"
+              onClick={() => setSelDate(d => { const n = new Date(d); n.setDate(n.getDate() + 1); return n; })}
+              aria-label="Next day"
+            >›</button>
+          </div>
+
+          {/* Mobile delivery count summary */}
+          <div className="mobile-day-count-row">
+            {priorityLoads.length > 0 && (
+              <div className="mobile-day-count-chip pri">
+                <span className="chip-num">{priorityLoads.length}</span> Priority
+              </div>
+            )}
+            <div className="mobile-day-count-chip am">
+              <span className="chip-num">{amLoads.length}</span> AM
+            </div>
+            <div className="mobile-day-count-chip pm">
+              <span className="chip-num">{pmLoads.length}</span> PM
+            </div>
+          </div>
+
           <div className="detail-header">
             <div className="detail-date">{selDateStr}</div>
             <div className="detail-sub">
@@ -785,6 +823,86 @@ const schedulerStyles = `
     .cal-actions { justify-content: center; flex-wrap: wrap; }
     .legend-row { flex-wrap: wrap; gap: 8px; }
     .detail-panel { width: 100%; }
+  }
+
+  /* ── Mobile Day View (≤640px) ── */
+  @media (max-width: 640px) {
+    .dispatch-layout { flex-direction: column; height: auto; overflow: visible; }
+    .cal-panel { display: none; }
+    .detail-panel {
+      width: 100%; border-left: none; border-top: none;
+      height: auto; overflow: visible;
+    }
+    .mobile-day-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px 8px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border-light);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .mobile-day-nav-btn {
+      width: 42px; height: 42px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      font-size: 20px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      color: var(--gray-600);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .mobile-day-nav-btn:active { background: var(--gray-100); }
+    .mobile-day-center { text-align: center; flex: 1; }
+    .mobile-day-label {
+      font-family: var(--font-heading);
+      font-size: 17px; font-weight: 800;
+      color: var(--gray-900);
+      letter-spacing: -0.02em;
+    }
+    .mobile-day-sub {
+      font-size: 12px;
+      color: var(--gray-400);
+      margin-top: 1px;
+    }
+    .mobile-today-btn {
+      font-family: var(--font-heading);
+      font-size: 11px; font-weight: 700;
+      color: var(--brand);
+      background: none; border: none;
+      cursor: pointer; padding: 2px 0;
+      display: block; margin-top: 1px;
+    }
+    .mobile-day-count-row {
+      display: flex;
+      gap: 8px;
+      padding: 10px 14px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border-light);
+    }
+    .mobile-day-count-chip {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px;
+      border-radius: 10px;
+      font-family: var(--font-heading);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .mobile-day-count-chip.am { background: rgba(26,158,58,0.08); color: var(--green-700); }
+    .mobile-day-count-chip.pm { background: rgba(37,99,235,0.06); color: #1e40af; }
+    .mobile-day-count-chip.pri { background: rgba(245,158,11,0.10); color: #92400e; }
+    .mobile-day-count-chip .chip-num { font-size: 20px; font-weight: 900; line-height: 1; }
+  }
+  @media (min-width: 641px) {
+    .mobile-day-nav,
+    .mobile-day-count-row { display: none; }
   }
 
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
