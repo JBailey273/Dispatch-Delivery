@@ -663,9 +663,11 @@ def create_internal_order(
     for item in payload.line_items:
         unit_price = float(item.price or "0")
         line_total = str(round(unit_price * item.quantity, 2))
+        # WC requires integer quantity — for fractional qty, fold into subtotal/total and send qty=1
+        wc_qty = 1 if item.quantity != int(item.quantity) else int(item.quantity)
         li: dict = {
             "product_id": item.product_id,
-            "quantity": 1,  # WC requires integer quantity; fractional qty is folded into subtotal/total
+            "quantity": wc_qty,
             "subtotal": line_total,
             "total": line_total,
         }
@@ -970,17 +972,22 @@ def create_internal_order(
             # Build line items for Stripe Payment Link
             stripe_line_items = []
             for item in payload.line_items:
-                # Stripe requires integer quantities — fold fractional qty into unit_amount
-                line_total_cents = int(round(float(item.price) * item.quantity * 100))
+                if item.quantity != int(item.quantity):
+                    # Fractional qty — fold into unit_amount, send quantity=1
+                    stripe_qty = 1
+                    unit_cents = int(round(float(item.price) * item.quantity * 100))
+                else:
+                    stripe_qty = int(item.quantity)
+                    unit_cents = int(round(float(item.price) * 100))
                 stripe_line_items.append({
                     "price_data": {
                         "currency": "usd",
-                        "unit_amount": line_total_cents,
+                        "unit_amount": unit_cents,
                         "product_data": {
                             "name": item.name or f"Product #{item.product_id}",
                         },
                     },
-                    "quantity": 1,
+                    "quantity": stripe_qty,
                 })
 
             # Add delivery fee as separate line item if applicable
@@ -1602,9 +1609,10 @@ def modify_drop_order(
     wc_line_items = []
     for item in payload.line_items:
         line_total = str(round(float(item.price) * item.quantity, 2))
+        wc_qty = 1 if item.quantity != int(item.quantity) else int(item.quantity)
         wc_line_items.append({
             "product_id": item.product_id,
-            "quantity": 1,  # WC requires integer quantity; fractional qty is folded into subtotal/total
+            "quantity": wc_qty,
             "subtotal": line_total,
             "total": line_total,
         })
