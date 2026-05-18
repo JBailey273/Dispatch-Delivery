@@ -204,7 +204,23 @@ async def woocommerce_webhook(
 
     logger.info(f"woocommerce_webhook: number={payload.get('number')!r} id={payload.get('id')!r}")
     wc_order_number = int(payload.get("number") or payload.get("id") or 0) or None
+
+    # WC webhooks sometimes omit total — fetch from REST API as fallback
     wc_total = payload.get("total")
+    if not wc_total and external_order_id and channel.wc_store_url and channel.wc_consumer_key:
+        try:
+            import json as _json, urllib.parse as _up, urllib.request as _ur
+            _url = (
+                f"{channel.wc_store_url.rstrip('/')}/wp-json/wc/v3/orders/{external_order_id}"
+                f"?consumer_key={_up.quote(channel.wc_consumer_key)}"
+                f"&consumer_secret={_up.quote(channel.wc_consumer_secret)}"
+            )
+            with _ur.urlopen(_ur.Request(_url, headers={"User-Agent": "dispatch-app/1.0"}), timeout=8) as _r:
+                wc_total = _json.loads(_r.read().decode()).get("total")
+            logger.info(f"woocommerce_webhook: fetched total={wc_total!r} for order {external_order_id}")
+        except Exception as e:
+            logger.warning(f"woocommerce_webhook: could not fetch order total from WC: {e}")
+
     drop = Drop(
         tenant_id=tenant_id,
         location_id=location.id,
