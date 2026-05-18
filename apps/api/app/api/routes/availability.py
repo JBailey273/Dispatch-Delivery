@@ -172,16 +172,30 @@ def _remaining_slots(db: Session, tenant_id, location_id, location_default: int,
     return total - used - holds, used, holds
 
 
-def _fmt_window_range(location, window_code) -> str:
+def _get_window_times(location, window_code, day=None):
+    """Return (start_time, end_time) for a window, applying per-DOW overrides if present.
+    Python weekday(): 0=Monday, 1=Tuesday, ..., 5=Saturday, 6=Sunday.
+    """
+    from datetime import time as dt_time
+    if day is not None:
+        rules = getattr(location, 'window_dow_rules', None) or {}
+        day_overrides = rules.get(window_code.value, {}).get('day_overrides', {})
+        override = day_overrides.get(str(day.weekday()))
+        if override:
+            def _parse(t):
+                parts = t.split(':')
+                return dt_time(int(parts[0]), int(parts[1]))
+            return _parse(override['start']), _parse(override['end'])
+    if window_code.value == 'A':
+        return location.windowA_start, location.windowA_end
+    return location.windowB_start, location.windowB_end
+
+
+def _fmt_window_range(location, window_code, day=None) -> str:
     """Format a window time range string from location settings. e.g. '9am–1pm'"""
-    from app.models.entities import WindowCode as WC
-    if window_code == WC.A:
-        start = location.windowA_start.strftime('%-I:%M%p').lower().replace(':00', '')
-        end = location.windowA_end.strftime('%-I:%M%p').lower().replace(':00', '')
-    else:
-        start = location.windowB_start.strftime('%-I:%M%p').lower().replace(':00', '')
-        end = location.windowB_end.strftime('%-I:%M%p').lower().replace(':00', '')
-    return f"{start}–{end}"
+    start, end = _get_window_times(location, window_code, day)
+    fmt = lambda t: t.strftime('%-I:%M%p').lower().replace(':00', '')
+    return f"{fmt(start)}–{fmt(end)}"
 
 
 def _is_dow_disabled(location, day: date, window: WindowCode) -> bool:
@@ -568,7 +582,7 @@ def get_embed_order(
         windows = []
         for window_code in [WindowCode.A, WindowCode.B]:
             if check_date == today_local:
-                window_end = location.windowA_end if window_code == WindowCode.A else location.windowB_end
+                _, window_end = _get_window_times(location, window_code, check_date)
                 cutoff = (datetime.combine(today_local, window_end, tzinfo=tz) - timedelta(hours=1)).time()
                 if now_local.time() >= cutoff:
                     continue
@@ -585,7 +599,7 @@ def get_embed_order(
             if cap and cap.capacity_used >= cap.capacity_total:
                 continue
             label = "Morning" if window_code == WindowCode.A else "Afternoon"
-            time_range = _fmt_window_range(location, window_code) if location else ("9am–1pm" if window_code == WindowCode.A else "1pm–5pm")
+            time_range = _fmt_window_range(location, window_code, check_date) if location else ("9am–1pm" if window_code == WindowCode.A else "1pm–5pm")
             windows.append({
                 "window": window_code.value,
                 "label": label,
