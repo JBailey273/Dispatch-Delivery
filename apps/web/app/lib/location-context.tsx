@@ -11,19 +11,34 @@ export type Location = {
   windowA_end: string | null;
   windowB_start: string | null;
   windowB_end: string | null;
+  window_dow_rules?: {
+    A?: { disabled_days?: number[]; day_overrides?: Record<string, { start: string; end: string }> };
+    B?: { disabled_days?: number[]; day_overrides?: Record<string, { start: string; end: string }> };
+  } | null;
 };
 
-/** Format a window time range from location settings. e.g. '9am–1pm' */
-export function fmtWindowRange(win: 'A' | 'B', location: Location | null): string {
-  const start = win === 'A' ? location?.windowA_start : location?.windowB_start;
-  const end   = win === 'A' ? location?.windowA_end   : location?.windowB_end;
-  if (!start || !end) return win === 'A' ? '9am–1pm' : '1pm–5pm';
+/** Format a window time range from location settings, respecting per-DOW overrides.
+ *  dateStr is optional YYYY-MM-DD. If omitted, returns the global default. */
+export function fmtWindowRange(win: 'A' | 'B', location: Location | null, dateStr?: string | null): string {
   const fmt = (t: string) => {
     const [h, m] = t.split(':').map(Number);
     const ampm = h >= 12 ? 'pm' : 'am';
     const h12 = h % 12 || 12;
     return m === 0 ? `${h12}${ampm}` : `${h12}:${String(m).padStart(2, '0')}${ampm}`;
   };
+
+  // Check for a per-DOW override when a date is provided
+  if (dateStr && location?.window_dow_rules) {
+    // JS getDay(): 0=Sun,1=Mon,...,6=Sat — convert to Python weekday: 0=Mon,...,6=Sun
+    const jsDay = new Date(dateStr + 'T12:00:00').getDay();
+    const pyDay = jsDay === 0 ? 6 : jsDay - 1;
+    const override = location.window_dow_rules[win]?.day_overrides?.[String(pyDay)];
+    if (override) return `${fmt(override.start)}–${fmt(override.end)}`;
+  }
+
+  const start = win === 'A' ? location?.windowA_start : location?.windowB_start;
+  const end   = win === 'A' ? location?.windowA_end   : location?.windowB_end;
+  if (!start || !end) return win === 'A' ? '9am–1pm' : '1pm–5pm';
   return `${fmt(start)}–${fmt(end)}`;
 }
 
