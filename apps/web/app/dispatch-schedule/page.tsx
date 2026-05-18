@@ -617,7 +617,7 @@ function DispatchSchedulePage() {
               {/* AM Window */}
               <div className="window-section am">
                 <div className="window-head">
-                  <div className="window-title">Morning Window ({fmtWindowRange('A', activeLocation, selectedDate)})</div>
+                  <div className="window-title">Morning Window ({fmtWindowRange('A', activeLocation, toKey(selDate))})</div>
                   <span className={`pill pill-sm pill-${capColor(amCap.used ?? 0, amCap.total ?? 0) === 'red' ? 'red' : capColor(amCap.used ?? 0, amCap.total ?? 0) === 'amber' ? 'amber' : 'green'}`}>
                     <span className="pill-dot" />{amCap.used ?? 0}/{amCap.total ?? 0}
                   </span>
@@ -633,7 +633,7 @@ function DispatchSchedulePage() {
               {/* PM Window */}
               <div className="window-section pm">
                 <div className="window-head">
-                  <div className="window-title">Afternoon Window ({fmtWindowRange('B', activeLocation, selectedDate)})</div>
+                  <div className="window-title">Afternoon Window ({fmtWindowRange('B', activeLocation, toKey(selDate))})</div>
                   <span className={`pill pill-sm pill-${capColor(pmCap.used ?? 0, pmCap.total ?? 0) === 'red' ? 'red' : capColor(pmCap.used ?? 0, pmCap.total ?? 0) === 'amber' ? 'amber' : 'green'}`}>
                     <span className="pill-dot" />{pmCap.used ?? 0}/{pmCap.total ?? 0}
                   </span>
