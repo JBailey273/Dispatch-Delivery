@@ -114,9 +114,19 @@ export default function DeliveryAvailabilityPage() {
 
   // Window DOW rules
   // Python weekday: 0=Mon,1=Tue,2=Wed,3=Thu,4=Fri,5=Sat,6=Sun
-  type DowRules = { A: { disabled_days: number[] }; B: { disabled_days: number[] } };
-  const [dowRules, setDowRules] = useState<DowRules>({ A: { disabled_days: [] }, B: { disabled_days: [] } });
+  type DayOverride = { start: string; end: string };
+  type WindowRule = { disabled_days: number[]; day_overrides: Record<string, DayOverride> };
+  type DowRules = { A: WindowRule; B: WindowRule };
+  const [dowRules, setDowRules] = useState<DowRules>({
+    A: { disabled_days: [], day_overrides: {} },
+    B: { disabled_days: [], day_overrides: {} },
+  });
   const [dowSaving, setDowSaving] = useState(false);
+  // Global window times from location (used as placeholders when no override)
+  const [globalTimes, setGlobalTimes] = useState({
+    A: { start: '07:00', end: '12:00' },
+    B: { start: '12:00', end: '17:00' },
+  });
 
   // ── Data loading ────────────────────────────────────────────────────────────
 
@@ -140,8 +150,17 @@ export default function DeliveryAvailabilityPage() {
       if (baseCapData.location_id) {
         try {
           const locData = await api(`/locations/${baseCapData.location_id}`);
-          const rules = locData.window_dow_rules || { A: { disabled_days: [] }, B: { disabled_days: [] } };
-          setDowRules(rules);
+          const raw = locData.window_dow_rules || {};
+          setDowRules({
+            A: { disabled_days: raw.A?.disabled_days || [], day_overrides: raw.A?.day_overrides || {} },
+            B: { disabled_days: raw.B?.disabled_days || [], day_overrides: raw.B?.day_overrides || {} },
+          });
+          // Parse global times (stored as "HH:MM:SS", we only need HH:MM)
+          const trimTime = (t: string) => t?.slice(0, 5) || '';
+          setGlobalTimes({
+            A: { start: trimTime(locData.windowA_start), end: trimTime(locData.windowA_end) },
+            B: { start: trimTime(locData.windowB_start), end: trimTime(locData.windowB_end) },
+          });
         } catch { /* silent — rules default to no disabled days */ }
       }
     } catch (err) {
@@ -354,11 +373,37 @@ export default function DeliveryAvailabilityPage() {
   // DOW_LABELS uses Python weekday order: 0=Mon … 5=Sat, 6=Sun
   const DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-  function toggleDow(window: 'A' | 'B', day: number) {
+  function toggleDow(win: 'A' | 'B', day: number) {
     setDowRules(prev => {
-      const current = prev[window].disabled_days;
+      const current = prev[win].disabled_days;
       const next = current.includes(day) ? current.filter(d => d !== day) : [...current, day];
-      return { ...prev, [window]: { disabled_days: next } };
+      // If disabling the day, also remove any time override for it
+      const day_overrides = { ...prev[win].day_overrides };
+      if (next.includes(day)) delete day_overrides[String(day)];
+      return { ...prev, [win]: { ...prev[win], disabled_days: next, day_overrides } };
+    });
+  }
+
+  function setTimeOverride(win: 'A' | 'B', day: number, field: 'start' | 'end', value: string) {
+    setDowRules(prev => {
+      const existing = prev[win].day_overrides[String(day)] || { start: globalTimes[win].start, end: globalTimes[win].end };
+      const updated = { ...existing, [field]: value };
+      // Only keep the override if it differs from global defaults
+      const day_overrides = { ...prev[win].day_overrides };
+      if (updated.start === globalTimes[win].start && updated.end === globalTimes[win].end) {
+        delete day_overrides[String(day)];
+      } else {
+        day_overrides[String(day)] = updated;
+      }
+      return { ...prev, [win]: { ...prev[win], day_overrides } };
+    });
+  }
+
+  function clearTimeOverride(win: 'A' | 'B', day: number) {
+    setDowRules(prev => {
+      const day_overrides = { ...prev[win].day_overrides };
+      delete day_overrides[String(day)];
+      return { ...prev, [win]: { ...prev[win], day_overrides } };
     });
   }
 
@@ -501,16 +546,54 @@ export default function DeliveryAvailabilityPage() {
                       </div>
                       <div className="av-dow-toggles">
                         {DOW_LABELS.map((label, idx) => {
-                          const disabled = dowRules[win].disabled_days.includes(idx);
+                          const isDisabled = dowRules[win].disabled_days.includes(idx);
                           return (
                             <button
                               key={idx}
-                              className={`av-dow-btn${disabled ? ' av-dow-btn--off' : ' av-dow-btn--on'}`}
+                              className={`av-dow-btn${isDisabled ? ' av-dow-btn--off' : ' av-dow-btn--on'}`}
                               onClick={() => toggleDow(win, idx)}
-                              title={disabled ? `${label}: disabled` : `${label}: enabled`}
+                              title={isDisabled ? `${label}: disabled` : `${label}: enabled`}
                             >
                               {label}
                             </button>
+                          );
+                        })}
+                      </div>
+                      {/* Time overrides for open days */}
+                      <div className="av-dow-time-overrides">
+                        {DOW_LABELS.map((label, idx) => {
+                          if (dowRules[win].disabled_days.includes(idx)) return null;
+                          const override = dowRules[win].day_overrides[String(idx)];
+                          const hasOverride = !!override;
+                          const startVal = override?.start || globalTimes[win].start;
+                          const endVal = override?.end || globalTimes[win].end;
+                          return (
+                            <div key={idx} className={`av-dow-time-row${hasOverride ? ' av-dow-time-row--custom' : ''}`}>
+                              <span className="av-dow-time-day">{label}</span>
+                              <input
+                                type="time"
+                                className="av-dow-time-input"
+                                value={startVal}
+                                onChange={e => setTimeOverride(win, idx, 'start', e.target.value)}
+                              />
+                              <span className="av-dow-time-sep">–</span>
+                              <input
+                                type="time"
+                                className="av-dow-time-input"
+                                value={endVal}
+                                onChange={e => setTimeOverride(win, idx, 'end', e.target.value)}
+                              />
+                              {hasOverride && (
+                                <button
+                                  className="av-dow-time-reset"
+                                  onClick={() => clearTimeOverride(win, idx)}
+                                  title="Reset to default"
+                                >↺</button>
+                              )}
+                              {!hasOverride && (
+                                <span className="av-dow-time-default">default</span>
+                              )}
+                            </div>
                           );
                         })}
                       </div>
@@ -522,7 +605,7 @@ export default function DeliveryAvailabilityPage() {
                     {dowSaving ? 'Saving…' : 'Save Schedule'}
                   </button>
                   <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>
-                    Green = open · Red = closed
+                    Green = open · Red = closed · Bold time = custom hours
                   </span>
                 </div>
               </div>
@@ -1102,6 +1185,67 @@ const styles = `
   }
   .av-dow-btn--off:hover {
     background: rgba(244,63,94,0.14);
+  }
+
+  /* Time overrides */
+  .av-dow-time-overrides {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 6px;
+    padding-left: 2px;
+  }
+  .av-dow-time-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--gray-500);
+  }
+  .av-dow-time-row--custom {
+    color: var(--gray-800);
+    font-weight: 600;
+  }
+  .av-dow-time-day {
+    width: 30px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    flex-shrink: 0;
+  }
+  .av-dow-time-input {
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-sm);
+    padding: 2px 4px;
+    font-size: 12px;
+    font-family: inherit;
+    color: inherit;
+    background: var(--surface);
+    width: 88px;
+  }
+  .av-dow-time-row--custom .av-dow-time-input {
+    border-color: var(--green-400, #4ade80);
+    background: rgba(26,158,58,0.05);
+  }
+  .av-dow-time-sep {
+    color: var(--gray-400);
+    font-size: 11px;
+  }
+  .av-dow-time-reset {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--gray-400);
+    padding: 0 2px;
+    line-height: 1;
+  }
+  .av-dow-time-reset:hover { color: var(--gray-700); }
+  .av-dow-time-default {
+    font-size: 10px;
+    color: var(--gray-300);
+    font-style: italic;
   }
 
   /* Responsive */
