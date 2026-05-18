@@ -136,7 +136,8 @@ def get_schedule_availability(token: str, db: Session = Depends(db_dep)):
         windows = []
         for window in [WindowCode.A, WindowCode.B]:
             if current == today_local:
-                window_end = location.windowA_end if window == WindowCode.A else location.windowB_end
+                from app.api.routes.availability import _get_window_times
+                _, window_end = _get_window_times(location, window, current)
                 cutoff = (datetime.combine(today_local, window_end, tzinfo=tz) - timedelta(hours=1)).time()
                 if now_local.time() >= cutoff:
                     continue
@@ -147,11 +148,8 @@ def get_schedule_availability(token: str, db: Session = Depends(db_dep)):
             )
             if remaining >= required_loads:
                 label = "Morning" if window == WindowCode.A else "Afternoon"
-                time_range = (
-                    f"{location.windowA_start.strftime('%-I:%M %p')}–{location.windowA_end.strftime('%-I:%M %p')}"
-                    if window == WindowCode.A
-                    else f"{location.windowB_start.strftime('%-I:%M %p')}–{location.windowB_end.strftime('%-I:%M %p')}"
-                )
+                from app.api.routes.availability import _fmt_window_range
+                time_range = _fmt_window_range(location, window, current)
                 windows.append({"window": window.value, "label": label, "time_range": time_range})
         if windows:
             days_out.append({"date": str(current), "windows": windows})
@@ -247,11 +245,8 @@ def confirm_schedule(token: str, payload: ConfirmScheduleIn, db: Session = Depen
         if customer:
             date_str = payload.scheduled_date.strftime("%A, %B %d")
             win_label = "Morning" if window == WindowCode.A else "Afternoon"
-            time_range = (
-                f"{location.windowA_start.strftime('%-I:%M %p')}–{location.windowA_end.strftime('%-I:%M %p')}"
-                if window == WindowCode.A
-                else f"{location.windowB_start.strftime('%-I:%M %p')}–{location.windowB_end.strftime('%-I:%M %p')}"
-            )
+            from app.api.routes.availability import _fmt_window_range
+            time_range = _fmt_window_range(location, window, payload.scheduled_date)
             def _fmt_qty(qty):
                 return str(int(qty)) if qty == int(qty) else str(qty)
             def _unit_label(qty, unit):
