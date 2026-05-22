@@ -79,6 +79,14 @@ async def woocommerce_webhook(
         )
     ).scalar_one_or_none()
     if existing:
+        wc_total = payload.get("total")
+        if existing.order_total is None and wc_total:
+            try:
+                existing.order_total = float(wc_total)
+                db.commit()
+                logger.info(f"woocommerce_webhook: backfilled order_total ${wc_total} for drop {existing.id} (order {external_order_id})")
+            except Exception:
+                logger.exception(f"woocommerce_webhook: failed to backfill order_total for drop {existing.id}")
         return {"status": "already_ingested", "drop_id": str(existing.id)}
 
     location = db.execute(
@@ -330,6 +338,14 @@ def js_ingest_order(
         )
     ).scalar_one_or_none()
     if existing:
+        js_total = payload.external_order.total
+        if existing.order_total is None and js_total:
+            try:
+                existing.order_total = float(js_total)
+                db.commit()
+                logger.info(f"js_ingest: backfilled order_total ${js_total} for drop {existing.id} (order {external_order_id})")
+            except Exception:
+                logger.exception(f"js_ingest: failed to backfill order_total for drop {existing.id}")
         return {"status": "already_ingested", "drop_id": str(existing.id)}
 
     location = db.execute(
