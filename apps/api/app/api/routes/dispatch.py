@@ -4,7 +4,7 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, exists
 from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
