@@ -519,6 +519,24 @@ def get_unscheduled_drops(
     db: Session = Depends(db_dep),
 ):
     """Return all drops with no scheduled_date, ordered by creation time."""
+    # Subquery: drop IDs where at least one load exists AND all loads are in terminal states
+    terminal_statuses = [LoadStatus.DELIVERED, LoadStatus.CANCELLED]
+    non_terminal_load = (
+        select(Load.drop_id)
+        .where(
+            Load.tenant_id == user.tenant_id,
+            Load.status.not_in(terminal_statuses),
+        )
+        .correlate(Drop)
+        .scalar_subquery()
+    )
+    has_any_load = (
+        select(Load.drop_id)
+        .where(Load.drop_id == Drop.id, Load.tenant_id == user.tenant_id)
+        .correlate(Drop)
+        .scalar_subquery()
+    )
+
     stmt = (
         select(Drop, Customer, CustomerAddress)
         .join(Customer, Customer.id == Drop.customer_id)
@@ -527,6 +545,17 @@ def get_unscheduled_drops(
             Drop.tenant_id == user.tenant_id,
             Drop.scheduled_date.is_(None),
             Drop.delivery_method == "delivery",
+            # Exclude drops that have loads and all of them are terminal
+            ~(
+                exists(has_any_load) &
+                ~exists(
+                    select(Load.id).where(
+                        Load.drop_id == Drop.id,
+                        Load.tenant_id == user.tenant_id,
+                        Load.status.not_in(terminal_statuses),
+                    )
+                )
+            ),
         )
         .order_by(Drop.created_at.asc())
     )
