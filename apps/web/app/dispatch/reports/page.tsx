@@ -32,6 +32,8 @@ function fmtYards(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 1 }) + ' yd';
 }
 
+type CustomerTypeStat = { count: number; revenue: number; yards: number };
+
 type Summary = {
   order_count: number;
   total_revenue: number;
@@ -41,6 +43,7 @@ type Summary = {
   pickup_count: number;
   yards_by_product: Record<string, number>;
   payment_breakdown: { method: string; count: number; total: number }[];
+  customer_breakdown?: { residential: CustomerTypeStat; commercial: CustomerTypeStat };
 };
 
 const METHOD_LABELS: Record<string, string> = {
@@ -50,6 +53,66 @@ const METHOD_LABELS: Record<string, string> = {
   payment_link: 'Payment Link',
   unknown: 'Unknown',
 };
+
+function CustomerBreakdownSection({
+  breakdown,
+  totalOrders,
+}: {
+  breakdown: { residential: CustomerTypeStat; commercial: CustomerTypeStat };
+  totalOrders: number;
+}) {
+  const res = breakdown.residential;
+  const com = breakdown.commercial;
+  const resPct = totalOrders > 0 ? Math.round(res.count / totalOrders * 100) : 0;
+  const comPct = 100 - resPct;
+
+  const rows = [
+    { key: 'residential', label: 'Residential', icon: '🏠', stat: res, pct: resPct },
+    { key: 'commercial', label: 'Contractor', icon: '🏢', stat: com, pct: comPct },
+  ] as const;
+
+  return (
+    <div className="card rp-section" style={{ marginBottom: 16 }}>
+      <div className="rp-section-head">Residential vs. Contractor</div>
+      <div className="rp-ctype-grid">
+        {rows.map(({ key, label, icon, stat, pct }) => (
+          <div key={key} className={`rp-ctype-card rp-ctype-card--${key}`}>
+            <div className="rp-ctype-header">
+              <span className="rp-ctype-icon">{icon}</span>
+              <span className="rp-ctype-label">{label}</span>
+              <span className="rp-ctype-pct">{pct}%</span>
+            </div>
+            <div className="rp-ctype-stats">
+              <div className="rp-ctype-stat">
+                <div className="rp-ctype-stat-val">{stat.count}</div>
+                <div className="rp-ctype-stat-label">Orders</div>
+              </div>
+              <div className="rp-ctype-stat">
+                <div className="rp-ctype-stat-val">{fmt$(stat.revenue)}</div>
+                <div className="rp-ctype-stat-label">Revenue</div>
+              </div>
+              <div className="rp-ctype-stat">
+                <div className="rp-ctype-stat-val">{fmtYards(stat.yards)}</div>
+                <div className="rp-ctype-stat-label">Yards</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      {totalOrders > 0 && (
+        <div style={{ padding: '0 20px 16px' }}>
+          <div className="rp-split-bar" style={{ height: 10 }}>
+            <div className="rp-ctype-bar-res" style={{ width: `${resPct}%` }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: 'var(--gray-400)', fontWeight: 600 }}>
+            <span>🏠 {resPct}% · {fmt$(res.revenue)}</span>
+            <span>{fmt$(com.revenue)} · {comPct}% 🏢</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function ReportsPage() {
   const today = new Date();
@@ -214,6 +277,11 @@ export default function ReportsPage() {
               }
             </div>
 
+            {/* ── Residential vs Contractor ── */}
+            {summary.customer_breakdown && (
+              <CustomerBreakdownSection breakdown={summary.customer_breakdown} totalOrders={summary.order_count} />
+            )}
+
             {/* ── Delivery vs Pickup + Payment Methods ── */}
             <div className="rp-two-col">
               <div className="card rp-section">
@@ -297,6 +365,21 @@ const styles = `
 .rp-bar-track { height: 8px; border-radius: 4px; background: var(--gray-100); overflow: hidden; }
 .rp-bar-fill { height: 100%; border-radius: 4px; background: var(--brand); transition: width 0.4s; }
 .rp-bar-val { font-size: 13px; font-weight: 700; color: var(--gray-700); text-align: right; }
+
+.rp-ctype-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px 20px 12px; }
+@media (max-width: 600px) { .rp-ctype-grid { grid-template-columns: 1fr; } }
+.rp-ctype-card { border-radius: var(--radius-md); padding: 14px 16px; border: 1px solid var(--border-light); }
+.rp-ctype-card--residential { background: var(--green-25, #f0fdf4); border-color: var(--green-200, #bbf7d0); }
+.rp-ctype-card--commercial { background: #eff6ff; border-color: #bfdbfe; }
+.rp-ctype-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.rp-ctype-icon { font-size: 18px; }
+.rp-ctype-label { font-size: 13px; font-weight: 700; color: var(--gray-700); flex: 1; }
+.rp-ctype-pct { font-size: 13px; font-weight: 800; color: var(--gray-500); }
+.rp-ctype-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.rp-ctype-stat { text-align: center; }
+.rp-ctype-stat-val { font-size: 15px; font-weight: 800; color: var(--gray-900); font-family: var(--font-heading); line-height: 1.2; }
+.rp-ctype-stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gray-400); margin-top: 3px; }
+.rp-ctype-bar-res { height: 100%; border-radius: 4px; background: var(--brand-green, #4a7052); }
 
 .rp-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 640px) { .rp-two-col { grid-template-columns: 1fr; } }
