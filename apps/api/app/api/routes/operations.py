@@ -166,11 +166,18 @@ def summary_report(
     if location_id:
         drop_filters.append(Drop.location_id == location_id)
 
-    drops = db.execute(
-        select(Drop).where(*drop_filters)
-    ).scalars().all()
+    drop_rows = db.execute(
+        select(Drop, Customer).join(Customer, Customer.id == Drop.customer_id).where(*drop_filters)
+    ).all()
 
+    drops = [r[0] for r in drop_rows]
     drop_ids = [d.id for d in drops]
+
+    # Build drop_id → customer_type bucket map
+    drop_to_ctype: dict = {}
+    for drop, customer in drop_rows:
+        ct = customer.customer_type.value if customer.customer_type else None
+        drop_to_ctype[drop.id] = ct if ct in ("residential", "commercial") else "residential"
 
     # Revenue totals
     total_revenue = sum(float(d.order_total) for d in drops if d.order_total is not None)
@@ -190,19 +197,35 @@ def summary_report(
         if d.order_total is not None:
             payment_breakdown[pm]["total"] += float(d.order_total)
 
-    # Yards by product (from loads)
+    # Customer type breakdown — order count and revenue from drops
+    ctype_breakdown: dict[str, dict] = {
+        "residential": {"count": 0, "revenue": 0.0, "yards": 0.0},
+        "commercial": {"count": 0, "revenue": 0.0, "yards": 0.0},
+    }
+    for drop, customer in drop_rows:
+        bucket = drop_to_ctype[drop.id]
+        ctype_breakdown[bucket]["count"] += 1
+        if drop.order_total is not None:
+            ctype_breakdown[bucket]["revenue"] += float(drop.order_total)
+
+    # Single load query — derive both yards_by_product and ctype yards in one pass
     yards_by_product: dict[str, float] = {}
     if drop_ids:
         load_rows = db.execute(
-            select(Load.material_name_snapshot, func.sum(Load.qty))
+            select(Load.drop_id, Load.material_name_snapshot, func.sum(Load.qty))
             .where(
                 Load.tenant_id == user.tenant_id,
                 Load.drop_id.in_(drop_ids),
                 Load.status != LoadStatus.CANCELLED,
             )
-            .group_by(Load.material_name_snapshot)
+            .group_by(Load.drop_id, Load.material_name_snapshot)
         ).all()
-        yards_by_product = {name: float(qty) for name, qty in load_rows if name}
+        for drop_id, name, qty in load_rows:
+            qty_f = float(qty or 0)
+            if name:
+                yards_by_product[name] = yards_by_product.get(name, 0.0) + qty_f
+            bucket = drop_to_ctype.get(drop_id, "residential")
+            ctype_breakdown[bucket]["yards"] += qty_f
 
     total_yards = sum(yards_by_product.values())
 
@@ -220,6 +243,10 @@ def summary_report(
             {"method": k, "count": v["count"], "total": round(v["total"], 2)}
             for k, v in sorted(payment_breakdown.items(), key=lambda x: x[1]["total"], reverse=True)
         ],
+        "customer_breakdown": {
+            k: {"count": v["count"], "revenue": round(v["revenue"], 2), "yards": round(v["yards"], 1)}
+            for k, v in ctype_breakdown.items()
+        },
     }
     
 
