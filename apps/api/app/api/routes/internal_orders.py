@@ -136,6 +136,7 @@ def get_wc_products(
             "shipping_class": p.get("shipping_class", ""),
             "sold_by_yard": meta.get("_sold_by_the_yard") == "yes",
             "unit": unit_map.get(sku, "yard"),
+            "taxable": p.get("tax_status", "taxable") != "none",
             "_sort_order": sort_order_map.get(sku, 9999),
         })
 
