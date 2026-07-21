@@ -26,6 +26,7 @@ type WcProduct = {
   contractor_price: string | null;
   wholesale_price: string | null;
   sold_by_yard: boolean;
+  unit: string;
 };
 
 type SavedCard = {
@@ -70,6 +71,7 @@ type LineItem = {
   name: string;
   quantity: number;
   unit_price: number;
+  unit: string;
   price_overridden?: boolean;
   _qtyDraft?: string;
 };
@@ -101,6 +103,18 @@ function priceForRole(product: WcProduct, role: string | null | undefined): numb
   if (role === 'contractor' && product.contractor_price) return parseFloat(product.contractor_price);
   if (role === 'wholesale' && product.wholesale_price) return parseFloat(product.wholesale_price);
   return parseFloat(product.price || '0');
+}
+
+// Short label for a unit string, e.g. "yard" -> "yd", "cord" -> "cord"
+function unitAbbrev(unit: string | undefined): string {
+  if (!unit) return 'yd';
+  if (unit === 'yard') return 'yd';
+  return unit;
+}
+
+// Whether this unit is exempt from the 3-unit delivery minimum
+function isExemptFromMinimum(unit: string | undefined): boolean {
+  return unit === 'cord';
 }
 
 function roleLabel(role: string | null | undefined) {
@@ -410,7 +424,7 @@ export default function NewOrderPage() {
     const newItems: LineItem[] = [];
     for (const li of history.line_items_raw) {
       const prod = products.find(p => p.id === li.product_id);
-      if (prod) newItems.push({ product_id: prod.id, name: prod.name, quantity: li.quantity, unit_price: priceForRole(prod, wcRole) });
+      if (prod) newItems.push({ product_id: prod.id, name: prod.name, quantity: li.quantity, unit_price: priceForRole(prod, wcRole), unit: prod.unit });
     }
     if (newItems.length > 0) setLineItems(newItems);
   };
@@ -476,8 +490,8 @@ export default function NewOrderPage() {
   const addProduct = (product: WcProduct) => {
     setLineItems(prev => {
       if (prev.find(l => l.product_id === product.id)) return prev;
-      const defaultQty = deliveryMethod === 'pickup' ? 1 : 3;
-      return [...prev, { product_id: product.id, name: product.name, quantity: defaultQty, unit_price: priceForRole(product, wcRole) }];
+      const defaultQty = (deliveryMethod === 'pickup' || isExemptFromMinimum(product.unit)) ? 1 : 3;
+      return [...prev, { product_id: product.id, name: product.name, quantity: defaultQty, unit_price: priceForRole(product, wcRole), unit: product.unit }];
     });
   };
 
@@ -525,7 +539,7 @@ export default function NewOrderPage() {
 
   const subtotal = lineItems.reduce((s, l) => s + l.unit_price * l.quantity, 0);
   const qualifyingDeliveryItems = deliveryMethod === 'delivery'
-    ? lineItems.filter(l => l.quantity >= 3 || overrideDeliveryFee)
+    ? lineItems.filter(l => l.quantity >= 3 || overrideDeliveryFee || isExemptFromMinimum(l.unit))
     : [];
   const baseDeliveryFee = qualifyingDeliveryItems.length > 0 && shipping?.found
     ? parseFloat(shipping.fee || '0') * qualifyingDeliveryItems.length : 0;
@@ -533,7 +547,7 @@ export default function NewOrderPage() {
   const taxAmount = taxExempt ? 0 : subtotal * taxRate;
   const total = subtotal + deliveryFee + taxAmount;
   const totalCents = Math.round(total * 100);
-  const underMinItems = deliveryMethod === 'delivery' ? lineItems.filter(l => l.quantity < 3) : [];
+  const underMinItems = deliveryMethod === 'delivery' ? lineItems.filter(l => l.quantity < 3 && !isExemptFromMinimum(l.unit)) : [];
   const zipOutOfZone = deliveryMethod === 'delivery' && shipping !== null && !shipping.found && addrZip.length >= 5;
 
   const pollForDrop = useCallback(async (wcOrderId: number) => {
@@ -571,8 +585,8 @@ export default function NewOrderPage() {
     const itemRows = lineItems.map(l => `
       <tr>
         <td class="pt-item">${l.name}</td>
-        <td class="pt-item pt-right">${fmtQty(l.quantity)} yd</td>
-        <td class="pt-item pt-right">$${l.unit_price.toFixed(2)}/yd</td>
+        <td class="pt-item pt-right">${l.quantity} ${unitAbbrev(l.unit)}</td>
+        <td class="pt-item pt-right">$${l.unit_price.toFixed(2)}/${unitAbbrev(l.unit)}</td>
         <td class="pt-item pt-right">$${(l.unit_price * l.quantity).toFixed(2)}</td>
       </tr>
     `).join('');
@@ -1318,7 +1332,7 @@ export default function NewOrderPage() {
                       >
                         <span className="no-product-name">{p.name}</span>
                         <span className="no-product-price">
-                          {fmt(priceForRole(p, wcRole))}<span className="no-product-unit">/yd</span>
+                          {fmt(priceForRole(p, wcRole))}<span className="no-product-unit">/{unitAbbrev(p.unit)}</span>
                         </span>
                         {inCart && <span className="no-in-cart-dot">✓</span>}
                       </button>
@@ -1336,20 +1350,20 @@ export default function NewOrderPage() {
               ) : (
                 <div className="no-cart">
                   {lineItems.map(item => {
-                    const underMin = deliveryMethod === 'delivery' && item.quantity < 3;
+                    const underMin = deliveryMethod === 'delivery' && item.quantity < 3 && !isExemptFromMinimum(item.unit);
                     return (
                       <div key={item.product_id} className={`no-cart-row${underMin ? ' under-min' : ''}`}>
                         <div className="no-cart-info">
                           <div className="no-cart-name">{item.name}</div>
                           <div className="no-cart-uprice" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                             <span style={{ color: item.price_overridden ? 'var(--amber-600,#d97706)' : undefined }}>
-                              {fmt(item.unit_price)}/yd
+                              {fmt(item.unit_price)}/{unitAbbrev(item.unit)}
                             </span>
                             {item.price_overridden && (
                               <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--amber-600,#d97706)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>override</span>
                             )}
                           </div>
-                          {underMin && <div className="no-cart-warn">⚠ Under 3 yds — Will Be Pickup</div>}
+                          {underMin && <div className="no-cart-warn">⚠ Under 3 {unitAbbrev(item.unit)}s — Will Be Pickup</div>}
                         </div>
                         <div className="no-qty-wrap">
                           <button className="no-qty-btn" onClick={() => updateQty(item.product_id, (item._qtyDraft !== undefined ? parseFloat(item._qtyDraft) || item.quantity : item.quantity) - qtyStep)}>−</button>
