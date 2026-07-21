@@ -27,6 +27,7 @@ type WcProduct = {
   wholesale_price: string | null;
   sold_by_yard: boolean;
   unit: string;
+  taxable: boolean;
 };
 
 type SavedCard = {
@@ -72,6 +73,7 @@ type LineItem = {
   quantity: number;
   unit_price: number;
   unit: string;
+  taxable: boolean;
   price_overridden?: boolean;
   _qtyDraft?: string;
 };
@@ -424,7 +426,7 @@ export default function NewOrderPage() {
     const newItems: LineItem[] = [];
     for (const li of history.line_items_raw) {
       const prod = products.find(p => p.id === li.product_id);
-      if (prod) newItems.push({ product_id: prod.id, name: prod.name, quantity: li.quantity, unit_price: priceForRole(prod, wcRole), unit: prod.unit });
+      if (prod) newItems.push({ product_id: prod.id, name: prod.name, quantity: li.quantity, unit_price: priceForRole(prod, wcRole), unit: prod.unit, taxable: prod.taxable });
     }
     if (newItems.length > 0) setLineItems(newItems);
   };
@@ -491,7 +493,7 @@ export default function NewOrderPage() {
     setLineItems(prev => {
       if (prev.find(l => l.product_id === product.id)) return prev;
       const defaultQty = (deliveryMethod === 'pickup' || isExemptFromMinimum(product.unit)) ? 1 : 3;
-      return [...prev, { product_id: product.id, name: product.name, quantity: defaultQty, unit_price: priceForRole(product, wcRole), unit: product.unit }];
+      return [...prev, { product_id: product.id, name: product.name, quantity: defaultQty, unit_price: priceForRole(product, wcRole), unit: product.unit, taxable: product.taxable }];
     });
   };
 
@@ -544,7 +546,8 @@ export default function NewOrderPage() {
   const baseDeliveryFee = qualifyingDeliveryItems.length > 0 && shipping?.found
     ? parseFloat(shipping.fee || '0') * qualifyingDeliveryItems.length : 0;
   const deliveryFee = deliveryFeeOverride !== null ? parseFloat(deliveryFeeOverride) || 0 : baseDeliveryFee;
-  const taxAmount = taxExempt ? 0 : subtotal * taxRate;
+  const taxableSubtotal = lineItems.reduce((s, l) => s + (l.taxable ? l.unit_price * l.quantity : 0), 0);
+  const taxAmount = taxExempt ? 0 : taxableSubtotal * taxRate;
   const total = subtotal + deliveryFee + taxAmount;
   const totalCents = Math.round(total * 100);
   const underMinItems = deliveryMethod === 'delivery' ? lineItems.filter(l => l.quantity < 3 && !isExemptFromMinimum(l.unit)) : [];
@@ -1364,6 +1367,7 @@ export default function NewOrderPage() {
                             )}
                           </div>
                           {underMin && <div className="no-cart-warn">⚠ Under 3 {unitAbbrev(item.unit)}s — Will Be Pickup</div>}
+                          {!item.taxable && <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 2 }}>Tax exempt</div>}
                         </div>
                         <div className="no-qty-wrap">
                           <button className="no-qty-btn" onClick={() => updateQty(item.product_id, (item._qtyDraft !== undefined ? parseFloat(item._qtyDraft) || item.quantity : item.quantity) - qtyStep)}>−</button>
