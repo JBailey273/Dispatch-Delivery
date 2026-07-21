@@ -119,6 +119,7 @@ def get_wc_products(
         )
     ).scalars().all()
     sort_order_map = {item.sku: item.sort_order or 0 for item in catalog_items}
+    unit_map = {item.sku: item.unit for item in catalog_items}
 
     result = []
     for p in products:
@@ -134,6 +135,7 @@ def get_wc_products(
             "wholesale_price": meta.get("_wholesale_price"),
             "shipping_class": p.get("shipping_class", ""),
             "sold_by_yard": meta.get("_sold_by_the_yard") == "yes",
+            "unit": unit_map.get(sku, "yard"),
             "_sort_order": sort_order_map.get(sku, 9999),
         })
 
