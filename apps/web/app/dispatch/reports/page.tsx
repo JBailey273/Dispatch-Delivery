@@ -49,6 +49,7 @@ type Summary = {
   yards_by_product: Record<string, number>;
   firewood_by_product: Record<string, { units_sold: number; cords: number }>;
   payment_breakdown: { method: string; count: number; total: number }[];
+  customer_breakdown?: { residential: CustomerTypeStat; commercial: CustomerTypeStat };
 };
 
 const METHOD_LABELS: Record<string, string> = {
