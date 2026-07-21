@@ -36,10 +36,6 @@ function fmtCords(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' cord' + (n === 1 ? '' : 's');
 }
 
-function fmtCords(n: number) {
-  return n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' cord' + (n === 1 ? '' : 's');
-}
-
 type CustomerTypeStat = { count: number; revenue: number; yards: number };
 
 type Summary = {
