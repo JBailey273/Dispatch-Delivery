@@ -32,6 +32,14 @@ function fmtYards(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 1 }) + ' yd';
 }
 
+function fmtCords(n: number) {
+  return n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' cord' + (n === 1 ? '' : 's');
+}
+
+function fmtCords(n: number) {
+  return n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' cord' + (n === 1 ? '' : 's');
+}
+
 type CustomerTypeStat = { count: number; revenue: number; yards: number };
 
 type Summary = {
@@ -39,11 +47,12 @@ type Summary = {
   total_revenue: number;
   cash_total: number;
   total_yards: number;
+  total_cords: number;
   delivery_count: number;
   pickup_count: number;
   yards_by_product: Record<string, number>;
+  firewood_by_product: Record<string, { units_sold: number; cords: number }>;
   payment_breakdown: { method: string; count: number; total: number }[];
-  customer_breakdown?: { residential: CustomerTypeStat; commercial: CustomerTypeStat };
 };
 
 const METHOD_LABELS: Record<string, string> = {
@@ -276,6 +285,26 @@ export default function ReportsPage() {
                     ))
               }
             </div>
+
+            {/* ── Firewood ── */}
+            {Object.keys(summary.firewood_by_product).length > 0 && (
+              <div className="card rp-section">
+                <div className="rp-section-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Firewood</span>
+                  <span style={{ fontWeight: 800, color: 'var(--gray-900)' }}>{fmtCords(summary.total_cords)} total</span>
+                </div>
+                {Object.entries(summary.firewood_by_product)
+                  .sort(([, a], [, b]) => b.cords - a.cords)
+                  .map(([name, data]) => (
+                    <div key={name} className="rp-bar-row" style={{ gridTemplateColumns: '1fr auto' }}>
+                      <div className="rp-bar-label">{name}</div>
+                      <div className="rp-bar-val" style={{ textAlign: 'right' }}>
+                        {data.units_sold} sold · {fmtCords(data.cords)}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
 
             {/* ── Residential vs Contractor ── */}
             {summary.customer_breakdown && (
