@@ -36,7 +36,7 @@ function fmtCords(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' cord' + (n === 1 ? '' : 's');
 }
 
-type CustomerTypeStat = { count: number; revenue: number; yards: number };
+type CustomerTypeStat = { count: number; revenue: number; yards: number; deliveries: number; pickups: number };
 
 type Summary = {
   order_count: number;
@@ -105,6 +105,11 @@ function CustomerBreakdownSection({
                 <div className="rp-ctype-stat-val">{fmtYards(stat.yards)}</div>
                 <div className="rp-ctype-stat-label">Yards</div>
               </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6, padding: '0 16px 14px', fontSize: 11, fontWeight: 600, color: 'var(--gray-500)' }}>
+              <span>🚚 {stat.deliveries} delivery</span>
+              <span>·</span>
+              <span>🏪 {stat.pickups} pickup</span>
             </div>
           </div>
         ))}
