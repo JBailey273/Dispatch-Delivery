@@ -197,16 +197,20 @@ def summary_report(
         if d.order_total is not None:
             payment_breakdown[pm]["total"] += float(d.order_total)
 
-    # Customer type breakdown — order count and revenue from drops
+    # Customer type breakdown — order count, revenue, and delivery/pickup split
     ctype_breakdown: dict[str, dict] = {
-        "residential": {"count": 0, "revenue": 0.0, "yards": 0.0},
-        "commercial": {"count": 0, "revenue": 0.0, "yards": 0.0},
+        "residential": {"count": 0, "revenue": 0.0, "yards": 0.0, "deliveries": 0, "pickups": 0},
+        "commercial": {"count": 0, "revenue": 0.0, "yards": 0.0, "deliveries": 0, "pickups": 0},
     }
     for drop, customer in drop_rows:
         bucket = drop_to_ctype[drop.id]
         ctype_breakdown[bucket]["count"] += 1
         if drop.order_total is not None:
             ctype_breakdown[bucket]["revenue"] += float(drop.order_total)
+        if drop.delivery_method == "delivery":
+            ctype_breakdown[bucket]["deliveries"] += 1
+        elif drop.delivery_method == "pickup":
+            ctype_breakdown[bucket]["pickups"] += 1
 
     # Firewood is sold in fractional-cord units priced separately (e.g. a
     # "1/2 Cord Firewood" line item), so raw units sold != cords sold.
@@ -266,6 +270,8 @@ def summary_report(
                 "count": data["count"],
                 "revenue": round(data["revenue"], 2),
                 "yards": round(data["yards"], 1),
+                "deliveries": data["deliveries"],
+                "pickups": data["pickups"],
             }
             for bucket, data in ctype_breakdown.items()
         },
