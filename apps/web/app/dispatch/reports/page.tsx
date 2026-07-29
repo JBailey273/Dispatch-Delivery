@@ -72,6 +72,10 @@ function CustomerBreakdownSection({
   const resPct = totalOrders > 0 ? Math.round(res.count / totalOrders * 100) : 0;
   const comPct = 100 - resPct;
 
+  const totalRevenue = res.revenue + com.revenue;
+  const resRevPct = totalRevenue > 0 ? Math.round(res.revenue / totalRevenue * 100) : 0;
+  const comRevPct = 100 - resRevPct;
+
   const rows = [
     { key: 'residential', label: 'Residential', icon: '🏠', stat: res, pct: resPct },
     { key: 'commercial', label: 'Contractor', icon: '🏢', stat: com, pct: comPct },
@@ -86,7 +90,7 @@ function CustomerBreakdownSection({
             <div className="rp-ctype-header">
               <span className="rp-ctype-icon">{icon}</span>
               <span className="rp-ctype-label">{label}</span>
-              <span className="rp-ctype-pct">{pct}%</span>
+              <span className="rp-ctype-pct">{pct}% of orders</span>
             </div>
             <div className="rp-ctype-stats">
               <div className="rp-ctype-stat">
@@ -107,12 +111,26 @@ function CustomerBreakdownSection({
       </div>
       {totalOrders > 0 && (
         <div style={{ padding: '0 20px 16px' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--gray-400)', marginBottom: 5 }}>
+            Order Split
+          </div>
           <div className="rp-split-bar" style={{ height: 10 }}>
             <div className="rp-ctype-bar-res" style={{ width: `${resPct}%` }} />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: 'var(--gray-400)', fontWeight: 600 }}>
-            <span>🏠 {resPct}% · {fmt$(res.revenue)}</span>
-            <span>{fmt$(com.revenue)} · {comPct}% 🏢</span>
+            <span>🏠 {resPct}% · {res.count} orders</span>
+            <span>{com.count} orders · {comPct}% 🏢</span>
+          </div>
+
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--gray-400)', margin: '16px 0 5px' }}>
+            Revenue Split
+          </div>
+          <div className="rp-split-bar" style={{ height: 10 }}>
+            <div className="rp-ctype-bar-res" style={{ width: `${resRevPct}%` }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: 'var(--gray-400)', fontWeight: 600 }}>
+            <span>🏠 {resRevPct}% · {fmt$(res.revenue)}</span>
+            <span>{fmt$(com.revenue)} · {comRevPct}% 🏢</span>
           </div>
         </div>
       )}
