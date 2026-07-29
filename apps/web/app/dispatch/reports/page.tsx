@@ -106,11 +106,21 @@ function CustomerBreakdownSection({
                 <div className="rp-ctype-stat-label">Yards</div>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 6, padding: '0 16px 14px', fontSize: 11, fontWeight: 600, color: 'var(--gray-500)' }}>
-              <span>🚚 {stat.deliveries} delivery</span>
-              <span>·</span>
-              <span>🏪 {stat.pickups} pickup</span>
-            </div>
+            {(() => {
+              const dpTotal = stat.deliveries + stat.pickups;
+              const dPct = dpTotal > 0 ? Math.round(stat.deliveries / dpTotal * 100) : 0;
+              return (
+                <div className="rp-ctype-dp">
+                  <div className="rp-ctype-dp-bar">
+                    <div className="rp-ctype-dp-fill" style={{ width: `${dPct}%` }} />
+                  </div>
+                  <div className="rp-ctype-dp-legend">
+                    <span>🚚 {stat.deliveries}</span>
+                    <span>{stat.pickups} 🏪</span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         ))}
       </div>
@@ -429,6 +439,11 @@ const styles = `
 .rp-ctype-stat-val { font-size: 15px; font-weight: 800; color: var(--gray-900); font-family: var(--font-heading); line-height: 1.2; }
 .rp-ctype-stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gray-400); margin-top: 3px; }
 .rp-ctype-bar-res { height: 100%; border-radius: 4px; background: var(--brand-green, #4a7052); }
+
+.rp-ctype-dp { padding: 0 16px 14px; }
+.rp-ctype-dp-bar { height: 6px; border-radius: 3px; background: var(--gray-200, #e5e7eb); overflow: hidden; }
+.rp-ctype-dp-fill { height: 100%; border-radius: 3px; background: var(--brand); transition: width 0.4s; }
+.rp-ctype-dp-legend { display: flex; justify-content: space-between; margin-top: 4px; font-size: 10px; font-weight: 700; color: var(--gray-400); }
 
 .rp-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 640px) { .rp-two-col { grid-template-columns: 1fr; } }
