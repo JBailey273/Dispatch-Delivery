@@ -216,31 +216,36 @@ def summary_report(
         "1 Cord Firewood": 1.0,
     }
 
-    # Yards by product (from loads) — firewood/cord items are split out separately
+    # Yards/cords by product (from loads) — grouped in Python (not SQL) so we
+    # can also attribute non-cord yardage to the residential/commercial bucket
+    # of the drop it belongs to, for the customer-type breakdown below.
     yards_by_product: dict[str, float] = {}
     firewood_by_product: dict[str, dict] = {}
     total_cords = 0.0
     if drop_ids:
         load_rows = db.execute(
-            select(Load.material_name_snapshot, Load.unit, func.sum(Load.qty))
+            select(Load.drop_id, Load.material_name_snapshot, Load.unit, Load.qty)
             .where(
                 Load.tenant_id == user.tenant_id,
                 Load.drop_id.in_(drop_ids),
                 Load.status != LoadStatus.CANCELLED,
             )
-            .group_by(Load.material_name_snapshot, Load.unit)
         ).all()
-        for name, unit, qty_sum in load_rows:
+        for load_drop_id, name, unit, qty in load_rows:
             if not name:
                 continue
-            qty_sum = float(qty_sum)
+            qty = float(qty)
             if unit == "cord":
                 factor = FIREWOOD_CORD_FACTORS.get(name, 1.0)
-                cords = qty_sum * factor
-                firewood_by_product[name] = {"units_sold": qty_sum, "cords": round(cords, 2)}
+                cords = qty * factor
+                entry = firewood_by_product.setdefault(name, {"units_sold": 0.0, "cords": 0.0})
+                entry["units_sold"] += qty
+                entry["cords"] = round(entry["cords"] + cords, 2)
                 total_cords += cords
             else:
-                yards_by_product[name] = yards_by_product.get(name, 0.0) + qty_sum
+                yards_by_product[name] = yards_by_product.get(name, 0.0) + qty
+                bucket = drop_to_ctype.get(load_drop_id, "residential")
+                ctype_breakdown[bucket]["yards"] += qty
 
     total_yards = sum(yards_by_product.values())
 
@@ -256,6 +261,14 @@ def summary_report(
         "pickup_count": pickup_count,
         "yards_by_product": yards_by_product,
         "firewood_by_product": firewood_by_product,
+        "customer_breakdown": {
+            bucket: {
+                "count": data["count"],
+                "revenue": round(data["revenue"], 2),
+                "yards": round(data["yards"], 1),
+            }
+            for bucket, data in ctype_breakdown.items()
+        },
         "payment_breakdown": [
             {"method": k, "count": v["count"], "total": round(v["total"], 2)}
             for k, v in sorted(payment_breakdown.items(), key=lambda x: x[1]["total"], reverse=True)
