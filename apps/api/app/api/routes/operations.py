@@ -282,6 +282,214 @@ def summary_report(
     }
     
 
+@router.get("/reports/seasonal")
+def seasonal_report(
+    start_date: date,
+    end_date: date,
+    location_id: str | None = Query(default=None),
+    mode: str = Query(default="fulfilled"),  # "fulfilled" = when the work happened, "booked" = when the order came in
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)),
+    db: Session = Depends(db_dep),
+):
+    """Season planning rollups: weekly trend, day-of-week pattern, product
+    volume by month, and staffing signals. Read-only; uses the same drop scope
+    and revenue/yard rules as /reports/summary (firewood cords excluded from
+    yards, Quick Drops count toward yards but not revenue)."""
+    _date_range(start_date, end_date)
+    start_dt = datetime.combine(start_date, time.min, tzinfo=EASTERN)
+    end_dt = datetime.combine(end_date, time.max, tzinfo=EASTERN)
+
+    if mode == "fulfilled":
+        drop_filters = [
+            Drop.tenant_id == user.tenant_id,
+            Drop.status != "cancelled",
+            or_(
+                and_(Drop.delivery_method == "delivery", Drop.scheduled_date >= start_date, Drop.scheduled_date <= end_date),
+                and_(Drop.delivery_method == "pickup", Drop.fulfilled_at >= start_dt, Drop.fulfilled_at <= end_dt),
+            ),
+        ]
+    else:
+        drop_filters = [
+            Drop.tenant_id == user.tenant_id,
+            Drop.created_at >= start_dt,
+            Drop.created_at <= end_dt,
+            Drop.status != "cancelled",
+        ]
+    if location_id:
+        drop_filters.append(Drop.location_id == location_id)
+
+    drops = db.execute(select(Drop).where(*drop_filters)).scalars().all()
+
+    def to_eastern(dt: datetime) -> datetime:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(EASTERN)
+
+    def activity_day(d: Drop) -> date | None:
+        if mode == "fulfilled":
+            if d.delivery_method == "pickup":
+                return to_eastern(d.fulfilled_at).date() if d.fulfilled_at else None
+            return d.scheduled_date
+        return to_eastern(d.created_at).date() if d.created_at else None
+
+    def week_start(d: date) -> date:
+        return d - timedelta(days=d.weekday())
+
+    # ── Per-day drop rollup ──
+    per_day: dict[date, dict] = defaultdict(lambda: {"revenue": 0.0, "yards": 0.0, "orders": 0, "deliveries": 0, "pickups": 0})
+    drop_day: dict = {}
+    drop_method: dict = {}
+    pickups_by_hour: dict[int, int] = defaultdict(int)
+    for d in drops:
+        day = activity_day(d)
+        if day is None:
+            continue
+        drop_day[d.id] = day
+        drop_method[d.id] = d.delivery_method
+        bucket = per_day[day]
+        bucket["orders"] += 1
+        if d.order_total is not None:
+            bucket["revenue"] += float(d.order_total)
+        if d.delivery_method == "delivery":
+            bucket["deliveries"] += 1
+        elif d.delivery_method == "pickup":
+            bucket["pickups"] += 1
+            if d.fulfilled_at:
+                pickups_by_hour[to_eastern(d.fulfilled_at).hour] += 1
+
+    # ── Loads: yards by product + delivery staffing ──
+    load_rows = []
+    if drop_day:
+        load_rows = db.execute(
+            select(Load.drop_id, Load.material_name_snapshot, Load.unit, Load.qty, Load.route_date, Load.route_window, Load.driver_user_id)
+            .where(
+                Load.tenant_id == user.tenant_id,
+                Load.drop_id.in_(list(drop_day.keys())),
+                Load.status != LoadStatus.CANCELLED,
+            )
+        ).all()
+
+    product_month: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    product_week: dict[str, dict[date, float]] = defaultdict(lambda: defaultdict(float))
+    delivery_days: dict[date, dict] = defaultdict(lambda: {"loads": 0, "assigned": 0, "drivers": set()})
+    window_split = {"A": 0, "B": 0}
+    unassigned_loads = 0
+    for load_drop_id, name, unit, qty, route_date, route_window, driver_id in load_rows:
+        day = drop_day.get(load_drop_id)
+        if name and unit != "cord" and day is not None:
+            q = float(qty)
+            per_day[day]["yards"] += q
+            product_month[name][day.strftime("%Y-%m")] += q
+            product_week[name][week_start(day)] += q
+        if drop_method.get(load_drop_id) == "delivery" and route_date and start_date <= route_date <= end_date:
+            s = delivery_days[route_date]
+            s["loads"] += 1
+            if driver_id:
+                s["assigned"] += 1
+                s["drivers"].add(driver_id)
+            else:
+                unassigned_loads += 1
+            wcode = route_window.value if route_window else None
+            if wcode in window_split:
+                window_split[wcode] += 1
+
+    active_days = sorted(per_day.keys())
+
+    # ── Weekly trend (first active week → last active week, zero-filled) ──
+    weeks = []
+    if active_days:
+        wk = week_start(active_days[0])
+        last_wk = week_start(active_days[-1])
+        while wk <= last_wk:
+            row = {"week_start": str(wk), "revenue": 0.0, "yards": 0.0, "orders": 0, "deliveries": 0, "pickups": 0, "loads": 0}
+            for i in range(7):
+                day = wk + timedelta(days=i)
+                v = per_day.get(day)
+                if v:
+                    for k in ("revenue", "yards", "orders", "deliveries", "pickups"):
+                        row[k] += v[k]
+                dd = delivery_days.get(day)
+                if dd:
+                    row["loads"] += dd["loads"]
+            row["revenue"] = round(row["revenue"], 2)
+            row["yards"] = round(row["yards"], 1)
+            weeks.append(row)
+            wk += timedelta(days=7)
+
+    # ── Day-of-week averages (per open day, so closed days don't drag the average) ──
+    weekday = []
+    for i, label in enumerate(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]):
+        rows = [per_day[d] for d in active_days if d.weekday() == i]
+        n = len(rows)
+        weekday.append({
+            "dow": i,
+            "label": label,
+            "open_days": n,
+            "avg_orders": round(sum(r["orders"] for r in rows) / n, 1) if n else 0,
+            "avg_yards": round(sum(r["yards"] for r in rows) / n, 1) if n else 0,
+            "avg_revenue": round(sum(r["revenue"] for r in rows) / n, 2) if n else 0,
+        })
+
+    # ── Product volume by month + peak week ──
+    months = sorted({m for by_month in product_month.values() for m in by_month})
+    products = []
+    for name, by_month in product_month.items():
+        peak_wk, peak_val = max(product_week[name].items(), key=lambda x: x[1])
+        products.append({
+            "product": name,
+            "total_yards": round(sum(by_month.values()), 1),
+            "by_month": {m: round(by_month.get(m, 0.0), 1) for m in months},
+            "peak_week_start": str(peak_wk),
+            "peak_week_yards": round(peak_val, 1),
+        })
+    products.sort(key=lambda p: p["total_yards"], reverse=True)
+
+    # ── Staffing signals ──
+    dd_items = sorted(delivery_days.items())
+    total_delivery_loads = sum(v["loads"] for _, v in dd_items)
+    peak_load_day = max(dd_items, key=lambda x: x[1]["loads"]) if dd_items else None
+    staffed = [v for _, v in dd_items if v["drivers"]]
+    driver_day_count = sum(len(v["drivers"]) for v in staffed)
+    pickup_days = [(d, per_day[d]["pickups"]) for d in active_days if per_day[d]["pickups"] > 0]
+    peak_pickup_day = max(pickup_days, key=lambda x: x[1]) if pickup_days else None
+
+    return {
+        "start_date": str(start_date),
+        "end_date": str(end_date),
+        "mode": mode,
+        "totals": {
+            "revenue": round(sum(v["revenue"] for v in per_day.values()), 2),
+            "yards": round(sum(v["yards"] for v in per_day.values()), 1),
+            "orders": sum(v["orders"] for v in per_day.values()),
+            "deliveries": sum(v["deliveries"] for v in per_day.values()),
+            "pickups": sum(v["pickups"] for v in per_day.values()),
+            "open_days": len(active_days),
+        },
+        "weeks": weeks,
+        "days": [
+            {"date": str(d), "revenue": round(per_day[d]["revenue"], 2), "yards": round(per_day[d]["yards"], 1), "orders": per_day[d]["orders"], "deliveries": per_day[d]["deliveries"], "pickups": per_day[d]["pickups"]}
+            for d in active_days
+        ],
+        "weekday": weekday,
+        "months": months,
+        "products": products,
+        "staffing": {
+            "delivery_days": len(dd_items),
+            "avg_loads_per_delivery_day": round(total_delivery_loads / len(dd_items), 1) if dd_items else 0,
+            "peak_load_day": {"date": str(peak_load_day[0]), "loads": peak_load_day[1]["loads"]} if peak_load_day else None,
+            "avg_drivers_per_day": round(driver_day_count / len(staffed), 1) if staffed else 0,
+            "avg_loads_per_driver_day": round(sum(v["assigned"] for v in staffed) / driver_day_count, 1) if driver_day_count else 0,
+            "unassigned_loads": unassigned_loads,
+            "total_delivery_loads": total_delivery_loads,
+            "window_split": window_split,
+            "pickup_days": len(pickup_days),
+            "avg_pickups_per_pickup_day": round(sum(c for _, c in pickup_days) / len(pickup_days), 1) if pickup_days else 0,
+            "peak_pickup_day": {"date": str(peak_pickup_day[0]), "pickups": peak_pickup_day[1]} if peak_pickup_day else None,
+            "pickups_by_hour": [{"hour": h, "count": pickups_by_hour[h]} for h in sorted(pickups_by_hour)],
+        },
+    }
+
+
 @router.get("/reports/throughput")
 def throughput_report(start_date: date, end_date: date, window: WindowCode | None = Query(default=None), driver_user_id: str | None = Query(default=None), material: str | None = Query(default=None), location_id: str | None = Query(default=None), user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)), db: Session = Depends(db_dep)):
     _date_range(start_date, end_date)
