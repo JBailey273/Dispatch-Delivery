@@ -490,6 +490,226 @@ def seasonal_report(
     }
 
 
+@router.get("/reports/contractors")
+def contractor_report(
+    start_date: date,
+    end_date: date,
+    location_id: str | None = Query(default=None),
+    mode: str = Query(default="booked"),  # same meaning as /reports/summary
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)),
+    db: Session = Depends(db_dep),
+):
+    """Contractor account report: order volume, materials, and spend per
+    account. Contractor = customer_type commercial OR is_contractor. Range
+    metrics follow the same drop scope as /reports/summary; first/last order
+    dates are all-time. Read-only."""
+    _date_range(start_date, end_date)
+    start_dt = datetime.combine(start_date, time.min, tzinfo=EASTERN)
+    end_dt = datetime.combine(end_date, time.max, tzinfo=EASTERN)
+
+    if mode == "fulfilled":
+        drop_filters = [
+            Drop.tenant_id == user.tenant_id,
+            Drop.status != "cancelled",
+            or_(
+                and_(Drop.delivery_method == "delivery", Drop.scheduled_date >= start_date, Drop.scheduled_date <= end_date),
+                and_(Drop.delivery_method == "pickup", Drop.fulfilled_at >= start_dt, Drop.fulfilled_at <= end_dt),
+            ),
+        ]
+    else:
+        drop_filters = [
+            Drop.tenant_id == user.tenant_id,
+            Drop.created_at >= start_dt,
+            Drop.created_at <= end_dt,
+            Drop.status != "cancelled",
+        ]
+    if location_id:
+        drop_filters.append(Drop.location_id == location_id)
+
+    rows = db.execute(select(Drop, Customer).join(Customer, Customer.id == Drop.customer_id).where(*drop_filters)).all()
+
+    def is_contractor(c: Customer) -> bool:
+        return bool(c.is_contractor) or (c.customer_type is not None and c.customer_type.value == "commercial")
+
+    def to_eastern_date(dt: datetime | None) -> date | None:
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(EASTERN).date()
+
+    def activity_day(d: Drop) -> date | None:
+        if mode == "fulfilled":
+            return to_eastern_date(d.fulfilled_at) if d.delivery_method == "pickup" else d.scheduled_date
+        return to_eastern_date(d.created_at)
+
+    def week_start(d: date) -> date:
+        return d - timedelta(days=d.weekday())
+
+    drop_info: dict = {}  # drop_id -> (segment, customer_id, day)
+    customers: dict = {}
+    seg_tot = {s: {"orders": 0, "yards": 0.0, "revenue": 0.0, "deliveries": 0, "pickups": 0} for s in ("contractor", "residential")}
+    acct: dict = defaultdict(lambda: {"orders": 0, "yards": 0.0, "revenue": 0.0, "deliveries": 0, "pickups": 0, "products": defaultdict(float)})
+    weekday_orders = [0] * 7
+    for d, c in rows:
+        seg = "contractor" if is_contractor(c) else "residential"
+        day = activity_day(d)
+        drop_info[d.id] = (seg, c.id, day)
+        t = seg_tot[seg]
+        t["orders"] += 1
+        if d.order_total is not None:
+            t["revenue"] += float(d.order_total)
+        if d.delivery_method == "delivery":
+            t["deliveries"] += 1
+        elif d.delivery_method == "pickup":
+            t["pickups"] += 1
+        if seg == "contractor":
+            customers[c.id] = c
+            a = acct[c.id]
+            a["orders"] += 1
+            if d.order_total is not None:
+                a["revenue"] += float(d.order_total)
+            if d.delivery_method == "delivery":
+                a["deliveries"] += 1
+            elif d.delivery_method == "pickup":
+                a["pickups"] += 1
+            if day:
+                weekday_orders[day.weekday()] += 1
+
+    # Yards (firewood cords excluded, same as summary)
+    product_seg: dict[str, dict[str, float]] = defaultdict(lambda: {"contractor": 0.0, "residential": 0.0})
+    week_seg: dict[date, dict] = defaultdict(lambda: {"contractor_yards": 0.0, "residential_yards": 0.0, "contractor_revenue": 0.0})
+    weekday_yards = [0.0] * 7
+    window_split = {"A": 0, "B": 0}
+    if drop_info:
+        load_rows = db.execute(
+            select(Load.drop_id, Load.material_name_snapshot, Load.unit, Load.qty, Load.route_window)
+            .where(Load.tenant_id == user.tenant_id, Load.drop_id.in_(list(drop_info.keys())), Load.status != LoadStatus.CANCELLED)
+        ).all()
+        for drop_id, name, unit, qty, route_window in load_rows:
+            seg, cust_id, day = drop_info[drop_id]
+            if seg == "contractor" and route_window and route_window.value in window_split:
+                window_split[route_window.value] += 1
+            if not name or unit == "cord":
+                continue
+            q = float(qty)
+            seg_tot[seg]["yards"] += q
+            product_seg[name][seg] += q
+            if day:
+                week_seg[week_start(day)][f"{seg}_yards"] += q
+            if seg == "contractor":
+                acct[cust_id]["yards"] += q
+                acct[cust_id]["products"][name] += q
+                if day:
+                    weekday_yards[day.weekday()] += q
+    for d, c in rows:
+        seg, _, day = drop_info[d.id]
+        if seg == "contractor" and day and d.order_total is not None:
+            week_seg[week_start(day)]["contractor_revenue"] += float(d.order_total)
+
+    # All-time account history: first and last order dates
+    history: dict = {}
+    if customers:
+        hist_rows = db.execute(
+            select(Drop.customer_id, func.min(Drop.created_at), func.max(Drop.created_at))
+            .where(Drop.tenant_id == user.tenant_id, Drop.customer_id.in_(list(customers.keys())), Drop.status != "cancelled")
+            .group_by(Drop.customer_id)
+        ).all()
+        for cid, first_at, last_at in hist_rows:
+            history[cid] = (to_eastern_date(first_at), to_eastern_date(last_at))
+
+    today_et = now_utc().astimezone(EASTERN).date()
+    con_yards = seg_tot["contractor"]["yards"]
+    accounts = []
+    for cid, a in acct.items():
+        c = customers[cid]
+        first_d, last_d = history.get(cid, (None, None))
+        materials = sorted(a["products"].items(), key=lambda x: x[1], reverse=True)
+        accounts.append({
+            "customer_id": str(cid),
+            "name": (c.company_name or "").strip() or c.name,
+            "contact": c.name,
+            "phone": c.phone_e164,
+            "orders": a["orders"],
+            "yards": round(a["yards"], 1),
+            "revenue": round(a["revenue"], 2),
+            "avg_order_yards": round(a["yards"] / a["orders"], 1) if a["orders"] else 0,
+            "avg_order_value": round(a["revenue"] / a["orders"], 2) if a["orders"] else 0,
+            "share_of_contractor_yards": round(a["yards"] / con_yards * 100, 1) if con_yards else 0,
+            "deliveries": a["deliveries"],
+            "pickups": a["pickups"],
+            "materials": [
+                {"product": p, "yards": round(q, 1), "share": round(q / a["yards"] * 100, 1) if a["yards"] else 0}
+                for p, q in materials
+            ],
+            "first_order_date": str(first_d) if first_d else None,
+            "last_order_date": str(last_d) if last_d else None,
+            "days_since_last_order": (today_et - last_d).days if last_d else None,
+            "is_new": bool(first_d and start_date <= first_d <= end_date),
+        })
+    accounts.sort(key=lambda x: x["yards"], reverse=True)
+
+    def seg_out(s: str) -> dict:
+        t = seg_tot[s]
+        return {
+            "orders": t["orders"],
+            "yards": round(t["yards"], 1),
+            "revenue": round(t["revenue"], 2),
+            "deliveries": t["deliveries"],
+            "pickups": t["pickups"],
+            "avg_order_yards": round(t["yards"] / t["orders"], 1) if t["orders"] else 0,
+            "avg_order_value": round(t["revenue"] / t["orders"], 2) if t["orders"] else 0,
+        }
+
+    all_yards = seg_tot["contractor"]["yards"] + seg_tot["residential"]["yards"]
+    all_rev = seg_tot["contractor"]["revenue"] + seg_tot["residential"]["revenue"]
+    all_orders = seg_tot["contractor"]["orders"] + seg_tot["residential"]["orders"]
+    weeks = []
+    if week_seg:
+        wk, last_wk = min(week_seg), max(week_seg)
+        while wk <= last_wk:
+            v = week_seg.get(wk, {"contractor_yards": 0.0, "residential_yards": 0.0, "contractor_revenue": 0.0})
+            weeks.append({"week_start": str(wk), **{k: round(x, 1 if k.endswith("yards") else 2) for k, x in v.items()}})
+            wk += timedelta(days=7)
+
+    return {
+        "start_date": str(start_date),
+        "end_date": str(end_date),
+        "mode": mode,
+        "contractor": seg_out("contractor"),
+        "residential": seg_out("residential"),
+        "share": {
+            "yards": round(con_yards / all_yards * 100, 1) if all_yards else 0,
+            "revenue": round(seg_tot["contractor"]["revenue"] / all_rev * 100, 1) if all_rev else 0,
+            "orders": round(seg_tot["contractor"]["orders"] / all_orders * 100, 1) if all_orders else 0,
+        },
+        "accounts_active": len(accounts),
+        "accounts_new": sum(1 for a in accounts if a["is_new"]),
+        "top5_share_of_contractor_yards": round(sum(a["yards"] for a in accounts[:5]) / con_yards * 100, 1) if con_yards else 0,
+        "avg_spend_per_account": round(seg_tot["contractor"]["revenue"] / len(accounts), 2) if accounts else 0,
+        "accounts": accounts,
+        "products": sorted(
+            [
+                {
+                    "product": p,
+                    "contractor_yards": round(v["contractor"], 1),
+                    "residential_yards": round(v["residential"], 1),
+                    "contractor_share": round(v["contractor"] / (v["contractor"] + v["residential"]) * 100, 1) if (v["contractor"] + v["residential"]) else 0,
+                }
+                for p, v in product_seg.items()
+            ],
+            key=lambda x: x["contractor_yards"],
+            reverse=True,
+        ),
+        "weeks": weeks,
+        "weekday": [
+            {"label": lbl, "orders": weekday_orders[i], "yards": round(weekday_yards[i], 1)}
+            for i, lbl in enumerate(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
+        ],
+        "window_split": window_split,
+    }
+
+
 @router.get("/reports/throughput")
 def throughput_report(start_date: date, end_date: date, window: WindowCode | None = Query(default=None), driver_user_id: str | None = Query(default=None), material: str | None = Query(default=None), location_id: str | None = Query(default=None), user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)), db: Session = Depends(db_dep)):
     _date_range(start_date, end_date)
