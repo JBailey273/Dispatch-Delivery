@@ -153,18 +153,341 @@ function CustomerBreakdownSection({
   );
 }
 
+// ── Season view ────────────────────────────────────────────────
+
+type SeasonMetric = 'revenue' | 'yards' | 'orders';
+type SeasonWeek = { week_start: string; revenue: number; yards: number; orders: number; deliveries: number; pickups: number; loads: number };
+type SeasonDay = { date: string; revenue: number; yards: number; orders: number; deliveries: number; pickups: number };
+type Season = {
+  totals: { revenue: number; yards: number; orders: number; deliveries: number; pickups: number; open_days: number };
+  weeks: SeasonWeek[];
+  days: SeasonDay[];
+  weekday: { dow: number; label: string; open_days: number; avg_orders: number; avg_yards: number; avg_revenue: number }[];
+  months: string[];
+  products: { product: string; total_yards: number; by_month: Record<string, number>; peak_week_start: string; peak_week_yards: number }[];
+  staffing: {
+    delivery_days: number;
+    avg_loads_per_delivery_day: number;
+    peak_load_day: { date: string; loads: number } | null;
+    avg_drivers_per_day: number;
+    avg_loads_per_driver_day: number;
+    unassigned_loads: number;
+    total_delivery_loads: number;
+    window_split: { A: number; B: number };
+    pickup_days: number;
+    avg_pickups_per_pickup_day: number;
+    peak_pickup_day: { date: string; pickups: number } | null;
+    pickups_by_hour: { hour: number; count: number }[];
+  };
+};
+
+// Parse YYYY-MM-DD as a local calendar date (avoids UTC day-shift)
+function parseKey(k: string) {
+  const [y, m, d] = k.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function addDaysKey(k: string, n: number) {
+  const d = parseKey(k);
+  d.setDate(d.getDate() + n);
+  return toKey(d);
+}
+
+function fmtShortDate(k: string) {
+  return parseKey(k).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function fmtCompact$(n: number) {
+  if (n >= 1000) return '$' + (n / 1000).toLocaleString('en-US', { maximumFractionDigits: n >= 100000 ? 0 : 1 }) + 'k';
+  return '$' + Math.round(n).toLocaleString('en-US');
+}
+
+function fmtMetric(m: SeasonMetric, n: number) {
+  if (m === 'revenue') return fmt$(n);
+  if (m === 'yards') return fmtYards(n);
+  return `${n.toLocaleString('en-US', { maximumFractionDigits: 1 })} orders`;
+}
+
+function fmtHour(h: number) {
+  return `${h % 12 === 0 ? 12 : h % 12}${h < 12 ? 'a' : 'p'}`;
+}
+
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function SeasonSection({ data }: { data: Season }) {
+  const [metric, setMetric] = useState<SeasonMetric>('yards');
+  const [detail, setDetail] = useState<{ key: string; text: string } | null>(null);
+  const [showAllProducts, setShowAllProducts] = useState(false);
+
+  if (data.weeks.length === 0) {
+    return <div className="card rp-section"><p className="rp-empty">No orders in this range.</p></div>;
+  }
+
+  const avgKey = metric === 'revenue' ? 'avg_revenue' : metric === 'yards' ? 'avg_yards' : 'avg_orders';
+  const maxWeek = Math.max(...data.weeks.map(w => w[metric]), 1);
+  const rankedWeeks = [...data.weeks].sort((a, b) => b[metric] - a[metric]);
+  const topWeeks = new Set(rankedWeeks.slice(0, 3).filter(w => w[metric] > 0).map(w => w.week_start));
+  const peakWeek = rankedWeeks[0];
+  const busiestDay = [...data.weekday].sort((a, b) => b[avgKey] - a[avgKey])[0];
+  const maxAvg = Math.max(...data.weekday.map(w => w[avgKey]), 1);
+
+  const dayMap = new Map(data.days.map(d => [d.date, d]));
+  const maxDay = Math.max(...data.days.map(d => d[metric]), 1);
+
+  const products = showAllProducts ? data.products : data.products.slice(0, 6);
+  const st = data.staffing;
+  const windowTotal = st.window_split.A + st.window_split.B;
+  const amPct = windowTotal > 0 ? Math.round(st.window_split.A / windowTotal * 100) : 0;
+
+  const hourMap = new Map(st.pickups_by_hour.map(h => [h.hour, h.count]));
+  const hours = st.pickups_by_hour.length
+    ? Array.from(
+        { length: st.pickups_by_hour[st.pickups_by_hour.length - 1].hour - st.pickups_by_hour[0].hour + 1 },
+        (_, i) => st.pickups_by_hour[0].hour + i,
+      )
+    : [];
+  const maxHour = Math.max(...st.pickups_by_hour.map(h => h.count), 1);
+
+  const pickWeek = (w: SeasonWeek) =>
+    setDetail({
+      key: w.week_start,
+      text: `Week of ${fmtShortDate(w.week_start)} · ${fmt$(w.revenue)} · ${fmtYards(w.yards)} · ${w.orders} orders · ${w.loads} loads`,
+    });
+
+  const pickDay = (k: string) => {
+    const d = dayMap.get(k);
+    const label = parseKey(k).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    setDetail({
+      key: k,
+      text: d
+        ? `${label} · ${fmt$(d.revenue)} · ${fmtYards(d.yards)} · ${d.orders} orders (🚚 ${d.deliveries} / 🏪 ${d.pickups})`
+        : `${label} · no orders`,
+    });
+  };
+
+  return (
+    <>
+      {/* ── Season KPIs ── */}
+      <div className="rp-kpi-grid">
+        <div className="card rp-kpi">
+          <div className="rp-kpi-val">{fmtCompact$(data.totals.revenue)}</div>
+          <div className="rp-kpi-label">Revenue</div>
+        </div>
+        <div className="card rp-kpi">
+          <div className="rp-kpi-val">{fmtYards(Math.round(data.totals.yards))}</div>
+          <div className="rp-kpi-label">Yards</div>
+        </div>
+        <div className="card rp-kpi">
+          <div className="rp-kpi-val rp-kpi-val--sm">Wk of {fmtShortDate(peakWeek.week_start)}</div>
+          <div className="rp-kpi-label">Peak Week</div>
+        </div>
+        <div className="card rp-kpi">
+          <div className="rp-kpi-val rp-kpi-val--sm">{busiestDay.label}</div>
+          <div className="rp-kpi-label">Busiest Day</div>
+        </div>
+      </div>
+
+      <div className="rp-sn-metric">
+        {(['revenue', 'yards', 'orders'] as const).map(m => (
+          <button key={m} className={`rp-preset-btn${metric === m ? ' active' : ''}`} onClick={() => setMetric(m)}>
+            {m === 'revenue' ? 'Revenue' : m === 'yards' ? 'Yards' : 'Orders'}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Weekly trend ── */}
+      <div className="card rp-section">
+        <div className="rp-section-head">By Week</div>
+        <div className="rp-sn-body">
+          <div className="rp-sn-bars">
+            {data.weeks.map(w => (
+              <button
+                key={w.week_start}
+                aria-label={`Week of ${fmtShortDate(w.week_start)}: ${fmtMetric(metric, w[metric])}`}
+                className={`rp-sn-bar${topWeeks.has(w.week_start) ? ' top' : ''}${detail?.key === w.week_start ? ' sel' : ''}`}
+                style={{ height: `${Math.max(w[metric] / maxWeek * 100, w[metric] > 0 ? 3 : 0)}%` }}
+                onClick={() => pickWeek(w)}
+              />
+            ))}
+          </div>
+          <div className="rp-sn-ticks">
+            {data.weeks.map((w, i) => {
+              const m = parseKey(w.week_start).getMonth();
+              const showLabel = i === 0 || parseKey(data.weeks[i - 1].week_start).getMonth() !== m;
+              return <span key={w.week_start}>{showLabel ? MONTH_SHORT[m] : ''}</span>;
+            })}
+          </div>
+          <div className="rp-sn-detail">
+            {detail && data.weeks.some(w => w.week_start === detail.key)
+              ? detail.text
+              : `Top weeks: ${rankedWeeks.slice(0, 3).filter(w => w[metric] > 0).map(w => fmtShortDate(w.week_start)).join(', ')} · tap a bar for details`}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Day-of-week heatmap ── */}
+      <div className="card rp-section">
+        <div className="rp-section-head">Busy Days</div>
+        <div className="rp-sn-body">
+          <div className="rp-sn-heat">
+            <div />
+            {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <div key={i} className="rp-sn-heat-h">{d}</div>)}
+            {data.weeks.map(w => (
+              <div key={w.week_start} style={{ display: 'contents' }}>
+                <div className="rp-sn-heat-wk">{fmtShortDate(w.week_start)}</div>
+                {Array.from({ length: 7 }, (_, i) => {
+                  const k = addDaysKey(w.week_start, i);
+                  const v = dayMap.get(k)?.[metric] ?? 0;
+                  return (
+                    <button
+                      key={k}
+                      aria-label={`${k}: ${fmtMetric(metric, v)}`}
+                      className={`rp-sn-cell${detail?.key === k ? ' sel' : ''}`}
+                      onClick={() => pickDay(k)}
+                    >
+                      {v > 0 && <span className="rp-sn-cell-fill" style={{ opacity: 0.15 + 0.85 * (v / maxDay) }} />}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+          <div className="rp-sn-detail">
+            {detail && !data.weeks.some(w => w.week_start === detail.key) ? detail.text : 'Tap a day for details'}
+          </div>
+        </div>
+        <div className="rp-sn-sub">Average per open day</div>
+        {data.weekday.map(w => (
+          <div key={w.dow} className="rp-bar-row" style={{ gridTemplateColumns: '72px 1fr 96px' }}>
+            <div className="rp-bar-label">{w.label} <span style={{ color: 'var(--gray-400)', fontWeight: 600 }}>×{w.open_days}</span></div>
+            <div className="rp-bar-track">
+              <div className="rp-bar-fill" style={{ width: `${Math.round(w[avgKey] / maxAvg * 100)}%` }} />
+            </div>
+            <div className="rp-bar-val">{w.open_days ? fmtMetric(metric, w[avgKey]) : '—'}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Inventory by month ── */}
+      <div className="card rp-section">
+        <div className="rp-section-head">Product Volume by Month</div>
+        {products.map(p => {
+          const maxMonth = Math.max(...Object.values(p.by_month), 1);
+          return (
+            <div key={p.product} className="rp-sn-prod">
+              <div className="rp-sn-prod-head">
+                <span className="rp-sn-prod-name">{p.product}</span>
+                <span className="rp-sn-prod-meta">
+                  {fmtYards(p.total_yards)} · peak wk {fmtShortDate(p.peak_week_start)}: {fmtYards(p.peak_week_yards)}
+                </span>
+              </div>
+              <div className="rp-sn-months">
+                {data.months.map(m => (
+                  <div
+                    key={m}
+                    className="rp-sn-month"
+                    title={`${m}: ${fmtYards(p.by_month[m] ?? 0)}`}
+                    style={{ height: `${Math.max((p.by_month[m] ?? 0) / maxMonth * 100, (p.by_month[m] ?? 0) > 0 ? 6 : 0)}%` }}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        <div className="rp-sn-month-axis">
+          {data.months.map(m => <span key={m}>{MONTH_SHORT[Number(m.split('-')[1]) - 1]}</span>)}
+        </div>
+        {data.products.length > 6 && (
+          <button className="rp-sn-more" onClick={() => setShowAllProducts(s => !s)}>
+            {showAllProducts ? 'Show top 6' : `Show all ${data.products.length} products`}
+          </button>
+        )}
+      </div>
+
+      {/* ── Staffing signals ── */}
+      <div className="card rp-section">
+        <div className="rp-section-head">Staffing Signals</div>
+        <div className="rp-sn-sub">🚚 Delivery</div>
+        <div className="rp-sn-tiles">
+          <div className="rp-sn-tile">
+            <div className="rp-sn-tile-val">{st.avg_loads_per_delivery_day}</div>
+            <div className="rp-sn-tile-label">Avg loads / day</div>
+          </div>
+          <div className="rp-sn-tile">
+            <div className="rp-sn-tile-val">{st.peak_load_day ? st.peak_load_day.loads : '—'}</div>
+            <div className="rp-sn-tile-label">Peak day{st.peak_load_day ? ` · ${fmtShortDate(st.peak_load_day.date)}` : ''}</div>
+          </div>
+          <div className="rp-sn-tile">
+            <div className="rp-sn-tile-val">{st.avg_drivers_per_day}</div>
+            <div className="rp-sn-tile-label">Avg drivers / day</div>
+          </div>
+          <div className="rp-sn-tile">
+            <div className="rp-sn-tile-val">{st.avg_loads_per_driver_day}</div>
+            <div className="rp-sn-tile-label">Loads per driver</div>
+          </div>
+        </div>
+        {windowTotal > 0 && (
+          <div className="rp-split-bar-wrap" style={{ paddingTop: 12 }}>
+            <div className="rp-split-bar">
+              <div className="rp-split-bar-delivery" style={{ width: `${amPct}%` }} />
+            </div>
+            <span className="rp-split-pct">{amPct}% AM · {100 - amPct}% PM</span>
+          </div>
+        )}
+        {st.unassigned_loads > 0 && (
+          <div className="rp-sn-note">
+            {st.unassigned_loads} of {st.total_delivery_loads} loads had no driver assigned; driver averages exclude them.
+          </div>
+        )}
+
+        <div className="rp-sn-sub">🏪 Pickup</div>
+        <div className="rp-sn-tiles">
+          <div className="rp-sn-tile">
+            <div className="rp-sn-tile-val">{st.avg_pickups_per_pickup_day}</div>
+            <div className="rp-sn-tile-label">Avg pickups / day</div>
+          </div>
+          <div className="rp-sn-tile">
+            <div className="rp-sn-tile-val">{st.peak_pickup_day ? st.peak_pickup_day.pickups : '—'}</div>
+            <div className="rp-sn-tile-label">Peak day{st.peak_pickup_day ? ` · ${fmtShortDate(st.peak_pickup_day.date)}` : ''}</div>
+          </div>
+        </div>
+        {hours.length > 0 && (
+          <>
+            <div className="rp-sn-sub">Pickups by hour</div>
+            <div className="rp-sn-hours">
+              {hours.map(h => (
+                <div
+                  key={h}
+                  className="rp-sn-hour"
+                  title={`${fmtHour(h)}: ${hourMap.get(h) ?? 0}`}
+                  style={{ height: `${Math.max((hourMap.get(h) ?? 0) / maxHour * 100, (hourMap.get(h) ?? 0) > 0 ? 4 : 0)}%` }}
+                />
+              ))}
+            </div>
+            <div className="rp-sn-hour-axis">
+              {hours.map(h => <span key={h}>{fmtHour(h)}</span>)}
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
 export default function ReportsPage() {
   const today = new Date();
-  const [preset, setPreset] = useState<'today' | 'week' | 'custom'>('today');
+    const [preset, setPreset] = useState<'today' | 'week' | 'season' | 'custom'>('today');
   const [startDate, setStartDate] = useState(toKey(today));
   const [endDate, setEndDate] = useState(toKey(today));
   const [mode, setMode] = useState<'booked' | 'fulfilled'>('booked');
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [season, setSeason] = useState<Season | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const { activeLocation } = useLocation();
+  const isSeason = preset === 'season';
 
-  const applyPreset = useCallback((p: 'today' | 'week' | 'custom') => {
+  const applyPreset = useCallback((p: 'today' | 'week' | 'season' | 'custom') => {
     setPreset(p);
     if (p === 'today') {
       setStartDate(toKey(today));
@@ -172,6 +495,10 @@ export default function ReportsPage() {
     } else if (p === 'week') {
       setStartDate(toKey(getMonday(today)));
       setEndDate(toKey(getSunday(today)));
+    } else if (p === 'season') {
+      setStartDate(`${today.getFullYear()}-01-01`);
+      setEndDate(toKey(today));
+      setMode('fulfilled');
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -181,17 +508,21 @@ export default function ReportsPage() {
     setError('');
     try {
       const loc = activeLocation?.id ? `&location_id=${activeLocation.id}` : '';
-      const data = await api(`/ops/reports/summary?start_date=${startDate}&end_date=${endDate}&mode=${mode}${loc}`);
-      setSummary(data);
+      if (isSeason) {
+        const data = await api(`/ops/reports/seasonal?start_date=${startDate}&end_date=${endDate}&mode=${mode}${loc}`);
+        setSeason(data);
+      } else {
+        const data = await api(`/ops/reports/summary?start_date=${startDate}&end_date=${endDate}&mode=${mode}${loc}`);
+        setSummary(data);
+      }
     } catch {
       setError('Failed to load report.');
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, mode, activeLocation?.id]);
+  }, [startDate, endDate, mode, activeLocation?.id, isSeason]);
 
   useEffect(() => { fetchSummary(); }, [fetchSummary]);
-  useEffect(() => { fetchSummary(); }, [mode]);;
 
   if (!requireRole(['admin'])) return <div className="page"><p>Unauthorized</p></div>;
 
@@ -214,13 +545,13 @@ export default function ReportsPage() {
         <div className="card rp-controls">
           <div className="rp-controls-top">
             <div className="rp-presets">
-              {(['today', 'week', 'custom'] as const).map(p => (
+              {(['today', 'week', 'season', 'custom'] as const).map(p => (
                 <button
                   key={p}
                   className={`rp-preset-btn${preset === p ? ' active' : ''}`}
                   onClick={() => applyPreset(p)}
                 >
-                  {p === 'today' ? 'Today' : p === 'week' ? 'This Week' : 'Custom'}
+                  {p === 'today' ? 'Today' : p === 'week' ? 'This Week' : p === 'season' ? 'Season' : 'Custom'}
                 </button>
               ))}
             </div>
@@ -246,7 +577,7 @@ export default function ReportsPage() {
                 type="date"
                 className="rp-date-input"
                 value={startDate}
-                onChange={e => { setStartDate(e.target.value); setPreset('custom'); }}
+                onChange={e => { setStartDate(e.target.value); setPreset(p => (p === 'season' ? 'season' : 'custom')); }}
               />
             </div>
             <div className="rp-date-group">
@@ -255,7 +586,7 @@ export default function ReportsPage() {
                 type="date"
                 className="rp-date-input"
                 value={endDate}
-                onChange={e => { setEndDate(e.target.value); setPreset('custom'); }}
+                onChange={e => { setEndDate(e.target.value); setPreset(p => (p === 'season' ? 'season' : 'custom')); }}
               />
             </div>
             <button className="btn btn-primary btn-sm" onClick={fetchSummary} disabled={loading}>
@@ -266,13 +597,15 @@ export default function ReportsPage() {
 
         {error && <div className="alert alert-error" style={{ marginBottom: 16 }}>{error}</div>}
 
-        {loading && !summary && (
+        {loading && !(isSeason ? season : summary) && (
           <div style={{ textAlign: 'center', padding: 60 }}>
             <div className="spinner spinner-lg" style={{ margin: '0 auto' }} />
           </div>
         )}
 
-        {summary && (
+        {isSeason && season && <SeasonSection data={season} />}
+
+        {!isSeason && summary && (
           <>
             {/* ── Top KPIs ── */}
             <div className="rp-kpi-grid">
@@ -463,4 +796,40 @@ const styles = `
 .rp-pm-method { flex: 1; font-size: 14px; font-weight: 600; color: var(--gray-800); }
 .rp-pm-count { font-size: 12px; color: var(--gray-400); font-weight: 600; white-space: nowrap; }
 .rp-pm-total { font-size: 14px; font-weight: 700; color: var(--gray-800); min-width: 80px; text-align: right; }
+
+/* ── Season view ── */
+.rp-presets { flex-wrap: wrap; }
+.rp-kpi-val--sm { font-size: 18px; }
+.rp-sn-metric { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+.rp-sn-body { padding: 14px 20px 16px; }
+.rp-sn-detail { font-size: 12px; font-weight: 600; color: var(--gray-600); min-height: 18px; margin-top: 10px; line-height: 1.4; }
+.rp-sn-bars { display: flex; align-items: flex-end; gap: 2px; height: 120px; }
+.rp-sn-bar { flex: 1; min-width: 0; padding: 0; border: none; border-radius: 3px 3px 0 0; background: var(--brand); opacity: 0.35; cursor: pointer; }
+.rp-sn-bar.top { opacity: 1; }
+.rp-sn-bar.sel { outline: 2px solid var(--gray-900); outline-offset: 1px; }
+.rp-sn-ticks { display: flex; gap: 2px; margin-top: 4px; }
+.rp-sn-ticks span { flex: 1; min-width: 0; font-size: 10px; font-weight: 700; color: var(--gray-400); white-space: nowrap; overflow: visible; }
+.rp-sn-heat { display: grid; grid-template-columns: 44px repeat(7, minmax(0, 1fr)); gap: 3px; }
+.rp-sn-heat-h { font-size: 10px; font-weight: 700; color: var(--gray-400); text-align: center; }
+.rp-sn-heat-wk { font-size: 10px; font-weight: 700; color: var(--gray-500); align-self: center; white-space: nowrap; }
+.rp-sn-cell { position: relative; height: 18px; padding: 0; border: none; border-radius: 3px; background: var(--gray-100); overflow: hidden; cursor: pointer; }
+.rp-sn-cell.sel { outline: 2px solid var(--gray-900); outline-offset: 1px; overflow: visible; }
+.rp-sn-cell-fill { position: absolute; inset: 0; border-radius: 3px; background: var(--brand); }
+.rp-sn-sub { padding: 14px 20px 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gray-400); }
+.rp-sn-note { padding: 6px 20px 0; font-size: 12px; color: var(--gray-500); }
+.rp-sn-prod { padding: 12px 20px; border-bottom: 1px solid var(--border-light); }
+.rp-sn-prod-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 8px; margin-bottom: 6px; }
+.rp-sn-prod-name { font-size: 13px; font-weight: 700; color: var(--gray-800); }
+.rp-sn-prod-meta { font-size: 11px; font-weight: 600; color: var(--gray-500); }
+.rp-sn-months { display: flex; align-items: flex-end; gap: 3px; height: 32px; }
+.rp-sn-month { flex: 1; min-width: 0; border-radius: 2px 2px 0 0; background: var(--brand); opacity: 0.6; }
+.rp-sn-month-axis, .rp-sn-hour-axis { display: flex; gap: 3px; padding: 6px 20px 14px; }
+.rp-sn-month-axis span, .rp-sn-hour-axis span { flex: 1; min-width: 0; text-align: center; font-size: 10px; font-weight: 700; color: var(--gray-400); }
+.rp-sn-more { display: block; width: 100%; padding: 12px; border: none; border-top: 1px solid var(--border-light); background: none; font-family: inherit; font-size: 13px; font-weight: 700; color: var(--brand); cursor: pointer; }
+.rp-sn-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 0 20px; }
+.rp-sn-tile { padding: 12px; border-radius: var(--radius-md); background: var(--gray-50, #f9fafb); }
+.rp-sn-tile-val { font-size: 20px; font-weight: 800; line-height: 1.1; color: var(--gray-900); font-family: var(--font-heading); }
+.rp-sn-tile-label { margin-top: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gray-400); }
+.rp-sn-hours { display: flex; align-items: flex-end; gap: 3px; height: 60px; padding: 0 20px; }
+.rp-sn-hour { flex: 1; min-width: 0; border-radius: 2px 2px 0 0; background: var(--brand); opacity: 0.6; }
 `;
