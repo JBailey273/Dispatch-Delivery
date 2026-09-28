@@ -304,6 +304,8 @@ function SeasonSection({ data }: { data: Season }) {
         ))}
       </div>
 
+      <div className="rp-print-note">Weekly chart, heatmap and weekday averages show {metric}.</div>
+
       {/* ── Weekly trend ── */}
       <div className="card rp-section">
         <div className="rp-section-head">By Week</div>
@@ -404,6 +406,9 @@ function SeasonSection({ data }: { data: Season }) {
         <div className="rp-sn-month-axis">
           {data.months.map(m => <span key={m}>{MONTH_SHORT[Number(m.split('-')[1]) - 1]}</span>)}
         </div>
+        {data.products.length > 6 && !showAllProducts && (
+          <div className="rp-print-note rp-print-note--list">Top 6 of {data.products.length} products shown</div>
+        )}
         {data.products.length > 6 && (
           <button className="rp-sn-more" onClick={() => setShowAllProducts(s => !s)}>
             {showAllProducts ? 'Show top 6' : `Show all ${data.products.length} products`}
@@ -632,6 +637,9 @@ function ContractorSection({ data }: { data: ContractorReport }) {
                     </span>
                   </div>
                   <div className="rp-cn-acct-bar"><div style={{ width: `${Math.round(a.yards / maxAcctYards * 100)}%` }} /></div>
+                  {!isOpen && (
+                    <div className="rp-cn-print-mats">{a.materials.map(m => `${m.product} ${fmtYards(m.yards)}`).join(' · ')}</div>
+                  )}
                 </div>
                 <div className="rp-cn-acct-right">
                   <div className="rp-cn-acct-yards">{fmtYards(a.yards)}</div>
@@ -661,6 +669,9 @@ function ContractorSection({ data }: { data: ContractorReport }) {
             </div>
           );
         })}
+        {data.accounts.length > 10 && !showAll && (
+          <div className="rp-print-note rp-print-note--list">Top 10 of {data.accounts.length} accounts shown · sorted by {sort === 'recent' ? 'most recent order' : sort}</div>
+        )}
         {data.accounts.length > 10 && (
           <button className="rp-sn-more" onClick={() => setShowAll(s => !s)}>
             {showAll ? 'Show top 10' : `Show all ${data.accounts.length} accounts`}
@@ -749,6 +760,29 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const { activeLocation } = useLocation();
+  // Printing always uses the light theme, then restores whatever was on screen
+  useEffect(() => {
+    let prevTheme: string | null = null;
+    let active = false;
+    const before = () => {
+      if (active) return;
+      active = true;
+      const root = document.documentElement;
+      prevTheme = root.getAttribute('data-theme');
+      root.setAttribute('data-theme', 'light');
+    };
+    const after = () => {
+      if (!active) return;
+      active = false;
+      if (prevTheme !== null) document.documentElement.setAttribute('data-theme', prevTheme);
+    };
+    window.addEventListener('beforeprint', before);
+    window.addEventListener('afterprint', after);
+    return () => {
+      window.removeEventListener('beforeprint', before);
+      window.removeEventListener('afterprint', after);
+    };
+  }, []);
   const isSeason = preset === 'season';
 
   const applyPreset = useCallback((p: 'today' | 'week' | 'season' | 'custom') => {
@@ -805,7 +839,24 @@ export default function ReportsPage() {
             <h1>Reports</h1>
             <p className="rp-sub">Order totals and material volume</p>
           </div>
-          <Link href="/ops-dashboard" className="btn btn-ghost btn-sm" style={{ textDecoration: 'none' }}>← Dashboard</Link>
+          <div className="rp-header-actions">
+            <button className="btn btn-ghost btn-sm" onClick={() => window.print()} disabled={loading}>Print</button>
+            <Link href="/ops-dashboard" className="btn btn-ghost btn-sm" style={{ textDecoration: 'none' }}>← Dashboard</Link>
+          </div>
+        </div>
+
+        {/* ── Print-only header ── */}
+        <div className="rp-print-head">
+          <div className="rp-print-title">
+            {view === 'contractors' ? 'Contractor Report' : isSeason ? 'Season Report' : 'Summary Report'}
+          </div>
+          <div className="rp-print-meta">
+            {parseKey(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            {startDate !== endDate && ` – ${parseKey(endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`}
+            {' · '}{mode === 'booked' ? 'By booked date' : 'By fulfilled date'}
+            {' · '}{activeLocation?.name ?? 'All locations'}
+          </div>
+          <div className="rp-print-meta">Printed {new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>
         </div>
 
         {/* ── View Tabs ── */}
@@ -1011,6 +1062,7 @@ const styles = `
 .rp-page { max-width: 900px; margin: 0 auto; padding: 20px 16px 80px; }
 .rp-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 24px; gap: 16px; }
 .rp-header h1 { margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.03em; }
+.rp-header-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .rp-sub { font-size: 13px; color: var(--gray-500); margin-top: 3px; }
 
 .rp-controls { padding: 16px 20px; margin-bottom: 20px; }
@@ -1163,4 +1215,34 @@ const styles = `
 .rp-cn-prod { padding: 10px 20px; border-bottom: 1px solid var(--border-light); }
 .rp-cn-prod:last-child { border-bottom: none; }
 .rp-cn-prod-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ── Print ── */
+.rp-print-head, .rp-print-note, .rp-cn-print-mats { display: none; }
+@media print {
+  @page { size: letter; margin: 0.5in; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html, body { background: #fff !important; }
+  .app-shell, .app-content { display: block !important; height: auto !important; overflow: visible !important; background: #fff !important; }
+  .app-sidebar, .mobile-tab-bar, .mobile-drawer, .mobile-drawer-backdrop, .notif-toast-stack, .notif-panel, .notif-panel-backdrop { display: none !important; }
+  .page.rp-page { max-width: none; margin: 0; padding: 0; }
+  .rp-header, .rp-view-tabs, .rp-controls, .rp-sn-metric, .rp-cn-sort, .rp-sn-more, .rp-sn-detail, .alert { display: none !important; }
+  .rp-print-head { display: block; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 2px solid #111; }
+  .rp-print-title { font-size: 20px; font-weight: 800; color: #111; }
+  .rp-print-meta { margin-top: 2px; font-size: 11px; font-weight: 600; color: #555; }
+  .rp-print-note { display: block; margin: 0 0 10px; font-size: 11px; font-weight: 600; color: #555; }
+  .rp-print-note--list { margin: 0; padding: 8px 16px; }
+  .rp-cn-print-mats { display: block; margin-top: 5px; font-size: 10px; font-weight: 600; color: #555; line-height: 1.4; }
+  .card { box-shadow: none !important; }
+  .rp-kpi-grid { grid-template-columns: repeat(4, 1fr) !important; gap: 8px; margin-bottom: 10px; }
+  .rp-kpi { padding: 12px 8px; }
+  .rp-kpi-val { font-size: 20px; }
+  .rp-kpi-val--sm { font-size: 15px; }
+  .rp-two-col { grid-template-columns: 1fr 1fr !important; }
+  .rp-section { margin-bottom: 10px; break-inside: avoid; }
+  .rp-section:has(.rp-cn-acct), .rp-section:has(.rp-sn-heat), .rp-section:has(.rp-sn-prod) { break-inside: auto; }
+  .rp-section-head { break-after: avoid; }
+  .rp-cn-acct, .rp-sn-prod, .rp-bar-row { break-inside: avoid; }
+  .rp-cn-acct-row { padding: 8px 16px; }
+  .rp-cn-acct-open { padding-bottom: 8px; }
+  .rp-sn-bar.sel, .rp-sn-cell.sel { outline: none; }
+}
 `;
