@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
 from app.api.services import log_event, normalize_us_phone, now_utc
-from app.api.woocommerce_service import WC_HEADERS, wc_redact
+from app.api.woocommerce_service import WC_HEADERS, wc_redact, wc_route
 from app.core.config import settings
 from app.models.entities import (
     Customer,
@@ -57,8 +57,9 @@ def _wc_request(path: str, method: str = "GET", payload: dict | None = None) -> 
 
     # Use query string auth — Hostinger strips Authorization headers
     separator = "&" if "?" in path else "?"
+    base, relay_headers = wc_route(settings.wc_store_url)
     url = (
-        f"{settings.wc_store_url.rstrip('/')}/wp-json/wc/v3/{path.lstrip('/')}"
+        f"{base}/wp-json/wc/v3/{path.lstrip('/')}"
         f"{separator}consumer_key={urllib.parse.quote(settings.wc_consumer_key)}"
         f"&consumer_secret={urllib.parse.quote(settings.wc_consumer_secret)}"
     )
@@ -67,7 +68,7 @@ def _wc_request(path: str, method: str = "GET", payload: dict | None = None) -> 
     req = urllib.request.Request(
         url,
         data=data,
-        headers={**WC_HEADERS, "Content-Type": "application/json"},
+        headers={**WC_HEADERS, **relay_headers, "Content-Type": "application/json"},
         method=method,
     )
     try:
