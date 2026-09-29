@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     wc_store_url: str = ""
     wc_consumer_key: str = ""
     wc_consumer_secret: str = ""
+    wc_proxy_url: str = ""  # optional relay (e.g. Cloudflare Worker) for WooCommerce calls
+    wc_proxy_key: str = ""
     wp_sync_secret: str = ""
 
     @field_validator("database_url", mode="before")
