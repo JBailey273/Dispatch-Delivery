@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
 from app.api.services import log_event, normalize_us_phone, now_utc
+from app.api.woocommerce_service import WC_HEADERS, wc_redact
 from app.core.config import settings
 from app.models.entities import (
     Customer,
@@ -66,10 +67,7 @@ def _wc_request(path: str, method: str = "GET", payload: dict | None = None) -> 
     req = urllib.request.Request(
         url,
         data=data,
-        headers={
-            "Content-Type": "application/json",
-            "User-Agent": "dispatch-app/1.0",
-        },
+        headers={**WC_HEADERS, "Content-Type": "application/json"},
         method=method,
     )
     try:
@@ -77,10 +75,10 @@ def _wc_request(path: str, method: str = "GET", payload: dict | None = None) -> 
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
         body = e.read().decode()
-        logger.error(f"WC API error {e.code} on {method} {path}: {body}")
+        logger.error(f"WC API error {e.code} on {method} {wc_redact(path)}: {wc_redact(body)}")
         raise HTTPException(status_code=502, detail={"code": "wc_error", "message": f"WooCommerce API error: {e.code}"})
     except Exception as e:
-        logger.error(f"WC API request failed: {e}")
+        logger.error(f"WC API error {e.code} on {method} {wc_redact(path)}: {wc_redact(body)}")
         raise HTTPException(status_code=502, detail={"code": "wc_unreachable", "message": "Could not reach WooCommerce"})
 
 
