@@ -218,13 +218,14 @@ async def woocommerce_webhook(
     if not wc_total and external_order_id and channel.wc_store_url and channel.wc_consumer_key:
         try:
             import json as _json, urllib.parse as _up, urllib.request as _ur
+            from app.api.woocommerce_service import WC_HEADERS as _wc_headers, wc_redact as _wc_redact, wc_route as _wc_route
+            _base, _relay_headers = _wc_route(channel.wc_store_url)
             _url = (
-                f"{channel.wc_store_url.rstrip('/')}/wp-json/wc/v3/orders/{external_order_id}"
+                f"{_base}/wp-json/wc/v3/orders/{external_order_id}"
                 f"?consumer_key={_up.quote(channel.wc_consumer_key)}"
                 f"&consumer_secret={_up.quote(channel.wc_consumer_secret)}"
             )
-            from app.api.woocommerce_service import WC_HEADERS as _wc_headers, wc_redact as _wc_redact
-            with _ur.urlopen(_ur.Request(_url, headers=_wc_headers), timeout=8) as _r:
+            with _ur.urlopen(_ur.Request(_url, headers={**_wc_headers, **_relay_headers}), timeout=8) as _r:
                 wc_total = _json.loads(_r.read().decode()).get("total")
             logger.info(f"woocommerce_webhook: fetched total={wc_total!r} for order {external_order_id}")
         except Exception as e:
