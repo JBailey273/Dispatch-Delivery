@@ -228,7 +228,7 @@ async def woocommerce_webhook(
                 wc_total = _json.loads(_r.read().decode()).get("total")
             logger.info(f"woocommerce_webhook: fetched total={wc_total!r} for order {external_order_id}")
         except Exception as e:
-        logger.warning(f"woocommerce_webhook: could not fetch order total from WC: {_wc_redact(str(e))}")
+            logger.warning(f"woocommerce_webhook: could not fetch order total from WC: {_wc_redact(str(e))}")
 
     drop = Drop(
         tenant_id=tenant_id,
