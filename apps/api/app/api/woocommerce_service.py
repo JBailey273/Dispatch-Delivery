@@ -5,6 +5,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from app.core.config import settings
+
 logger = logging.getLogger("dispatch.woocommerce")
 
 # Hostinger's LiteSpeed bot verification challenges non-browser clients, so
@@ -16,6 +18,15 @@ WC_HEADERS = {
 }
 
 _SECRET_RE = re.compile(r"(consumer_(?:key|secret)=)[^&\s\"'<>]+")
+
+
+def wc_route(store_url: str) -> tuple[str, dict]:
+    """Base URL and extra headers for a WooCommerce call. When WC_PROXY_URL and
+    WC_PROXY_KEY are set, calls go through the relay instead of straight to the
+    store (Render's shared outbound IPs get blocked by Hostinger's firewall)."""
+    if settings.wc_proxy_url and settings.wc_proxy_key:
+        return settings.wc_proxy_url.rstrip("/"), {"X-Relay-Key": settings.wc_proxy_key}
+    return (store_url or "").rstrip("/"), {}
 
 
 def wc_redact(text: str, limit: int = 300) -> str:
@@ -42,8 +53,9 @@ def sync_order_status(
         logger.warning("woocommerce_sync skipped — missing credentials or order id")
         return False
 
+    base, relay_headers = wc_route(wc_store_url)
     url = (
-        f"{wc_store_url.rstrip('/')}/wp-json/wc/v3/orders/{external_order_id}"
+        f"{base}/wp-json/wc/v3/orders/{external_order_id}"
         f"?consumer_key={urllib.parse.quote(wc_consumer_key)}"
         f"&consumer_secret={urllib.parse.quote(wc_consumer_secret)}"
     )
@@ -52,7 +64,7 @@ def sync_order_status(
     req = urllib.request.Request(
         url,
         data=payload,
-        headers={**WC_HEADERS, "Content-Type": "application/json"},
+        headers={**WC_HEADERS, **relay_headers, "Content-Type": "application/json"},
         method="PUT",
     )
 
