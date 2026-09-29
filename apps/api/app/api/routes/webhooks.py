@@ -223,11 +223,12 @@ async def woocommerce_webhook(
                 f"?consumer_key={_up.quote(channel.wc_consumer_key)}"
                 f"&consumer_secret={_up.quote(channel.wc_consumer_secret)}"
             )
-            with _ur.urlopen(_ur.Request(_url, headers={"User-Agent": "dispatch-app/1.0"}), timeout=8) as _r:
+            from app.api.woocommerce_service import WC_HEADERS as _wc_headers, wc_redact as _wc_redact
+            with _ur.urlopen(_ur.Request(_url, headers=_wc_headers), timeout=8) as _r:
                 wc_total = _json.loads(_r.read().decode()).get("total")
             logger.info(f"woocommerce_webhook: fetched total={wc_total!r} for order {external_order_id}")
         except Exception as e:
-            logger.warning(f"woocommerce_webhook: could not fetch order total from WC: {e}")
+        logger.warning(f"woocommerce_webhook: could not fetch order total from WC: {_wc_redact(str(e))}")
 
     drop = Drop(
         tenant_id=tenant_id,
