@@ -202,6 +202,10 @@ function fmtCompact$(n: number) {
   return '$' + Math.round(n).toLocaleString('en-US');
 }
 
+function fmtWhole$(n: number) {
+  return '$' + Math.round(n).toLocaleString('en-US');
+}
+
 function fmtMetric(m: SeasonMetric, n: number) {
   if (m === 'revenue') return fmt$(n);
   if (m === 'yards') return fmtYards(n);
@@ -488,7 +492,9 @@ function SeasonSection({ data }: { data: Season }) {
 
 // ── Contractors view ───────────────────────────────────────────
 
-type SegStat = { orders: number; yards: number; revenue: number; deliveries: number; pickups: number; avg_order_yards: number; avg_order_value: number };
+type Breakdown = { materials: number; delivery: number; tax: number; other: number; covered_orders: number; covered_revenue: number; pending_orders: number };
+type SegStat = { orders: number; yards: number; revenue: number; deliveries: number; pickups: number; avg_order_yards: number; avg_order_value: number; breakdown: Breakdown };
+type FillState = { run: () => void; running: boolean; message: string };
 type ContractorAccount = {
   customer_id: string;
   name: string;
@@ -502,6 +508,8 @@ type ContractorAccount = {
   share_of_contractor_yards: number;
   deliveries: number;
   pickups: number;
+  delivery_fees: number;
+  fee_orders: number;
   materials: { product: string; yards: number; share: number }[];
   first_order_date: string | null;
   last_order_date: string | null;
@@ -530,7 +538,54 @@ function fmtPhone(e164: string) {
   return m ? `(${m[1]}) ${m[2]}-${m[3]}` : e164;
 }
 
-function ContractorSection({ data }: { data: ContractorReport }) {
+function RevenueSplit({ b, fill }: { b: Breakdown; fill: FillState }) {
+  const parts = [
+    { key: 'materials', label: 'Materials', val: b.materials },
+    { key: 'delivery', label: 'Delivery', val: b.delivery },
+    { key: 'tax', label: 'Tax', val: b.tax },
+    ...(b.other ? [{ key: 'other', label: 'Other', val: b.other }] : []),
+  ];
+  const total = parts.reduce((t, p) => t + Math.max(p.val, 0), 0);
+  return (
+    <div className="card rp-section">
+      <div className="rp-section-head">Revenue Breakdown</div>
+      {b.covered_orders === 0 ? (
+        <p className="rp-empty">No fee breakdown yet for orders in this range.</p>
+      ) : (
+        <div className="rp-sn-body">
+          <div className="rp-rv-bar">
+            {parts.map(p => p.val > 0 && (
+              <div key={p.key} className={`rp-rv-seg rp-rv-seg--${p.key}`} style={{ flexGrow: p.val }} title={`${p.label}: ${fmt$(p.val)}`} />
+            ))}
+          </div>
+          <div className="rp-rv-grid">
+            {parts.map(p => (
+              <div key={p.key} className="rp-rv-item">
+                <div className="rp-rv-label"><i className={`rp-cn-dot rp-rv-dot--${p.key}`} />{p.label}</div>
+                <div className="rp-rv-val" title={fmt$(p.val)}>{fmtWhole$(p.val)}</div>
+                <div className="rp-rv-pct">{total > 0 ? Math.round(p.val / total * 100) : 0}%</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {b.pending_orders > 0 && (
+        <div className="rp-rv-pending">
+          <span>
+            Based on {b.covered_orders.toLocaleString('en-US')} of {(b.covered_orders + b.pending_orders).toLocaleString('en-US')} orders.
+            {' '}{b.pending_orders.toLocaleString('en-US')} still need their fee breakdown from WooCommerce.
+          </span>
+          <button className="btn btn-secondary btn-sm rp-rv-fill" onClick={fill.run} disabled={fill.running}>
+            {fill.running ? 'Filling in…' : 'Fill in missing'}
+          </button>
+        </div>
+      )}
+      {fill.message && <div className="rp-rv-msg">{fill.message}</div>}
+    </div>
+  );
+}
+
+function ContractorSection({ data, fill }: { data: ContractorReport; fill: FillState }) {
   const [sort, setSort] = useState<AccountSort>('yards');
   const [open, setOpen] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -581,6 +636,8 @@ function ContractorSection({ data }: { data: ContractorReport }) {
           <div className="rp-kpi-sub">{data.accounts_new} new · avg {fmtCompact$(data.avg_spend_per_account)}</div>
         </div>
       </div>
+
+      <RevenueSplit b={c.breakdown} fill={fill} />
 
       {/* ── Contractor vs residential ── */}
       <div className="card rp-section">
@@ -661,6 +718,7 @@ function ContractorSection({ data }: { data: ContractorReport }) {
                     <div><span>Avg order</span><b>{fmtYards(a.avg_order_yards)} · {fmt$(a.avg_order_value)}</b></div>
                     <div><span>Share of contractor yards</span><b>{a.share_of_contractor_yards}%</b></div>
                     <div><span>Delivery / pickup</span><b>🚚 {a.deliveries} · 🏪 {a.pickups}</b></div>
+                    <div><span>Delivery fees</span><b>{a.fee_orders ? fmt$(a.delivery_fees) : '—'}</b></div>
                     <div><span>First order</span><b>{a.first_order_date ? parseKey(a.first_order_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</b></div>
                     <div><span>Contact</span><b>{a.contact !== a.name ? `${a.contact} · ` : ''}<a href={`tel:${a.phone}`}>{fmtPhone(a.phone)}</a></b></div>
                   </div>
@@ -747,6 +805,142 @@ function ContractorSection({ data }: { data: ContractorReport }) {
   );
 }
 
+// ── Residential view ───────────────────────────────────────────
+
+type ResidentialReport = {
+  totals: { orders: number; yards: number; revenue: number; deliveries: number; pickups: number; customers: number; avg_order_yards: number; avg_order_value: number };
+  share: { orders: number; yards: number; revenue: number };
+  breakdown: Breakdown;
+  products: { product: string; yards: number }[];
+  top_customers: { name: string; town: string; orders: number; yards: number; revenue: number; delivery_fees: number }[];
+  towns: { town: string; state: string; deliveries: number; yards: number; revenue: number; delivery_fees: number; fee_orders: number; avg_fee: number | null; share_of_deliveries: number }[];
+};
+
+type TownSort = 'deliveries' | 'fees' | 'yards';
+
+function ResidentialSection({ data, fill }: { data: ResidentialReport; fill: FillState }) {
+  const [townSort, setTownSort] = useState<TownSort>('deliveries');
+  const [showAllTowns, setShowAllTowns] = useState(false);
+
+  if (data.totals.orders === 0) {
+    return <div className="card rp-section"><p className="rp-empty">No residential orders in this range.</p></div>;
+  }
+
+  const t = data.totals;
+  const maxProd = Math.max(...data.products.map(p => p.yards), 1);
+  const towns = [...data.towns].sort((a, b) =>
+    townSort === 'fees' ? b.delivery_fees - a.delivery_fees : townSort === 'yards' ? b.yards - a.yards : b.deliveries - a.deliveries,
+  );
+  const shownTowns = showAllTowns ? towns : towns.slice(0, 12);
+  const townMetric = (x: ResidentialReport['towns'][number]) => (townSort === 'fees' ? x.delivery_fees : townSort === 'yards' ? x.yards : x.deliveries);
+  const maxTown = Math.max(...towns.map(townMetric), 1);
+  const feeTotal = data.towns.reduce((s, x) => s + x.delivery_fees, 0);
+  const townLabel = (x: { town: string; state: string }) => (x.state && x.state !== 'MA' ? `${x.town}, ${x.state}` : x.town);
+
+  return (
+    <>
+      {/* ── Residential KPIs ── */}
+      <div className="rp-kpi-grid">
+        <div className="card rp-kpi">
+          <div className="rp-kpi-val">{fmtCompact$(t.revenue)}</div>
+          <div className="rp-kpi-label">Residential Spend</div>
+          <div className="rp-kpi-sub">{data.share.revenue}% of revenue</div>
+        </div>
+        <div className="card rp-kpi">
+          <div className="rp-kpi-val">{fmtYards(Math.round(t.yards))}</div>
+          <div className="rp-kpi-label">Yards</div>
+          <div className="rp-kpi-sub">{data.share.yards}% of all yards</div>
+        </div>
+        <div className="card rp-kpi">
+          <div className="rp-kpi-val">{t.orders.toLocaleString('en-US')}</div>
+          <div className="rp-kpi-label">Orders</div>
+          <div className="rp-kpi-sub">🚚 {t.deliveries} · 🏪 {t.pickups}</div>
+        </div>
+        <div className="card rp-kpi">
+          <div className="rp-kpi-val">{t.customers.toLocaleString('en-US')}</div>
+          <div className="rp-kpi-label">Customers</div>
+          <div className="rp-kpi-sub">avg order {fmtYards(t.avg_order_yards)} · {fmtCompact$(t.avg_order_value)}</div>
+        </div>
+      </div>
+
+      <RevenueSplit b={data.breakdown} fill={fill} />
+
+      {/* ── Deliveries by town ── */}
+      <div className="card rp-section">
+        <div className="rp-section-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <span>Deliveries by Town</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-500)' }}>
+            {t.deliveries} to {data.towns.length} town{data.towns.length !== 1 ? 's' : ''} · {fmtWhole$(feeTotal)} fees
+          </span>
+        </div>
+        <div className="rp-cn-sort">
+          {(['deliveries', 'fees', 'yards'] as const).map(s => (
+            <button key={s} className={`rp-preset-btn${townSort === s ? ' active' : ''}`} onClick={() => setTownSort(s)}>
+              {s === 'deliveries' ? 'Deliveries' : s === 'fees' ? 'Fees' : 'Yards'}
+            </button>
+          ))}
+        </div>
+        {data.towns.length === 0 && <p className="rp-empty">No residential deliveries in this range.</p>}
+        {shownTowns.map(x => (
+          <div key={`${x.town}|${x.state}`} className="rp-rs-town">
+            <div className="rp-rs-town-top">
+              <span className="rp-rs-town-name">{townLabel(x)}</span>
+              <span className="rp-rs-town-count">
+                {townSort === 'fees' ? fmtWhole$(x.delivery_fees) : townSort === 'yards' ? fmtYards(x.yards) : `${x.deliveries} deliver${x.deliveries !== 1 ? 'ies' : 'y'}`}
+              </span>
+            </div>
+            <div className="rp-cn-acct-bar"><div style={{ width: `${Math.round(townMetric(x) / maxTown * 100)}%` }} /></div>
+            <div className="rp-rs-town-meta">
+              {x.share_of_deliveries}% of deliveries · {x.fee_orders ? `${fmtWhole$(x.delivery_fees)} fees · avg ${fmtWhole$(x.avg_fee ?? 0)}` : 'fees pending'} · {fmtYards(x.yards)} · {fmtCompact$(x.revenue)} spend
+            </div>
+          </div>
+        ))}
+        {towns.length > 12 && !showAllTowns && (
+          <div className="rp-print-note rp-print-note--list">Top 12 of {towns.length} towns shown</div>
+        )}
+        {towns.length > 12 && (
+          <button className="rp-sn-more" onClick={() => setShowAllTowns(v => !v)}>
+            {showAllTowns ? 'Show top 12' : `Show all ${towns.length} towns`}
+          </button>
+        )}
+      </div>
+
+      {/* ── Materials ── */}
+      <div className="card rp-section">
+        <div className="rp-section-head">Residential Materials</div>
+        {data.products.length === 0 && <p className="rp-empty">No material volume in this range.</p>}
+        {data.products.map(p => (
+          <div key={p.product} className="rp-bar-row">
+            <div className="rp-bar-label">{p.product}</div>
+            <div className="rp-bar-track"><div className="rp-bar-fill" style={{ width: `${Math.round(p.yards / maxProd * 100)}%` }} /></div>
+            <div className="rp-bar-val">{fmtYards(p.yards)}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Top customers ── */}
+      <div className="card rp-section">
+        <div className="rp-section-head">Top 10 Residential Customers</div>
+        {data.top_customers.map((cu, i) => (
+          <div key={`${cu.name}-${i}`} className="rp-rs-cust">
+            <div className="rp-rs-rank">{i + 1}</div>
+            <div className="rp-cn-acct-main">
+              <div className="rp-cn-acct-name"><span className="rp-cn-acct-name-text">{cu.name}</span></div>
+              <div className="rp-cn-acct-meta">
+                {cu.town ? `${cu.town} · ` : ''}{cu.orders} order{cu.orders !== 1 ? 's' : ''} · {fmtYards(cu.yards)}
+              </div>
+            </div>
+            <div className="rp-cn-acct-right">
+              <div className="rp-cn-acct-yards">{fmtWhole$(cu.revenue)}</div>
+              {cu.delivery_fees > 0 && <div className="rp-cn-acct-spend">{fmtWhole$(cu.delivery_fees)} fees</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 export default function ReportsPage() {
   const today = new Date();
     const [preset, setPreset] = useState<'today' | 'week' | 'season' | 'custom'>('today');
@@ -756,7 +950,10 @@ export default function ReportsPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [season, setSeason] = useState<Season | null>(null);
   const [contractors, setContractors] = useState<ContractorReport | null>(null);
-  const [view, setView] = useState<'overview' | 'contractors'>('overview');
+  const [residential, setResidential] = useState<ResidentialReport | null>(null);
+  const [view, setView] = useState<'overview' | 'contractors' | 'residential'>('overview');
+  const [filling, setFilling] = useState(false);
+  const [fillMessage, setFillMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const { activeLocation } = useLocation();
@@ -809,6 +1006,9 @@ export default function ReportsPage() {
       if (view === 'contractors') {
         const data = await api(`/ops/reports/contractors?start_date=${startDate}&end_date=${endDate}&mode=${mode}${loc}`);
         setContractors(data);
+      } else if (view === 'residential') {
+        const data = await api(`/ops/reports/residential?start_date=${startDate}&end_date=${endDate}&mode=${mode}${loc}`);
+        setResidential(data);
       } else if (isSeason) {
         const data = await api(`/ops/reports/seasonal?start_date=${startDate}&end_date=${endDate}&mode=${mode}${loc}`);
         setSeason(data);
@@ -824,6 +1024,34 @@ export default function ReportsPage() {
   }, [startDate, endDate, mode, activeLocation?.id, isSeason, view]);
 
   useEffect(() => { fetchSummary(); }, [fetchSummary]);
+
+  // Pull materials / delivery / tax for past orders from WooCommerce in small batches
+  const fillBreakdown = useCallback(async () => {
+    setFilling(true);
+    setFillMessage('');
+    let filled = 0;
+    let remaining = 0;
+    try {
+      for (let i = 0; i < 200; i++) {
+        const r = await api('/ops/reports/backfill-breakdown?limit=25', { method: 'POST' });
+        filled += r.updated;
+        remaining = r.remaining;
+        setFillMessage(`Filled in ${filled.toLocaleString('en-US')} orders${remaining ? ` · ${remaining.toLocaleString('en-US')} to go…` : ''}`);
+        if (r.updated === 0 || r.remaining === 0) break;
+      }
+      setFillMessage(
+        remaining === 0
+          ? `Done. Filled in ${filled.toLocaleString('en-US')} orders.`
+          : `Filled in ${filled.toLocaleString('en-US')} orders. ${remaining.toLocaleString('en-US')} couldn't be read from WooCommerce.`,
+      );
+    } catch {
+      setFillMessage(`Stopped after ${filled.toLocaleString('en-US')} orders. Couldn't reach WooCommerce. Try again shortly.`);
+    } finally {
+      setFilling(false);
+      fetchSummary();
+    }
+  }, [fetchSummary]);
+  const fill: FillState = { run: fillBreakdown, running: filling, message: fillMessage };
 
   if (!requireRole(['admin'])) return <div className="page"><p>Unauthorized</p></div>;
 
@@ -848,7 +1076,7 @@ export default function ReportsPage() {
         {/* ── Print-only header ── */}
         <div className="rp-print-head">
           <div className="rp-print-title">
-            {view === 'contractors' ? 'Contractor Report' : isSeason ? 'Season Report' : 'Summary Report'}
+            {view === 'contractors' ? 'Contractor Report' : view === 'residential' ? 'Residential Report' : isSeason ? 'Season Report' : 'Summary Report'}
           </div>
           <div className="rp-print-meta">
             {parseKey(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -861,7 +1089,7 @@ export default function ReportsPage() {
 
         {/* ── View Tabs ── */}
         <div className="rp-view-tabs" role="tablist">
-          {(['overview', 'contractors'] as const).map(v => (
+          {(['overview', 'contractors', 'residential'] as const).map(v => (
             <button
               key={v}
               role="tab"
@@ -869,7 +1097,7 @@ export default function ReportsPage() {
               className={`rp-view-tab${view === v ? ' active' : ''}`}
               onClick={() => setView(v)}
             >
-              {v === 'overview' ? 'Overview' : 'Contractors'}
+              {v === 'overview' ? 'Overview' : v === 'contractors' ? 'Contractors' : 'Residential'}
             </button>
           ))}
         </div>
@@ -930,13 +1158,15 @@ export default function ReportsPage() {
 
         {error && <div className="alert alert-error" style={{ marginBottom: 16 }}>{error}</div>}
 
-        {loading && !(view === 'contractors' ? contractors : isSeason ? season : summary) && (
+        {loading && !(view === 'contractors' ? contractors : view === 'residential' ? residential : isSeason ? season : summary) && (
           <div style={{ textAlign: 'center', padding: 60 }}>
             <div className="spinner spinner-lg" style={{ margin: '0 auto' }} />
           </div>
         )}
 
-        {view === 'contractors' && contractors && <ContractorSection data={contractors} />}
+        {view === 'contractors' && contractors && <ContractorSection data={contractors} fill={fill} />}
+
+        {view === 'residential' && residential && <ResidentialSection data={residential} fill={fill} />}
 
         {view === 'overview' && isSeason && season && <SeasonSection data={season} />}
 
@@ -1215,6 +1445,32 @@ const styles = `
 .rp-cn-prod { padding: 10px 20px; border-bottom: 1px solid var(--border-light); }
 .rp-cn-prod:last-child { border-bottom: none; }
 .rp-cn-prod-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Revenue breakdown + Residential ── */
+.rp-rv-bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--gray-100); }
+.rp-rv-seg { min-width: 3px; }
+.rp-rv-seg--materials, .rp-rv-dot--materials { background: var(--brand); }
+.rp-rv-seg--delivery, .rp-rv-dot--delivery { background: var(--brand-green, #4a7052); }
+.rp-rv-seg--tax, .rp-rv-dot--tax { background: var(--gray-400, #9ca3af); }
+.rp-rv-seg--other, .rp-rv-dot--other { background: var(--gray-300, #d1d5db); }
+.rp-rv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: 8px; margin-top: 14px; }
+.rp-rv-item { padding: 10px 12px; border-radius: var(--radius-md); background: var(--gray-50, #f9fafb); }
+.rp-rv-label { display: flex; align-items: center; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--gray-500); }
+.rp-rv-label .rp-cn-dot { flex-shrink: 0; }
+.rp-rv-val { margin-top: 4px; font-size: 16px; font-weight: 800; color: var(--gray-900); font-family: var(--font-heading); white-space: nowrap; }
+.rp-rv-pct { font-size: 12px; font-weight: 700; color: var(--gray-500); }
+.rp-rv-pending { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; border-top: 1px solid var(--border-light); font-size: 12px; font-weight: 600; color: var(--gray-500); }
+.rp-rv-fill { flex-shrink: 0; }
+.rp-rv-msg { padding: 0 20px 12px; font-size: 12px; font-weight: 700; color: var(--brand); }
+.rp-rs-town { padding: 10px 20px; border-bottom: 1px solid var(--border-light); }
+.rp-rs-town-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.rp-rs-town-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 700; color: var(--gray-900); }
+.rp-rs-town-count { flex-shrink: 0; font-size: 14px; font-weight: 800; color: var(--gray-900); font-family: var(--font-heading); }
+.rp-rs-town-meta { margin-top: 5px; font-size: 11px; font-weight: 600; color: var(--gray-500); line-height: 1.4; }
+.rp-rs-cust { display: flex; align-items: flex-start; gap: 12px; padding: 10px 20px; border-bottom: 1px solid var(--border-light); }
+.rp-rs-cust:last-child { border-bottom: none; }
+.rp-rs-rank { flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: var(--gray-100); color: var(--gray-600); font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+@media (max-width: 480px) { .rp-rv-pending { flex-direction: column; align-items: flex-start; } }
 /* ── Print ── */
 .rp-print-head, .rp-print-note, .rp-cn-print-mats { display: none; }
 @media print {
@@ -1240,7 +1496,9 @@ const styles = `
   .rp-section { margin-bottom: 10px; break-inside: avoid; }
   .rp-section:has(.rp-cn-acct), .rp-section:has(.rp-sn-heat), .rp-section:has(.rp-sn-prod) { break-inside: auto; }
   .rp-section-head { break-after: avoid; }
-  .rp-cn-acct, .rp-sn-prod, .rp-bar-row { break-inside: avoid; }
+  .rp-cn-acct, .rp-sn-prod, .rp-bar-row, .rp-rs-town, .rp-rs-cust { break-inside: avoid; }
+  .rp-rv-fill, .rp-rv-msg { display: none !important; }
+  .rp-section:has(.rp-rs-town) { break-inside: auto; }
   .rp-cn-acct-row { padding: 8px 16px; }
   .rp-cn-acct-open { padding-bottom: 8px; }
   .rp-sn-bar.sel, .rp-sn-cell.sel { outline: none; }
