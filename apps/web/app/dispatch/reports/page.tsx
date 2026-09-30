@@ -1025,27 +1025,47 @@ export default function ReportsPage() {
 
   useEffect(() => { fetchSummary(); }, [fetchSummary]);
 
-  // Pull materials / delivery / tax for past orders from WooCommerce in small batches
+  // Pull materials / delivery / tax for past orders from WooCommerce, 50 orders per request
   const fillBreakdown = useCallback(async () => {
+    const pause = (ms: number) => new Promise(r => setTimeout(r, ms));
     setFilling(true);
-    setFillMessage('');
+    setFillMessage('Starting…');
+    let before: string | null = null;
     let filled = 0;
-    let remaining = 0;
+    let skipped = 0;
+    let waits = 0;
+    let result = '';
     try {
-      for (let i = 0; i < 200; i++) {
-        const r = await api('/ops/reports/backfill-breakdown?limit=25', { method: 'POST' });
+      for (let i = 0; i < 500; i++) {
+        const r = await api(
+          `/ops/reports/backfill-breakdown?limit=50${before ? `&before=${encodeURIComponent(before)}` : ''}`,
+          { method: 'POST' },
+        );
+        if (r.blocked) {
+          waits += 1;
+          if (waits > 4) {
+            result = `Paused after ${filled.toLocaleString('en-US')} orders. WooCommerce is limiting requests; press again in a few minutes to continue.`;
+            break;
+          }
+          setFillMessage(`WooCommerce asked us to slow down. Waiting ${waits * 20}s…`);
+          await pause(waits * 20000);
+          continue;
+        }
+        waits = 0;
         filled += r.updated;
-        remaining = r.remaining;
-        setFillMessage(`Filled in ${filled.toLocaleString('en-US')} orders${remaining ? ` · ${remaining.toLocaleString('en-US')} to go…` : ''}`);
-        if (r.updated === 0 || r.remaining === 0) break;
+        skipped += Object.values(r.skipped as Record<string, number>).reduce((a, b) => a + b, 0);
+        before = r.next_before;
+        if (!r.left_to_try || !before) {
+          result = `Done. Filled in ${filled.toLocaleString('en-US')} orders.`
+            + (skipped ? ` ${skipped.toLocaleString('en-US')} couldn't be matched to a WooCommerce order and were skipped.` : '');
+          break;
+        }
+        setFillMessage(`Filled in ${filled.toLocaleString('en-US')} orders · ${Number(r.left_to_try).toLocaleString('en-US')} to go…`);
+        await pause(1000);
       }
-      setFillMessage(
-        remaining === 0
-          ? `Done. Filled in ${filled.toLocaleString('en-US')} orders.`
-          : `Filled in ${filled.toLocaleString('en-US')} orders. ${remaining.toLocaleString('en-US')} couldn't be read from WooCommerce.`,
-      );
+      setFillMessage(result || `Filled in ${filled.toLocaleString('en-US')} orders.`);
     } catch {
-      setFillMessage(`Stopped after ${filled.toLocaleString('en-US')} orders. Couldn't reach WooCommerce. Try again shortly.`);
+      setFillMessage(`Stopped after ${filled.toLocaleString('en-US')} orders. Couldn't reach Loadout's server. Press again to continue.`);
     } finally {
       setFilling(false);
       fetchSummary();
