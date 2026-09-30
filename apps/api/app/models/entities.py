@@ -331,6 +331,10 @@ class Drop(Base, TenantScopedMixin, TimestampMixin):
     fulfilled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     pickup_ready_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     order_total: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    # Revenue breakdown copied from the WooCommerce order (null until captured or backfilled)
+    materials_total: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    delivery_fee: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    tax_total: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
 
 class SchedulingToken(Base):
     __tablename__ = "scheduling_tokens"
