@@ -29,6 +29,25 @@ def wc_route(store_url: str) -> tuple[str, dict]:
     return (store_url or "").rstrip("/"), {}
 
 
+def apply_wc_breakdown(drop, wc_order: dict) -> bool:
+    """Copy materials / delivery fee / tax from a WooCommerce order onto a drop.
+    Materials = sum of line-item totals (after discounts, before tax); delivery
+    fee = shipping_total; tax = total_tax. Returns False (and changes nothing)
+    when the payload doesn't carry full order totals."""
+    if not isinstance(wc_order, dict) or wc_order.get("total") in (None, "") or not wc_order.get("line_items"):
+        return False
+    try:
+        materials = sum(float(li.get("total") or 0) for li in wc_order["line_items"])
+        delivery = float(wc_order.get("shipping_total") or 0)
+        tax = float(wc_order.get("total_tax") or 0)
+    except (TypeError, ValueError):
+        return False
+    drop.materials_total = round(materials, 2)
+    drop.delivery_fee = round(delivery, 2)
+    drop.tax_total = round(tax, 2)
+    return True
+
+
 def wc_redact(text: str, limit: int = 300) -> str:
     """Strip WooCommerce keys from text before logging, and trim long HTML bodies."""
     text = _SECRET_RE.sub(r"\1[redacted]", text or "")
