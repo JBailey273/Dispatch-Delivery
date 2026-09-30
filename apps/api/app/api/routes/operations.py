@@ -2,6 +2,7 @@ import csv
 import io
 import logging
 import re
+import uuid
 from collections import defaultdict
 from zoneinfo import ZoneInfo
 
@@ -921,12 +922,16 @@ def residential_report(
 
 @router.post("/reports/backfill-breakdown")
 def backfill_revenue_breakdown(
-    limit: int = Query(default=25, ge=1, le=100),
+    limit: int = Query(default=50, ge=1, le=100),
+    before: str | None = Query(default=None),  # bookmark "<created_at>|<drop id>" of the last order already tried
     user: AuthUser = Depends(require_roles(UserRole.ADMIN)),
     db: Session = Depends(db_dep),
 ):
-    """Fill materials / delivery fee / tax on past orders from WooCommerce, one
-    batch per call (newest first). Safe to call repeatedly; stops when nothing is left."""
+    """Fill materials / delivery fee / tax on past orders from WooCommerce.
+    Each call fetches one batch of orders in a single WooCommerce request, newest
+    first, and returns a bookmark so orders that can't be read never block the
+    rest. If WooCommerce refuses or throttles the request, nothing advances and
+    `blocked` is returned so the caller can pause and retry."""
     from app.api.routes.internal_orders import _wc_request
     from app.api.woocommerce_service import apply_wc_breakdown
 
@@ -937,21 +942,65 @@ def backfill_revenue_breakdown(
         Drop.order_total.is_not(None),
         Drop.materials_total.is_(None),
     ]
-    batch = db.execute(select(Drop).where(*pending).order_by(Drop.created_at.desc()).limit(limit)).scalars().all()
-    updated, failed = 0, 0
-    for d in batch:
+    def after_bookmark(bookmark: str | None) -> list:
+        if not bookmark:
+            return []
         try:
-            if apply_wc_breakdown(d, _wc_request(f"orders/{d.external_order_id}")):
-                db.commit()
+            ts_raw, id_raw = bookmark.rsplit("|", 1)
+            ts, did = datetime.fromisoformat(ts_raw), uuid.UUID(id_raw)
+        except ValueError:
+            raise HTTPException(status_code=400, detail={"code": "bad_cursor", "message": "Invalid bookmark"})
+        return [or_(Drop.created_at < ts, and_(Drop.created_at == ts, Drop.id < did))]
+
+    batch = db.execute(
+        select(Drop).where(*pending, *after_bookmark(before)).order_by(Drop.created_at.desc(), Drop.id.desc()).limit(limit)
+    ).scalars().all()
+
+    skipped = {"not_found": 0, "no_totals": 0, "not_a_wc_id": 0}
+    updated = 0
+    blocked = None
+    next_before = before
+
+    ids = [str(d.external_order_id).strip() for d in batch if str(d.external_order_id).strip().isdigit()]
+    orders_by_id: dict[str, dict] = {}
+    if ids:
+        try:
+            found = _wc_request(f"orders?include={','.join(ids)}&per_page={len(ids)}&status=any")
+            orders_by_id = {str(o.get("id")): o for o in (found or []) if isinstance(o, dict)}
+        except HTTPException as e:
+            detail = e.detail if isinstance(e.detail, dict) else {}
+            blocked = detail.get("message") or str(e.detail)
+        except Exception as e:
+            blocked = str(e)
+
+    if blocked is None:
+        for d in batch:
+            ext = str(d.external_order_id).strip()
+            if not ext.isdigit():
+                skipped["not_a_wc_id"] += 1
+            elif ext not in orders_by_id:
+                skipped["not_found"] += 1
+            elif apply_wc_breakdown(d, orders_by_id[ext]):
                 updated += 1
             else:
-                failed += 1
-        except Exception as e:
-            db.rollback()
-            failed += 1
-            logger.warning(f"backfill_breakdown: order {d.external_order_id} failed: {e}")
+                skipped["no_totals"] += 1
+            next_before = f"{d.created_at.isoformat()}|{d.id}"
+        db.commit()
+        if any(skipped.values()):
+            logger.info(f"backfill_breakdown: batch of {len(batch)} updated {updated}, skipped {skipped}")
+    else:
+        logger.warning(f"backfill_breakdown: WooCommerce refused batch: {blocked}")
+
     remaining = db.execute(select(func.count(Drop.id)).where(*pending)).scalar_one()
-    return {"updated": updated, "failed": failed, "remaining": int(remaining)}
+    left_to_try = db.execute(select(func.count(Drop.id)).where(*pending, *after_bookmark(next_before))).scalar_one()
+    return {
+        "updated": updated,
+        "skipped": skipped,
+        "blocked": blocked,
+        "next_before": next_before,
+        "remaining": int(remaining),
+        "left_to_try": int(left_to_try),
+    }
 
 
 @router.get("/reports/throughput")
