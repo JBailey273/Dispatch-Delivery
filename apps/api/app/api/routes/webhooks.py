@@ -87,6 +87,13 @@ async def woocommerce_webhook(
                 logger.info(f"woocommerce_webhook: backfilled order_total ${wc_total} for drop {existing.id} (order {external_order_id})")
             except Exception:
                 logger.exception(f"woocommerce_webhook: failed to backfill order_total for drop {existing.id}")
+        try:
+            from app.api.woocommerce_service import apply_wc_breakdown
+            if apply_wc_breakdown(existing, payload):
+                db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception(f"woocommerce_webhook: failed to update revenue breakdown for drop {existing.id}")
         return {"status": "already_ingested", "drop_id": str(existing.id)}
 
     location = db.execute(
@@ -250,6 +257,11 @@ async def woocommerce_webhook(
         payment_method="card",
         payment_status="paid",
     )
+    try:
+        from app.api.woocommerce_service import apply_wc_breakdown
+        apply_wc_breakdown(drop, payload)
+    except Exception:
+        logger.exception(f"woocommerce_webhook: could not read revenue breakdown for order {external_order_id}")
     db.add(drop)
     db.flush()
 
