@@ -1,5 +1,6 @@
 import csv
 import io
+import logging
 import re
 from collections import defaultdict
 from zoneinfo import ZoneInfo
@@ -34,6 +35,7 @@ from app.models.entities import (
     WindowCode,
 )
 
+logger = logging.getLogger("dispatch.operations")
 router = APIRouter(prefix="/ops", tags=["operations"])
 admin_router = APIRouter(prefix="/admin", tags=["admin-ops"])
 
@@ -490,6 +492,67 @@ def seasonal_report(
     }
 
 
+def _breakdown_acc() -> dict:
+    return {"materials": 0.0, "delivery": 0.0, "tax": 0.0, "covered_orders": 0, "covered_revenue": 0.0, "pending_orders": 0}
+
+
+def _breakdown_add(acc: dict, d: Drop) -> None:
+    """Accumulate the stored materials / delivery / tax split for one drop."""
+    if d.order_total is None:
+        return
+    if d.materials_total is None:
+        if d.external_order_id:
+            acc["pending_orders"] += 1
+        return
+    acc["covered_orders"] += 1
+    acc["covered_revenue"] += float(d.order_total)
+    acc["materials"] += float(d.materials_total or 0)
+    acc["delivery"] += float(d.delivery_fee or 0)
+    acc["tax"] += float(d.tax_total or 0)
+
+
+def _breakdown_out(acc: dict) -> dict:
+    other = acc["covered_revenue"] - acc["materials"] - acc["delivery"] - acc["tax"]
+    return {
+        "materials": round(acc["materials"], 2),
+        "delivery": round(acc["delivery"], 2),
+        "tax": round(acc["tax"], 2),
+        "other": round(other, 2) if abs(other) >= 1 else 0.0,
+        "covered_orders": acc["covered_orders"],
+        "covered_revenue": round(acc["covered_revenue"], 2),
+        "pending_orders": acc["pending_orders"],
+    }
+
+
+def _drop_scope(user: AuthUser, start_date: date, end_date: date, mode: str, location_id: str | None) -> list:
+    """Same drop scope as /reports/summary: booked = created_at, fulfilled = delivery date / pickup time."""
+    start_dt = datetime.combine(start_date, time.min, tzinfo=EASTERN)
+    end_dt = datetime.combine(end_date, time.max, tzinfo=EASTERN)
+    if mode == "fulfilled":
+        filters = [
+            Drop.tenant_id == user.tenant_id,
+            Drop.status != "cancelled",
+            or_(
+                and_(Drop.delivery_method == "delivery", Drop.scheduled_date >= start_date, Drop.scheduled_date <= end_date),
+                and_(Drop.delivery_method == "pickup", Drop.fulfilled_at >= start_dt, Drop.fulfilled_at <= end_dt),
+            ),
+        ]
+    else:
+        filters = [
+            Drop.tenant_id == user.tenant_id,
+            Drop.created_at >= start_dt,
+            Drop.created_at <= end_dt,
+            Drop.status != "cancelled",
+        ]
+    if location_id:
+        filters.append(Drop.location_id == location_id)
+    return filters
+
+
+def _is_contractor(c: Customer) -> bool:
+    return bool(c.is_contractor) or (c.customer_type is not None and c.customer_type.value == "commercial")
+
+
 @router.get("/reports/contractors")
 def contractor_report(
     start_date: date,
@@ -549,13 +612,15 @@ def contractor_report(
     drop_info: dict = {}  # drop_id -> (segment, customer_id, day)
     customers: dict = {}
     seg_tot = {s: {"orders": 0, "yards": 0.0, "revenue": 0.0, "deliveries": 0, "pickups": 0} for s in ("contractor", "residential")}
-    acct: dict = defaultdict(lambda: {"orders": 0, "yards": 0.0, "revenue": 0.0, "deliveries": 0, "pickups": 0, "products": defaultdict(float)})
+    acct: dict = defaultdict(lambda: {"orders": 0, "yards": 0.0, "revenue": 0.0, "deliveries": 0, "pickups": 0, "products": defaultdict(float), "delivery_fees": 0.0, "fee_orders": 0})
+    seg_split = {s: _breakdown_acc() for s in ("contractor", "residential")}
     weekday_orders = [0] * 7
     for d, c in rows:
         seg = "contractor" if is_contractor(c) else "residential"
         day = activity_day(d)
         drop_info[d.id] = (seg, c.id, day)
         t = seg_tot[seg]
+        _breakdown_add(seg_split[seg], d)
         t["orders"] += 1
         if d.order_total is not None:
             t["revenue"] += float(d.order_total)
@@ -567,6 +632,9 @@ def contractor_report(
             customers[c.id] = c
             a = acct[c.id]
             a["orders"] += 1
+            if d.delivery_fee is not None:
+                a["delivery_fees"] += float(d.delivery_fee)
+                a["fee_orders"] += 1
             if d.order_total is not None:
                 a["revenue"] += float(d.order_total)
             if d.delivery_method == "delivery":
@@ -638,6 +706,8 @@ def contractor_report(
             "share_of_contractor_yards": round(a["yards"] / con_yards * 100, 1) if con_yards else 0,
             "deliveries": a["deliveries"],
             "pickups": a["pickups"],
+            "delivery_fees": round(a["delivery_fees"], 2),
+            "fee_orders": a["fee_orders"],
             "materials": [
                 {"product": p, "yards": round(q, 1), "share": round(q / a["yards"] * 100, 1) if a["yards"] else 0}
                 for p, q in materials
@@ -659,6 +729,7 @@ def contractor_report(
             "pickups": t["pickups"],
             "avg_order_yards": round(t["yards"] / t["orders"], 1) if t["orders"] else 0,
             "avg_order_value": round(t["revenue"] / t["orders"], 2) if t["orders"] else 0,
+            "breakdown": _breakdown_out(seg_split[s]),
         }
 
     all_yards = seg_tot["contractor"]["yards"] + seg_tot["residential"]["yards"]
@@ -708,6 +779,179 @@ def contractor_report(
         ],
         "window_split": window_split,
     }
+
+
+@router.get("/reports/residential")
+def residential_report(
+    start_date: date,
+    end_date: date,
+    location_id: str | None = Query(default=None),
+    mode: str = Query(default="booked"),
+    user: AuthUser = Depends(require_roles(UserRole.DISPATCHER, UserRole.ADMIN)),
+    db: Session = Depends(db_dep),
+):
+    """Residential customers: totals, materials / delivery / tax split, product
+    volume, top 10 customers, and deliveries by town. Read-only."""
+    _date_range(start_date, end_date)
+    rows = db.execute(
+        select(Drop, Customer, CustomerAddress)
+        .join(Customer, Customer.id == Drop.customer_id)
+        .outerjoin(CustomerAddress, CustomerAddress.id == Drop.address_id)
+        .where(*_drop_scope(user, start_date, end_date, mode, location_id))
+    ).all()
+
+    all_orders = len(rows)
+    all_revenue = sum(float(d.order_total) for d, _, _ in rows if d.order_total is not None)
+    res = [(d, c, a) for d, c, a in rows if not _is_contractor(c)]
+
+    yards_by_drop: dict = defaultdict(float)
+    yards_by_product: dict[str, float] = defaultdict(float)
+    all_yards = 0.0
+    if rows:
+        res_ids = {d.id for d, _, _ in res}
+        load_rows = db.execute(
+            select(Load.drop_id, Load.material_name_snapshot, Load.unit, Load.qty)
+            .where(Load.tenant_id == user.tenant_id, Load.drop_id.in_([d.id for d, _, _ in rows]), Load.status != LoadStatus.CANCELLED)
+        ).all()
+        for drop_id, name, unit, qty in load_rows:
+            if not name or unit == "cord":
+                continue
+            q = float(qty)
+            all_yards += q
+            if drop_id in res_ids:
+                yards_by_drop[drop_id] += q
+                yards_by_product[name] += q
+
+    def town_of(a: CustomerAddress | None) -> tuple[str, str]:
+        if a is None or not (a.city or "").strip():
+            return ("Unknown", "")
+        return (" ".join(a.city.split()).title(), (a.state or "").strip().upper())
+
+    split = _breakdown_acc()
+    totals = {"orders": 0, "yards": 0.0, "revenue": 0.0, "deliveries": 0, "pickups": 0}
+    customers: dict = defaultdict(lambda: {"name": "", "town": "", "orders": 0, "yards": 0.0, "revenue": 0.0, "delivery_fees": 0.0, "last": None})
+    towns: dict = defaultdict(lambda: {"deliveries": 0, "yards": 0.0, "revenue": 0.0, "delivery_fees": 0.0, "fee_orders": 0})
+    for d, c, a in res:
+        _breakdown_add(split, d)
+        y = yards_by_drop.get(d.id, 0.0)
+        rev = float(d.order_total) if d.order_total is not None else 0.0
+        totals["orders"] += 1
+        totals["yards"] += y
+        totals["revenue"] += rev
+        cu = customers[c.id]
+        cu["name"] = c.name
+        cu["orders"] += 1
+        cu["yards"] += y
+        cu["revenue"] += rev
+        if d.delivery_fee is not None:
+            cu["delivery_fees"] += float(d.delivery_fee)
+        if cu["last"] is None or (d.created_at and d.created_at > cu["last"]):
+            cu["last"] = d.created_at
+            if a is not None and d.delivery_method == "delivery":
+                cu["town"] = town_of(a)[0]
+        if d.delivery_method == "delivery":
+            totals["deliveries"] += 1
+            t = towns[town_of(a)]
+            t["deliveries"] += 1
+            t["yards"] += y
+            t["revenue"] += rev
+            if d.delivery_fee is not None:
+                t["delivery_fees"] += float(d.delivery_fee)
+                t["fee_orders"] += 1
+        elif d.delivery_method == "pickup":
+            totals["pickups"] += 1
+
+    top = sorted(customers.values(), key=lambda x: x["revenue"], reverse=True)[:10]
+    n = totals["orders"]
+    return {
+        "start_date": str(start_date),
+        "end_date": str(end_date),
+        "mode": mode,
+        "totals": {
+            "orders": n,
+            "yards": round(totals["yards"], 1),
+            "revenue": round(totals["revenue"], 2),
+            "deliveries": totals["deliveries"],
+            "pickups": totals["pickups"],
+            "customers": len(customers),
+            "avg_order_yards": round(totals["yards"] / n, 1) if n else 0,
+            "avg_order_value": round(totals["revenue"] / n, 2) if n else 0,
+        },
+        "share": {
+            "orders": round(n / all_orders * 100, 1) if all_orders else 0,
+            "yards": round(totals["yards"] / all_yards * 100, 1) if all_yards else 0,
+            "revenue": round(totals["revenue"] / all_revenue * 100, 1) if all_revenue else 0,
+        },
+        "breakdown": _breakdown_out(split),
+        "products": [
+            {"product": p, "yards": round(q, 1)}
+            for p, q in sorted(yards_by_product.items(), key=lambda x: x[1], reverse=True)
+        ],
+        "top_customers": [
+            {
+                "name": cu["name"],
+                "town": cu["town"],
+                "orders": cu["orders"],
+                "yards": round(cu["yards"], 1),
+                "revenue": round(cu["revenue"], 2),
+                "delivery_fees": round(cu["delivery_fees"], 2),
+            }
+            for cu in top
+        ],
+        "towns": sorted(
+            [
+                {
+                    "town": town,
+                    "state": state,
+                    "deliveries": t["deliveries"],
+                    "yards": round(t["yards"], 1),
+                    "revenue": round(t["revenue"], 2),
+                    "delivery_fees": round(t["delivery_fees"], 2),
+                    "fee_orders": t["fee_orders"],
+                    "avg_fee": round(t["delivery_fees"] / t["fee_orders"], 2) if t["fee_orders"] else None,
+                    "share_of_deliveries": round(t["deliveries"] / totals["deliveries"] * 100, 1) if totals["deliveries"] else 0,
+                }
+                for (town, state), t in towns.items()
+            ],
+            key=lambda x: x["deliveries"],
+            reverse=True,
+        ),
+    }
+
+
+@router.post("/reports/backfill-breakdown")
+def backfill_revenue_breakdown(
+    limit: int = Query(default=25, ge=1, le=100),
+    user: AuthUser = Depends(require_roles(UserRole.ADMIN)),
+    db: Session = Depends(db_dep),
+):
+    """Fill materials / delivery fee / tax on past orders from WooCommerce, one
+    batch per call (newest first). Safe to call repeatedly; stops when nothing is left."""
+    from app.api.routes.internal_orders import _wc_request
+    from app.api.woocommerce_service import apply_wc_breakdown
+
+    pending = [
+        Drop.tenant_id == user.tenant_id,
+        Drop.status != "cancelled",
+        Drop.external_order_id.is_not(None),
+        Drop.order_total.is_not(None),
+        Drop.materials_total.is_(None),
+    ]
+    batch = db.execute(select(Drop).where(*pending).order_by(Drop.created_at.desc()).limit(limit)).scalars().all()
+    updated, failed = 0, 0
+    for d in batch:
+        try:
+            if apply_wc_breakdown(d, _wc_request(f"orders/{d.external_order_id}")):
+                db.commit()
+                updated += 1
+            else:
+                failed += 1
+        except Exception as e:
+            db.rollback()
+            failed += 1
+            logger.warning(f"backfill_breakdown: order {d.external_order_id} failed: {e}")
+    remaining = db.execute(select(func.count(Drop.id)).where(*pending)).scalar_one()
+    return {"updated": updated, "failed": failed, "remaining": int(remaining)}
 
 
 @router.get("/reports/throughput")
