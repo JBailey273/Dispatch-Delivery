@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import AuthUser, db_dep, require_roles
 from app.api.services import log_event, normalize_us_phone, now_utc
-from app.api.woocommerce_service import WC_HEADERS, wc_redact, wc_route
+from app.api.woocommerce_service import WC_HEADERS, apply_wc_breakdown, wc_redact, wc_route
 from app.core.config import settings
 from app.models.entities import (
     Customer,
@@ -937,6 +937,7 @@ def create_internal_order(
                     wc_customer_id=wc_customer_id,
                     order_total=float(wc_order.get("total") or 0) or None,
                 )
+                apply_wc_breakdown(new_drop, wc_order)
                 db.add(new_drop)
                 db.flush()
 
@@ -1779,6 +1780,9 @@ def modify_drop_order(
 
     # ── Update local drop ─────────────────────────────────────────────────────
     drop.order_total = new_total
+    drop.materials_total = round(items_subtotal, 2)
+    drop.delivery_fee = round(shipping_total, 2)
+    drop.tax_total = tax_amount
     if action in ("charged_delta", "refunded", "no_charge", "local_only"):
         if payment_method in ("card",) and action in ("charged_delta", "refunded", "no_charge"):
             drop.payment_status = "paid"
