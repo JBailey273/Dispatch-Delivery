@@ -100,7 +100,7 @@ NAME_TO_ROW = {
 
 WC_FIELDS = (
     "id,number,status,date_paid_gmt,date_modified_gmt,total,total_tax,"
-    "shipping_total,shipping_tax,line_items,fee_lines,refunds,payment_method,meta_data"
+    "shipping_total,shipping_tax,line_items,fee_lines,refunds,payment_method,transaction_id,meta_data"
 )
 WC_PAGE_SIZE = 100
 WC_MAX_PAGES = 60
@@ -239,29 +239,129 @@ def _refunds_in_range(order_id: int, start: date, end: date) -> list[dict]:
     return out
 
 
-def _stripe_summary(start_utc: datetime, end_utc: datetime) -> dict | None:
+STRIPE_REF_META_KEYS = ("_stripe_payment_intent_id", "_stripe_payment_confirmed", "_stripe_intent_id")
+
+
+def _order_stripe_refs(o: dict) -> set[str]:
+    """Every Stripe PaymentIntent / charge id this WC order carries."""
+    m = _meta(o)
+    refs = {str(m[k]) for k in STRIPE_REF_META_KEYS if m.get(k)}
+    txn = str(o.get("transaction_id") or "")
+    if txn.startswith(("pi_", "ch_")):
+        refs.add(txn)
+    return refs
+
+
+def _month_label(d: str | None) -> str:
+    if not d:
+        return "another month"
+    try:
+        return date.fromisoformat(d).strftime("%b %Y")
+    except ValueError:
+        return "another month"
+
+
+def _stripe_summary(
+    start_utc: datetime,
+    end_utc: datetime,
+    ref_index: dict[str, int],
+    by_oid: dict[int, dict],
+    counted_oids: set[int],
+    wc_refunds_by_oid: dict[int, float],
+) -> dict | None:
+    """Stripe totals for the month, plus every charge/refund that doesn't
+    line up with a counted order or WC refund on this sheet."""
     if not settings.stripe_api_key:
         return None
     try:
         s = _stripe()
         gross = refunds = fees = payouts = 0.0
         charge_count = 0
+        unmatched: list[dict] = []
+        wc_refund_left = dict(wc_refunds_by_oid)
+
+        def resolve(ref_ids: list[str], metadata: dict) -> int | None:
+            for r in ref_ids:
+                if r and r in ref_index:
+                    return ref_index[r]
+            wc_id = (metadata or {}).get("wc_order_id")
+            if wc_id and str(wc_id).isdigit() and int(wc_id) in by_oid:
+                return int(wc_id)
+            return None
+
         txns = s.BalanceTransaction.list(
             created={"gte": int(start_utc.timestamp()), "lt": int(end_utc.timestamp())},
             limit=100,
+            expand=["data.source"],
         )
         for t in txns.auto_paging_iter():
             amount = t.amount / 100
             fees += t.fee / 100
+            when = str(datetime.fromtimestamp(t.created, tz=timezone.utc).astimezone(EASTERN).date())
+            src = t.source if not isinstance(t.source, str) else None
+
             if t.type in ("charge", "payment"):
                 gross += amount
                 charge_count += 1
+                pi = getattr(src, "payment_intent", None) if src else None
+                ch = getattr(src, "id", None) if src else None
+                md = dict(getattr(src, "metadata", {}) or {}) if src else {}
+                oid = resolve([pi, ch], md)
+                if oid is not None and oid in counted_oids:
+                    continue
+                info = by_oid.get(oid) if oid is not None else None
+                if info and info["status"] in ("cancelled", "refunded"):
+                    note = f"Order #{info['number']} is {info['status']} — excluded from income"
+                elif info and info["paid"]:
+                    note = f"Order #{info['number']} counted in {_month_label(info['paid'])} by its Loadout paid date"
+                elif info:
+                    note = f"Order #{info['number']} isn't marked paid in Loadout"
+                elif md.get("drop_id") or md.get("modified_by"):
+                    note = "Order edit charge — not tied to a paid date in WooCommerce"
+                else:
+                    note = "No matching order — possible duplicate or orphan charge"
+                unmatched.append({
+                    "date": when, "kind": "charge", "amount": round(amount, 2),
+                    "order": info["number"] if info else None,
+                    "ref": pi or ch, "note": note,
+                    "description": (getattr(src, "description", None) or "") if src else "",
+                })
+
             elif t.type in ("refund", "payment_refund"):
-                refunds += -amount
+                amt = -amount
+                refunds += amt
+                pi = getattr(src, "payment_intent", None) if src else None
+                ch = getattr(src, "charge", None) if src else None
+                if ch is not None and not isinstance(ch, str):
+                    ch = getattr(ch, "id", None)
+                md = dict(getattr(src, "metadata", {}) or {}) if src else {}
+                oid = resolve([pi, ch], md)
+                # Covered by a WC refund record on this sheet?
+                if oid is not None and wc_refund_left.get(oid, 0) >= amt - 0.01:
+                    wc_refund_left[oid] -= amt
+                    continue
+                info = by_oid.get(oid) if oid is not None else None
+                if info and info["status"] in ("cancelled", "refunded") and oid not in counted_oids:
+                    note = f"Order #{info['number']} is {info['status']} — refund excluded with it"
+                elif md.get("drop_id") or md.get("modified_by"):
+                    note = "Order edit refund — WooCommerce total was lowered instead of recording a refund"
+                elif info:
+                    note = f"Order #{info['number']} has no matching WooCommerce refund this month"
+                else:
+                    note = "No matching order or WooCommerce refund"
+                unmatched.append({
+                    "date": when, "kind": "refund", "amount": round(amt, 2),
+                    "order": info["number"] if info else None,
+                    "ref": getattr(src, "id", None) if src else None, "note": note,
+                    "description": md.get("reason", "") if md else "",
+                })
+
             elif t.type == "payout":
                 payouts += -amount
             elif t.type == "stripe_fee":
                 fees += -amount
+
+        unmatched.sort(key=lambda r: (r["date"], r["kind"]))
         return {
             "gross_charges": round(gross, 2),
             "charge_count": charge_count,
@@ -269,6 +369,9 @@ def _stripe_summary(start_utc: datetime, end_utc: datetime) -> dict | None:
             "fees": round(fees, 2),
             "net": round(gross - refunds - fees, 2),
             "payouts": round(payouts, 2),
+            "unmatched": unmatched,
+            "unmatched_charges": round(sum(u["amount"] for u in unmatched if u["kind"] == "charge"), 2),
+            "unmatched_refunds": round(sum(u["amount"] for u in unmatched if u["kind"] == "refund"), 2),
         }
     except Exception as e:
         logger.error(f"income_sheet: Stripe summary failed: {e}")
@@ -310,6 +413,24 @@ def income_sheet(
     pi_cache: dict = {}
     excluded_cancelled = 0
 
+    # Index every fetched order by its Stripe ids, with its Loadout paid date,
+    # so Stripe activity can be matched back to orders.
+    ref_index: dict[str, int] = {}
+    by_oid: dict[int, dict] = {}
+    paid_map: dict[int, tuple] = {}
+    for o in orders:
+        paid, how = _paid_date_and_tender(o, pi_cache)
+        paid_map[o["id"]] = (paid, how)
+        by_oid[o["id"]] = {
+            "number": str(o.get("number") or o["id"]),
+            "status": o.get("status"),
+            "paid": str(paid) if paid else None,
+        }
+        for ref in _order_stripe_refs(o):
+            ref_index[ref] = o["id"]
+    counted_oids: set[int] = set()
+    wc_refunds_by_oid: dict[int, float] = defaultdict(float)
+
     for o in orders:
         oid = o["id"]
         number = str(o.get("number") or oid)
@@ -326,6 +447,7 @@ def income_sheet(
         if o.get("refunds"):
             try:
                 for r in _refunds_in_range(oid, start_d, end_d):
+                    wc_refunds_by_oid[oid] += _money(r.get("amount"))
                     refund_rows.append({
                         "order_number": number,
                         "date": str(_gmt_to_local_date(r.get("date_created_gmt"))),
@@ -336,9 +458,10 @@ def income_sheet(
             except Exception as e:
                 logger.warning(f"income_sheet: refunds fetch failed for order {oid}: {e}")
 
-        paid, how = _paid_date_and_tender(o, pi_cache)
+        paid, how = paid_map[oid]
         if paid is None or not (start_d <= paid < end_d):
             continue
+        counted_oids.add(oid)
 
         for li in o.get("line_items") or []:
             amt = _money(li.get("total"))
@@ -400,7 +523,7 @@ def income_sheet(
         )
     ).scalar_one()
 
-    stripe_data = _stripe_summary(start_utc, end_utc)
+    stripe_data = _stripe_summary(start_utc, end_utc, ref_index, by_oid, counted_oids, wc_refunds_by_oid)
     if stripe_data and "error" not in stripe_data:
         stripe_data["card_tender_diff"] = round(stripe_data["gross_charges"] - tender["card"], 2)
 
@@ -433,6 +556,7 @@ def income_sheet(
             "unpaid_invoice_total": round(float(unpaid_total or 0), 2),
             "unpaid_invoice_count": int(unpaid_count or 0),
             "quick_drops": int(quick_drops or 0),
+            "excluded_cancelled": excluded_cancelled,
         },
         "unmapped": sorted(unmapped),
         "other_fee_names": sorted(other_fee_names),
