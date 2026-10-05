@@ -9,10 +9,15 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
 
 type Row = { label: string; amount: number; orders: number };
 type RefundItem = { order_number: string; date: string; amount: number; reason: string };
+type StripeUnmatched = {
+  date: string; kind: 'charge' | 'refund'; amount: number;
+  order: string | null; ref: string | null; note: string; description: string;
+};
 type StripeData = {
   error?: string;
   gross_charges: number; charge_count: number; refunds: number;
   fees: number; net: number; payouts: number; card_tender_diff: number;
+  unmatched?: StripeUnmatched[]; unmatched_charges?: number; unmatched_refunds?: number;
 };
 type Sheet = {
   year: number; month: number; month_closed: boolean; generated_at: string; cached: boolean;
@@ -244,6 +249,30 @@ export default function IncomeSheetPage() {
               </div>
             </div>
 
+            {/* ── Stripe items that don't line up ── */}
+            {sheet.stripe && !sheet.stripe.error && (sheet.stripe.unmatched?.length ?? 0) > 0 && (
+              <>
+                <div className="is-sec">Stripe activity not matched to this sheet</div>
+                <table className="is-table is-small">
+                  <tbody>
+                    {sheet.stripe.unmatched!.map((u, i) => (
+                      <tr key={(u.ref || '') + i}>
+                        <td>
+                          {fmtShortDate(u.date)} · {u.kind === 'charge' ? 'Charge' : 'Refund'}{u.order ? ` · #${u.order}` : ''}
+                          <span className="is-q is-why">{u.note}</span>
+                        </td>
+                        <td className={`is-r ${u.kind === 'refund' ? 'is-neg' : ''}`}>{fmt$(u.kind === 'refund' ? -u.amount : u.amount)}</td>
+                      </tr>
+                    ))}
+                    <tr className="is-total">
+                      <td>Unmatched charges / refunds</td>
+                      <td className="is-r">{fmt$(sheet.stripe.unmatched_charges ?? 0)} / {fmt$(-(sheet.stripe.unmatched_refunds ?? 0))}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </>
+            )}
+
             {/* ── Memo ── */}
             <div className="is-memo">
               <span>Unpaid contractor invoices today: {fmt$(sheet.memo.unpaid_invoice_total)} ({sheet.memo.unpaid_invoice_count}) — not income until paid</span>
@@ -331,6 +360,7 @@ const styles = `
   .is-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 28px; }
   .is-memo { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--gray-100, #eee); font-size: 12px; color: var(--gray-500); display: flex; flex-wrap: wrap; gap: 6px 18px; }
   .is-detail { margin-top: 8px; }
+  .is-why { display: block; margin-left: 0; margin-top: 2px; }
 
   @media (max-width: 480px) {
     .is-sheet { padding: 14px; }
