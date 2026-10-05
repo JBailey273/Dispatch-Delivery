@@ -1089,7 +1089,10 @@ export default function ReportsPage() {
           </div>
           <div className="rp-header-actions">
             <button className="btn btn-ghost btn-sm" onClick={() => window.print()} disabled={loading}>Print</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Link href="/dispatch/reports/income" className="btn btn-ghost btn-sm" style={{ textDecoration: 'none' }}>Income sheet</Link>
             <Link href="/ops-dashboard" className="btn btn-ghost btn-sm" style={{ textDecoration: 'none' }}>← Dashboard</Link>
+          </div>
           </div>
         </div>
 
