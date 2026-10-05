@@ -308,10 +308,19 @@ def income_sheet(
     paid_orders: list[dict] = []
     refund_rows: list[dict] = []
     pi_cache: dict = {}
+    excluded_cancelled = 0
 
     for o in orders:
         oid = o["id"]
         number = str(o.get("number") or oid)
+
+        # Cancelled orders are not income, and neither are orders marked
+        # refunded with no WC refund record (refunded directly in Stripe).
+        # Skip them entirely so their refunds aren't subtracted either.
+        status = o.get("status")
+        if status == "cancelled" or (status == "refunded" and not o.get("refunds")):
+            excluded_cancelled += 1
+            continue
 
         # Refunds count in the month they were issued, whenever the order was paid
         if o.get("refunds"):
