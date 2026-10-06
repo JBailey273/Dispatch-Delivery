@@ -7,57 +7,45 @@ import { api, requireRole } from '../../../lib/auth';
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
 
-type Row = { label: string; amount: number; orders: number };
-type RefundItem = { order_number: string; date: string; amount: number; reason: string };
-type StripeUnmatched = {
-  date: string; kind: 'charge' | 'refund'; amount: number;
-  order: string | null; ref: string | null; note: string; description: string;
-};
-type StripeData = {
-  error?: string;
-  gross_charges: number; charge_count: number; refunds: number;
-  fees: number; net: number; payouts: number; card_tender_diff: number;
-  unmatched?: StripeUnmatched[]; unmatched_charges?: number; unmatched_refunds?: number;
-};
+type Line = { account: string; memo: string; debit: number; credit: number };
+type Attention = { date: string; kind: string; amount: number; order: string | null; ref: string | null; note: string };
 type Sheet = {
-  year: number; month: number; month_closed: boolean; generated_at: string; cached: boolean;
-  rows: Row[];
-  gross_sales: number;
-  refunds: { total: number; count: number; items: RefundItem[] };
-  net_income: number;
-  sales_tax: { collected: number; taxable_sales: number; nontaxable_sales: number };
-  total_collected: number;
-  unexplained: number;
-  tender: { card: number; cash: number; other: number };
-  stripe: StripeData | null;
-  memo: { unpaid_invoice_total: number; unpaid_invoice_count: number; quick_drops: number };
-  unmapped: string[];
-  other_fee_names: string[];
-  order_count: number;
+  year: number; month: number; entry_date: string; month_closed: boolean;
+  generated_at: string; cached: boolean;
+  lines: Line[]; total_debit: number; total_credit: number; balanced: boolean;
+  stripe_ok: boolean; stripe_error: string | null;
+  clearing_check: number | null;
+  attention: Attention[];
+  summary: {
+    gross_sales: number; refunds: number; tax_collected: number; tax_refunded: number;
+    card_collected: number; cash_collected: number;
+  };
+  misc_items: string[];
+  unpaid_invoices: { total: number; count: number };
   orders: { number: string; paid: string; total: number; tender: string }[];
+  refund_items: { order_number: string; date: string; amount: number; tender: string; reason: string }[];
 };
 
 function fmt$(n: number) {
   const s = '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return n < 0 ? '−' + s : s;
 }
-
+function fmtAmt(n: number) {
+  return n ? Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+}
 function fmtStamp(iso: string) {
   return new Date(iso).toLocaleString('en-US', {
     timeZone: 'America/New_York', month: 'short', day: 'numeric', year: 'numeric',
     hour: 'numeric', minute: '2-digit',
   }) + ' ET';
 }
-
-function fmtShortDate(ds: string) {
+function fmtDate(ds: string) {
+  if (!ds) return '';
   const d = new Date(ds + 'T12:00:00');
-  return `${MONTHS[d.getMonth()].slice(0, 3)} ${d.getDate()}`;
+  return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
 }
 
-const TENDER_LABELS: Record<string, string> = { card: 'Card', cash: 'Cash / check', other: 'Other' };
-
 export default function IncomeSheetPage() {
-  // Default to last month — the one you're closing out
   const now = new Date();
   const [year, setYear] = useState(now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() === 0 ? 12 : now.getMonth());
@@ -73,7 +61,7 @@ export default function IncomeSheetPage() {
       const data = await api(`/finance/income-sheet?year=${year}&month=${month}${refresh ? '&refresh=true' : ''}`);
       setSheet(data);
     } catch {
-      setError("Couldn't build the income sheet. Try again in a minute.");
+      setError("Couldn't build the journal entry. Try again in a minute.");
     } finally {
       setLoading(false);
     }
@@ -91,38 +79,34 @@ export default function IncomeSheetPage() {
     setMonth(m);
   };
 
-  const isFutureMonth = year > now.getFullYear() || (year === now.getFullYear() && month >= now.getMonth() + 1);
+  const isCurrentOrFuture = year > now.getFullYear() || (year === now.getFullYear() && month >= now.getMonth() + 1);
 
   if (!requireRole(['admin'])) return <div className="page"><p>Unauthorized</p></div>;
 
-  const visibleRows = sheet?.rows.filter(r =>
-    !((r.label === 'Other Fees' || r.label === 'Uncategorized') && r.amount === 0)
-  ) ?? [];
-  const tenderTotal = sheet ? sheet.tender.card + sheet.tender.cash + sheet.tender.other : 0;
-  const tenderMatches = sheet ? Math.abs(tenderTotal - sheet.total_collected) < 0.01 : false;
+  const readyToPost = !!sheet && sheet.balanced && sheet.stripe_ok && sheet.month_closed;
 
   return (
     <>
       <style>{styles}</style>
-      <div className="page is-page">
+      <div className="page je-page">
 
-        {/* ── Controls (hidden in print) ── */}
-        <div className="is-controls no-print">
-          <div className="is-top">
+        {/* ── Controls ── */}
+        <div className="no-print">
+          <div className="je-top">
             <div>
-              <h1>Income sheet</h1>
-              <p className="is-sub">Monthly income by QuickBooks item · cash basis</p>
+              <h1>Month-end journal entry</h1>
+              <p className="je-sub">Type each line into QuickBooks as a General Journal Entry</p>
             </div>
             <Link href="/dispatch/reports" className="btn btn-ghost btn-sm" style={{ textDecoration: 'none' }}>← Reports</Link>
           </div>
 
-          <div className="card is-bar">
-            <div className="is-month">
+          <div className="card je-bar">
+            <div className="je-month">
               <button className="btn btn-ghost btn-sm" onClick={() => shiftMonth(-1)} disabled={loading} aria-label="Previous month">‹</button>
-              <span className="is-month-label">{MONTHS[month - 1]} {year}</span>
-              <button className="btn btn-ghost btn-sm" onClick={() => shiftMonth(1)} disabled={loading || isFutureMonth} aria-label="Next month">›</button>
+              <span className="je-month-label">{MONTHS[month - 1]} {year}</span>
+              <button className="btn btn-ghost btn-sm" onClick={() => shiftMonth(1)} disabled={loading || isCurrentOrFuture} aria-label="Next month">›</button>
             </div>
-            <div className="is-actions">
+            <div className="je-actions">
               <button className="btn btn-ghost btn-sm" onClick={() => load(true)} disabled={loading}>
                 {loading ? 'Building…' : 'Refresh'}
               </button>
@@ -130,11 +114,8 @@ export default function IncomeSheetPage() {
             </div>
           </div>
 
-          {sheet && !sheet.month_closed && (
-            <div className="alert is-note">This month isn't over yet — figures will change.</div>
-          )}
           {sheet?.cached && (
-            <div className="is-hint">Saved copy from {fmtStamp(sheet.generated_at)}. Refresh to rebuild from live data.</div>
+            <div className="je-hint">Saved copy from {fmtStamp(sheet.generated_at)}. Refresh to rebuild from live data.</div>
           )}
         </div>
 
@@ -143,179 +124,136 @@ export default function IncomeSheetPage() {
         {loading && !sheet && (
           <div className="no-print" style={{ textAlign: 'center', padding: 60 }}>
             <div className="spinner spinner-lg" style={{ margin: '0 auto' }} />
-            <p className="is-hint" style={{ marginTop: 12 }}>Pulling the month from WooCommerce and Stripe…</p>
+            <p className="je-hint" style={{ marginTop: 12 }}>Pulling the month from WooCommerce and Stripe…</p>
           </div>
         )}
 
         {sheet && (
-          <div className="card is-sheet is-print">
+          <div className="card je-sheet je-print">
 
-            <div className="is-head">
+            <div className="je-head">
               <div>
-                <div className="is-title">Income posting sheet</div>
-                <div className="is-meta">East Meadow Garden Center · cash basis</div>
+                <div className="je-title">General journal entry</div>
+                <div className="je-meta">East Meadow Garden Center · cash basis</div>
               </div>
-              <div className="is-head-right">
-                <div className="is-title">{MONTHS[sheet.month - 1]} {sheet.year}</div>
-                <div className="is-meta">Generated {fmtStamp(sheet.generated_at)}</div>
+              <div className="je-head-right">
+                <div className="je-title">{MONTHS[sheet.month - 1]} {sheet.year}</div>
+                <div className="je-meta">Entry date {fmtDate(sheet.entry_date)}</div>
               </div>
             </div>
 
-            {/* Warnings that must be resolved before posting */}
-            {(sheet.unmapped.length > 0 || Math.abs(sheet.unexplained) >= 0.01) && (
-              <div className="is-warn">
-                {sheet.unmapped.length > 0 && (
-                  <div><strong>Uncategorized products:</strong> {sheet.unmapped.join(', ')}. Add their SKUs to the report map.</div>
-                )}
-                {Math.abs(sheet.unexplained) >= 0.01 && (
-                  <div><strong>Doesn't tie out by {fmt$(sheet.unexplained)}:</strong> order totals differ from items + tax. Check order detail before posting.</div>
-                )}
-              </div>
-            )}
+            {/* ── Status ── */}
+            {!sheet.month_closed && <div className="je-banner je-warn">This month isn't over yet. Don't post until it closes.</div>}
+            {sheet.stripe_error && <div className="je-banner je-bad">{sheet.stripe_error}</div>}
+            {readyToPost && <div className="je-banner je-ok">✓ Balanced and ready to post</div>}
 
-            {/* ── Income ── */}
-            <div className="is-sec">Income by QuickBooks item</div>
-            <table className="is-table">
+            {/* ── The entry ── */}
+            <table className="je-table">
+              <thead>
+                <tr>
+                  <th>Account</th>
+                  <th className="je-r">Debit</th>
+                  <th className="je-r">Credit</th>
+                </tr>
+              </thead>
               <tbody>
-                {visibleRows.map(r => (
-                  <tr key={r.label} className={r.amount === 0 ? 'is-zero' : ''}>
+                {sheet.lines.map((l, i) => (
+                  <tr key={i}>
                     <td>
-                      {r.label}
-                      {r.orders > 0 && <span className="is-q">{r.orders} order{r.orders === 1 ? '' : 's'}</span>}
-                      {r.label === 'Other Fees' && sheet.other_fee_names.length > 0 && (
-                        <span className="is-q">{sheet.other_fee_names.join(', ')}</span>
-                      )}
+                      <div className="je-acct">{l.account}</div>
+                      {l.memo && <div className="je-memo">{l.memo}</div>}
                     </td>
-                    <td className="is-r">{fmt$(r.amount)}</td>
+                    <td className="je-r je-num">{fmtAmt(l.debit)}</td>
+                    <td className="je-r je-num">{fmtAmt(l.credit)}</td>
                   </tr>
                 ))}
-                <tr className="is-sub-row"><td>Gross sales</td><td className="is-r">{fmt$(sheet.gross_sales)}</td></tr>
+              </tbody>
+              <tfoot>
                 <tr>
-                  <td>Refunds{sheet.refunds.count > 0 && <span className="is-q">{sheet.refunds.count}</span>}</td>
-                  <td className="is-r is-neg">{fmt$(-sheet.refunds.total)}</td>
+                  <td>Totals {sheet.balanced ? <span className="je-tick">✓ balanced</span> : <span className="je-x">out of balance</span>}</td>
+                  <td className="je-r je-num">{fmtAmt(sheet.total_debit)}</td>
+                  <td className="je-r je-num">{fmtAmt(sheet.total_credit)}</td>
                 </tr>
-                <tr className="is-total"><td>Net income</td><td className="is-r">{fmt$(sheet.net_income)}</td></tr>
-              </tbody>
+              </tfoot>
             </table>
 
-            {/* ── Sales tax ── */}
-            <div className="is-sec">Sales tax — liability, not income</div>
-            <table className="is-table">
-              <tbody>
-                <tr><td>Taxable sales</td><td className="is-r">{fmt$(sheet.sales_tax.taxable_sales)}</td></tr>
-                <tr><td>Non-taxable sales</td><td className="is-r">{fmt$(sheet.sales_tax.nontaxable_sales)}</td></tr>
-                <tr><td>Sales tax collected</td><td className="is-r">{fmt$(sheet.sales_tax.collected)}</td></tr>
-                <tr className="is-total"><td>Total collected from customers</td><td className="is-r">{fmt$(sheet.total_collected)}</td></tr>
-              </tbody>
-            </table>
-
-            {/* ── Reconciliation ── */}
-            <div className="is-grid">
-              <div>
-                <div className="is-sec">Tender</div>
-                <table className="is-table">
-                  <tbody>
-                    <tr><td>Card / Stripe</td><td className="is-r">{fmt$(sheet.tender.card)}</td></tr>
-                    <tr><td>Cash / check</td><td className="is-r">{fmt$(sheet.tender.cash)}</td></tr>
-                    {sheet.tender.other !== 0 && <tr><td>Other</td><td className="is-r">{fmt$(sheet.tender.other)}</td></tr>}
-                    <tr className="is-total">
-                      <td>{tenderMatches ? 'Matches total' : 'Does not match'}</td>
-                      <td className={`is-r ${tenderMatches ? 'is-ok' : 'is-neg'}`}>{tenderMatches ? '✓ ' : ''}{fmt$(tenderTotal)}</td>
-                    </tr>
-                  </tbody>
-                </table>
+            {/* ── One check after posting ── */}
+            {sheet.clearing_check !== null && (
+              <div className="je-check">
+                <div className="je-check-label">After posting, POS Clearing in QuickBooks should read</div>
+                <div className="je-check-val">{fmt$(sheet.clearing_check)}</div>
+                <div className="je-check-note">This is what Stripe is holding that hasn't reached Monson Savings yet. If QuickBooks shows a different number, the items below explain the gap.</div>
               </div>
-
-              <div>
-                <div className="is-sec">Stripe</div>
-                {!sheet.stripe && <p className="is-hint">Stripe isn't configured.</p>}
-                {sheet.stripe?.error && <p className="is-hint">{sheet.stripe.error}</p>}
-                {sheet.stripe && !sheet.stripe.error && (
-                  <table className="is-table">
-                    <tbody>
-                      <tr><td>Charges<span className="is-q">{sheet.stripe.charge_count}</span></td><td className="is-r">{fmt$(sheet.stripe.gross_charges)}</td></tr>
-                      <tr><td>Refunds</td><td className="is-r is-neg">{fmt$(-sheet.stripe.refunds)}</td></tr>
-                      <tr><td>Fees — post as expense</td><td className="is-r is-neg">{fmt$(-sheet.stripe.fees)}</td></tr>
-                      <tr className="is-total"><td>Net to bank</td><td className="is-r">{fmt$(sheet.stripe.net)}</td></tr>
-                      <tr><td className="is-muted">Payouts sent this month</td><td className="is-r is-muted">{fmt$(sheet.stripe.payouts)}</td></tr>
-                      {Math.abs(sheet.stripe.card_tender_diff) >= 0.01 && (
-                        <tr><td colSpan={2} className="is-flag">
-                          Stripe charges differ from card tender by {fmt$(sheet.stripe.card_tender_diff)} — likely duplicate charges, order edits, or payments recorded outside Loadout.
-                        </td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </div>
-
-            {/* ── Stripe items that don't line up ── */}
-            {sheet.stripe && !sheet.stripe.error && (sheet.stripe.unmatched?.length ?? 0) > 0 && (
-              <>
-                <div className="is-sec">Stripe activity not matched to this sheet</div>
-                <table className="is-table is-small">
-                  <tbody>
-                    {sheet.stripe.unmatched!.map((u, i) => (
-                      <tr key={(u.ref || '') + i}>
-                        <td>
-                          {fmtShortDate(u.date)} · {u.kind === 'charge' ? 'Charge' : 'Refund'}{u.order ? ` · #${u.order}` : ''}
-                          <span className="is-q is-why">{u.note}</span>
-                        </td>
-                        <td className={`is-r ${u.kind === 'refund' ? 'is-neg' : ''}`}>{fmt$(u.kind === 'refund' ? -u.amount : u.amount)}</td>
-                      </tr>
-                    ))}
-                    <tr className="is-total">
-                      <td>Unmatched charges / refunds</td>
-                      <td className="is-r">{fmt$(sheet.stripe.unmatched_charges ?? 0)} / {fmt$(-(sheet.stripe.unmatched_refunds ?? 0))}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </>
             )}
 
-            {/* ── Memo ── */}
-            <div className="is-memo">
-              <span>Unpaid contractor invoices today: {fmt$(sheet.memo.unpaid_invoice_total)} ({sheet.memo.unpaid_invoice_count}) — not income until paid</span>
-              <span>{sheet.memo.quick_drops} Quick Drops excluded (no revenue)</span>
-              <span>{sheet.order_count} paid orders</span>
+            {/* ── Needs attention ── */}
+            {sheet.attention.length > 0 && (
+              <div className="je-attn">
+                <div className="je-sec">Needs attention in Stripe</div>
+                {sheet.attention.map((a, i) => (
+                  <div key={i} className="je-attn-row">
+                    <div>
+                      <div className="je-acct">
+                        {a.date ? fmtDate(a.date) + ' · ' : ''}{a.kind}{a.order ? ` · #${a.order}` : ''}
+                      </div>
+                      <div className="je-memo">{a.note}</div>
+                    </div>
+                    <div className="je-num">{fmt$(a.amount)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {sheet.misc_items.length > 0 && (
+              <div className="je-foot">Misc Sales includes: {sheet.misc_items.join(', ')}</div>
+            )}
+            <div className="je-foot">
+              Not in this entry: {fmt$(sheet.unpaid_invoices.total)} in unpaid contractor invoices ({sheet.unpaid_invoices.count}). They post in the month they're paid.
             </div>
 
-            {/* ── Detail appendix ── */}
-            <div className="no-print" style={{ marginTop: 12 }}>
+            {/* ── Supporting detail ── */}
+            <div className="no-print" style={{ marginTop: 14 }}>
               <button className="btn btn-ghost btn-sm" onClick={() => setShowDetail(v => !v)}>
-                {showDetail ? 'Hide order detail' : 'Show order detail'}
+                {showDetail ? 'Hide supporting detail' : 'Show supporting detail'}
               </button>
             </div>
             {showDetail && (
-              <div className="is-detail">
-                <div className="is-sec">Paid orders</div>
-                <table className="is-table is-small">
-                  <tbody>
-                    {sheet.orders.map(o => (
-                      <tr key={o.number + o.paid}>
-                        <td>#{o.number}<span className="is-q">{fmtShortDate(o.paid)} · {TENDER_LABELS[o.tender] || o.tender}</span></td>
-                        <td className="is-r">{fmt$(o.total)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {sheet.refunds.items.length > 0 && (
+              <div className="je-detail">
+                <div className="je-sec">Month at a glance</div>
+                <div className="je-kv">
+                  <span>Sales before tax</span><span>{fmt$(sheet.summary.gross_sales)}</span>
+                  <span>Sales tax collected</span><span>{fmt$(sheet.summary.tax_collected)}</span>
+                  <span>Customer refunds (incl. tax)</span><span>{fmt$(-sheet.summary.refunds)}</span>
+                  <span>Collected by card</span><span>{fmt$(sheet.summary.card_collected)}</span>
+                  <span>Collected cash / check</span><span>{fmt$(sheet.summary.cash_collected)}</span>
+                </div>
+
+                {sheet.refund_items.length > 0 && (
                   <>
-                    <div className="is-sec">Refunds</div>
-                    <table className="is-table is-small">
-                      <tbody>
-                        {sheet.refunds.items.map((r, i) => (
-                          <tr key={r.order_number + i}>
-                            <td>#{r.order_number}<span className="is-q">{fmtShortDate(r.date)}{r.reason ? ` · ${r.reason}` : ''}</span></td>
-                            <td className="is-r is-neg">{fmt$(-r.amount)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <div className="je-sec">Refunds</div>
+                    {sheet.refund_items.map((r, i) => (
+                      <div key={i} className="je-attn-row">
+                        <div>
+                          <div className="je-acct">#{r.order_number} · {fmtDate(r.date)} · {r.tender === 'card' ? 'Card' : 'Cash / check'}</div>
+                          {r.reason && <div className="je-memo">{r.reason}</div>}
+                        </div>
+                        <div className="je-num">{fmt$(-r.amount)}</div>
+                      </div>
+                    ))}
                   </>
                 )}
+
+                <div className="je-sec">Paid orders ({sheet.orders.length})</div>
+                {sheet.orders.map(o => (
+                  <div key={o.number + o.paid} className="je-attn-row">
+                    <div className="je-acct">#{o.number} · {fmtDate(o.paid)} · {o.tender === 'card' ? 'Card' : 'Cash / check'}</div>
+                    <div className="je-num">{fmt$(o.total)}</div>
+                  </div>
+                ))}
               </div>
             )}
+
+            <div className="je-stamp">Generated {fmtStamp(sheet.generated_at)}</div>
           </div>
         )}
       </div>
@@ -324,62 +262,67 @@ export default function IncomeSheetPage() {
 }
 
 const styles = `
-  .is-page { max-width: 760px; margin: 0 auto; }
-  .is-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
-  .is-sub { color: var(--gray-500); margin-top: 2px; font-size: 14px; }
-  .is-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px; margin-bottom: 12px; }
-  .is-month { display: flex; align-items: center; gap: 8px; }
-  .is-month-label { font-weight: 700; font-size: 17px; min-width: 150px; text-align: center; }
-  .is-actions { display: flex; gap: 8px; }
-  .is-note { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; margin-bottom: 12px; font-size: 14px; }
-  .is-hint { font-size: 13px; color: var(--gray-500); margin-bottom: 12px; }
+  .je-page { max-width: 760px; margin: 0 auto; }
+  .je-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+  .je-sub { color: var(--gray-500); margin-top: 2px; font-size: 14px; }
+  .je-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px; margin-bottom: 12px; }
+  .je-month { display: flex; align-items: center; gap: 8px; }
+  .je-month-label { font-weight: 700; font-size: 17px; min-width: 150px; text-align: center; }
+  .je-actions { display: flex; gap: 8px; }
+  .je-hint { font-size: 13px; color: var(--gray-500); margin-bottom: 12px; }
 
-  .is-sheet { padding: 20px; font-variant-numeric: tabular-nums; }
-  .is-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 2px solid var(--gray-900, #222); }
-  .is-head-right { text-align: right; }
-  .is-title { font-size: 18px; font-weight: 800; }
-  .is-meta { font-size: 12px; color: var(--gray-500); margin-top: 2px; }
+  .je-sheet { padding: 20px; font-variant-numeric: tabular-nums; }
+  .je-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 2px solid #222; }
+  .je-head-right { text-align: right; }
+  .je-title { font-size: 18px; font-weight: 800; }
+  .je-meta { font-size: 12px; color: var(--gray-500); margin-top: 2px; }
 
-  .is-warn { margin-top: 14px; padding: 10px 12px; border: 1px solid #fecaca; background: #fef2f2; color: #991b1b; border-radius: 8px; font-size: 13px; display: grid; gap: 6px; }
-  .is-sec { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gray-500); margin: 20px 0 4px; }
+  .je-banner { margin-top: 14px; padding: 10px 12px; border-radius: 8px; font-size: 14px; font-weight: 600; }
+  .je-ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; }
+  .je-warn { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+  .je-bad { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
 
-  .is-table { width: 100%; border-collapse: collapse; font-size: 15px; }
-  .is-table td { padding: 8px 0; border-bottom: 1px solid var(--gray-100, #eee); vertical-align: baseline; }
-  .is-table.is-small { font-size: 13px; }
-  .is-table.is-small td { padding: 5px 0; }
-  .is-r { text-align: right; white-space: nowrap; padding-left: 12px !important; }
-  .is-q { display: inline-block; margin-left: 8px; font-size: 12px; color: var(--gray-400); }
-  .is-zero td { color: var(--gray-400); }
-  .is-sub-row td { font-weight: 700; border-top: 1px solid var(--gray-300, #ccc); }
-  .is-total td { font-weight: 800; border-bottom: none; border-top: 2px solid var(--gray-900, #222); }
-  .is-neg { color: #b91c1c; }
-  .is-ok { color: var(--green-700, #15803d); }
-  .is-muted { color: var(--gray-500); font-size: 13px; }
-  .is-flag { font-size: 12px; color: #92400e; background: #fffbeb; padding: 8px !important; border-radius: 6px; }
+  .je-table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 15px; }
+  .je-table th { text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gray-500); padding: 0 0 6px; border-bottom: 1px solid #ccc; }
+  .je-table td { padding: 9px 0; border-bottom: 1px solid var(--gray-100, #eee); vertical-align: top; }
+  .je-table tfoot td { font-weight: 800; border-bottom: none; border-top: 2px solid #222; }
+  .je-r { text-align: right; width: 110px; padding-left: 10px !important; }
+  .je-num { white-space: nowrap; font-weight: 600; }
+  .je-acct { font-weight: 600; }
+  .je-memo { font-size: 12px; color: var(--gray-500); margin-top: 1px; }
+  .je-tick { font-size: 12px; color: #15803d; margin-left: 6px; }
+  .je-x { font-size: 12px; color: #b91c1c; margin-left: 6px; }
 
-  .is-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 28px; }
-  .is-memo { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--gray-100, #eee); font-size: 12px; color: var(--gray-500); display: flex; flex-wrap: wrap; gap: 6px 18px; }
-  .is-detail { margin-top: 8px; }
-  .is-why { display: block; margin-left: 0; margin-top: 2px; }
+  .je-check { margin-top: 18px; padding: 14px; border: 1px solid #ccc; border-radius: 10px; }
+  .je-check-label { font-size: 13px; color: var(--gray-500); }
+  .je-check-val { font-size: 22px; font-weight: 800; margin: 2px 0 4px; }
+  .je-check-note { font-size: 12px; color: var(--gray-500); }
+
+  .je-sec { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gray-500); margin: 18px 0 4px; }
+  .je-attn-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--gray-100, #eee); font-size: 14px; }
+  .je-attn .je-acct { color: #92400e; }
+  .je-foot { margin-top: 12px; font-size: 12px; color: var(--gray-500); }
+  .je-kv { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; font-size: 14px; }
+  .je-kv span:nth-child(even) { text-align: right; font-weight: 600; }
+  .je-stamp { margin-top: 14px; font-size: 11px; color: var(--gray-400); }
 
   @media (max-width: 480px) {
-    .is-sheet { padding: 14px; }
-    .is-head-right { text-align: left; }
-    .is-table { font-size: 14px; }
-    .is-q { display: block; margin-left: 0; }
-    .is-month-label { min-width: 0; }
+    .je-sheet { padding: 14px; }
+    .je-head-right { text-align: left; }
+    .je-table { font-size: 14px; }
+    .je-r { width: 84px; }
+    .je-month-label { min-width: 0; }
   }
 
   @media print {
     @page { size: letter portrait; margin: 0.5in; }
     body * { visibility: hidden; }
-    .is-print, .is-print * { visibility: visible; }
-    .is-print { position: absolute; left: 0; top: 0; width: 100%; border: none !important; box-shadow: none !important; padding: 0 !important; }
+    .je-print, .je-print * { visibility: visible; }
+    .je-print { position: absolute; left: 0; top: 0; width: 100%; border: none !important; box-shadow: none !important; padding: 0 !important; }
     .no-print { display: none !important; }
-    .is-table { font-size: 12px; }
-    .is-table td { padding: 5px 0; }
-    .is-q { display: inline-block !important; margin-left: 8px !important; }
-    .is-head-right { text-align: right !important; }
-    .is-warn, .is-flag { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .je-table { font-size: 12px; }
+    .je-table td { padding: 6px 0; }
+    .je-head-right { text-align: right !important; }
+    .je-banner { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 `;
